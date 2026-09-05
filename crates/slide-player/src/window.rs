@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use crate::audio::AudioEngine;
 use crate::hud::ChartInspectorState;
 use crate::hud::DockAction;
@@ -264,7 +266,7 @@ pub fn get_screen_resolution() -> Option<(usize, usize)> {
 
     #[cfg(windows)]
     {
-        extern "system" {
+        unsafe extern "system" {
             fn GetSystemMetrics(nIndex: i32) -> i32;
         }
         let w = unsafe { GetSystemMetrics(0) }; // SM_CXSCREEN
@@ -277,7 +279,7 @@ pub fn get_screen_resolution() -> Option<(usize, usize)> {
     #[cfg(target_os = "macos")]
     {
         #[link(name = "CoreGraphics", kind = "framework")]
-        extern "C" {
+        unsafe extern "C" {
             fn CGMainDisplayID() -> u32;
             fn CGDisplayPixelsWide(display: u32) -> usize;
             fn CGDisplayPixelsHigh(display: u32) -> usize;
