@@ -1,0 +1,398 @@
+# cargo-slide
+
+> **结合 Typst 排版与 Rust 原生播放器的代码驱动演示文稿引擎**  
+> *原生 60 FPS 软件渲染 · 独立单二进制产物 · 硬件加速媒体联动 · 交互式 SQL 图表 · 可扩展动画 Trait*
+
+[English](README.md) | [简体中文](README_zh.md)
+
+---
+
+## 项目概述 (Overview)
+
+`cargo-slide` 是一个用于编写、放映与分发演示文稿的代码驱动命令行工具与运行时。它将两个互补的技术结合在一起：
+
+- **[Typst](https://typst.app/) 负责内容排版**：亚秒级极速编译、整洁的标记语法、一流的 LaTeX 级数学公式排版能力，并通过模块化宏直接编译为无损高精度矢量图形（SVG）。
+- **Rust 负责原生演示播放器**：基于 [`tiny-skia`](https://github.com/RazrFalcon/tiny-skia) 构建的独立运行时，在无需浏览器或 Electron 依赖的前提下以稳定 60 FPS 光栅化放映，内置演讲者工具箱、音频混音调度、可交互图表以及单二进制打包功能。
+
+---
+
+## 核心特性 (Key Features)
+
+- **普通用户无需编写 Rust**：演示文稿完全由 Typst 标记语言（`slides.typ`）编写。只有在需要实现底层自定义转场或组件动画 Trait 时才需要编写 Rust。
+- **极简的项目文件结构**：`cargo slide init` 生成的标准工作区仅包含 5 个文件，轻量且结构清晰。
+- **自包含单二进制打包**：通过 `cargo slide build`，可将幻灯片矢量资产、布局元数据与播放器内核直接编译为单个跨平台可执行二进制文件（约 12 MB）。目标运行机器无需安装 Typst、Node.js、Python 或 Rust。
+- **双窗口放映模式**：按 `F11` 或 `F` 可在无边框全屏模式与窗口化模式之间无缝切换。全屏时具备自动黑边填充（Letterboxing），在任意显示器长宽比下均能保持 16:9 画布不变形。
+- **13 种内置页面转场特效**：`fade`（平滑淡入淡出）、`cut`（硬切）、`slide-left` / `slide-right` / `slide-up` / `slide-down`（滑动推移）、`zoom`（径向缩放）、`wipe-left` / `wipe-right`（百叶窗擦除）、`iris`（光圈收缩）、`glitch`（赛博朋克 RGB 故障）、`cube`（3D 立体翻转）与 `particles`（伪随机粒子重组）。
+- **页内组件分步显现（Steps）**：使用 `#step(order, effect: "...")` 控制内容序列化展开，支持 `fade-in`、`slide-up`、`glitch` 与 `typewriter` 效果。使用空格键 / 左键前进，Backspace / 右键回退。
+- **交互式数据图表**：
+  - 支持直接读取 `.csv`、`.json` 与 `.db` (SQLite) 数据集。
+  - 支持在编译/放映期执行内存 SQL（`SELECT ... FROM data WHERE ...`）或流式 DSL（`source -> filter() -> select()`）。
+  - 放映时鼠标悬停吸附十字准星与多序列浮动光晕。
+  - 内置 HUD 数据检查器：演讲中可实时切换图表形态（柱状图、折线图、面积图、散点图），浏览表格明细或一键导出 CSV。
+- **演讲者工具箱 (Presenter Studio)**：
+  - **红外激光笔**：带等离子高亮内核与物理衰减拖尾的光斑模拟（`L` 键或底部 Dock `LSR`）。
+  - **白板涂鸦画笔**：实时自由批注（`P` 键），内置 7 色浮动调色盘（`K` 键，数字键 `1`～`7`），支持平滑贝塞尔混合与按页记忆（`C` / `X` 擦除）。
+  - **多通道音频调度**：支持背景音淡入淡出、无缝循环及悬浮音量调节（`+`、`-`、滚轮、`M` 静音），音量安全钳位在 0%～100%。
+  - **硬件加速视频卡片**：在幻灯片中生成带热区的视频占位卡片，点击后唤起系统级硬件加速播放器（`mpv`、`ffplay` 或系统默认播放器）进行全屏硬解播放。
+- **幻灯片垂直内容溢出防御**：编译时自动比对生成的 SVG 页面数与声明的 `#slide(...)` 数量。一旦内容超出 16:9 画布高度（15.75 cm），编译器将立即拦截并指出具体发生溢出的幻灯片标题与源码行号。
+- **完全向量化与多语言支持**：Typst 会将所有西文、中日韩汉字（CJK）、数学符号与 Emoji 转化为矢量贝塞尔 `<path>` 曲线。演示文稿在任何操作系统上放映均无需额外安装字体。
+- **基础无障碍化 (A11y)**：全功能支持纯键盘操作；无键盘环境支持屏幕底部悬浮触摸 Dock；图表检查器提供高对比度纯文本表格数据视图。
+- **双模式结构化日志**：默认输出带有 Emoji 的人性化终端日志；传入 `--log-format json` 或设置 `CARGO_SLIDE_LOG_FORMAT=json` 输出单行机器可读 JSON，方便 CI/CD 自动化集成。
+
+---
+
+## 快速上手 (Getting Started)
+
+### 环境依赖 (Prerequisites)
+
+1. **Rust 工具链**：Rust 1.80+（推荐最新稳定版），可通过 [rustup.rs](https://rustup.rs/) 安装。
+2. **Typst 命令行工具**：确保 `typst` 可执行文件在系统 `PATH` 中。可通过包管理器安装（`cargo install --locked typst-cli`、`brew install typst` 或各 Linux 发行版仓库）。
+3. *（可选）* **外部媒体播放器**：若需播放嵌入视频，推荐安装 `mpv` 或 `ffplay`。
+
+### 第 1 步：安装 `cargo-slide`
+
+从本地源码安装：
+```bash
+cargo install --path crates/cargo-slide
+```
+
+验证安装是否成功：
+```bash
+cargo slide --help
+```
+
+### 第 2 步：初始化演示文稿工作区
+
+在希望存放幻灯片的目录下运行：
+```bash
+# 在当前目录直接初始化
+cargo slide init
+
+# 或在指定新目录中初始化
+cargo slide init my-talk
+cd my-talk
+```
+
+初始化后的工作区包含恰好 5 个文件：
+```text
+my-talk/
+├── slides.typ          # 幻灯片正文（纯 Typst 语言）
+├── theme.typ           # 主题配置（配色方案、字体大小、16:9 比例）
+├── slide.typ           # 常用组件宏库（#slide, #step, #chart, #video 等）
+├── assets/
+│   └── data.csv        # 示例交互式图表数据集
+└── .gitignore          # 忽略临时缓存、PDF 导出与二进制产物
+```
+
+*（注：如果需要编写自定义 Rust 动画 Trait，可传入 `--rust` 参数：`cargo slide init my-talk --rust`，这将额外生成 `Cargo.toml` 与 `src/main.rs` 脚手架。）*
+
+### 第 3 步：编写幻灯片内容
+
+使用任何文本编辑器打开 `slides.typ`：
+```typst
+#import "theme.typ": *
+
+#show: slide-theme.with(
+  aspect-ratio: "16-9",
+  theme: "dark"
+)
+
+#title-slide(
+  title: "现代系统架构设计",
+  subtitle: "基于代码驱动的高性能原生演示",
+  author: "张三",
+  date: "2026",
+)
+
+#slide(title: "架构与核心理念", transition: "fade")[
+  #cols(
+    [
+      === 核心优势
+      - 纯 Typst 函数式排版标记
+      - 原生 60 FPS 矢量渲染
+      - 单二进制自包含分发
+    ],
+    [
+      === 经典公式
+      $ cal(H) |psi(t) chevron.r = i ħ dif / (dif t) |psi(t) chevron.r $
+
+      #v(0.3cm)
+      #badge("量子核心", fill: slide-colors.accent)
+    ]
+  )
+]
+```
+
+### 第 4 步：本地放映与热重载
+
+启动原生 60 FPS 放映播放器：
+```bash
+cargo slide run
+```
+
+在编写过程中，可开启开发热重载模式：
+```bash
+cargo slide dev
+```
+每当保存 `slides.typ` 时，播放器会自动重编并在保留当前页码的前提下无缝刷新画面。
+
+### 第 5 步：构建独立可执行文件（发布）
+
+完成编写后，执行打包命令：
+```bash
+cargo slide build
+```
+该命令会生成一个独立的可执行文件（如 `slides-presentation` 或 `.exe`）。将该单个文件复制到任何演示电脑上即可直接双击全屏放映，受众电脑无需安装 Typst、Rust 或浏览器。
+
+### 第 6 步：导出 PDF 或 SVG
+
+如需导出讲义或归档资料：
+```bash
+# 导出为高精度 PDF 文档
+cargo slide export slides.typ --format pdf -o presentation.pdf
+
+# 导出每一页为独立的 SVG 矢量图
+cargo slide export slides.typ --format svg -o exported-svgs/
+```
+
+---
+
+## 常见问题解答 (FAQ)
+
+### Q1: 使用 `cargo-slide` 必须学习或编写 Rust 代码吗？
+**不需要。** 普通演示文稿完全由 Typst 语言编写（`slides.typ`）。只有在需要使用 Rust Trait 编写底层自定义像素着色器或物理粒子动画时，才需要编写 Rust。
+
+### Q2: `cargo slide init` 生成的项目包含几个文件？
+标准模式下恰好生成 5 个文件：
+1. `slides.typ`：幻灯片正文。
+2. `theme.typ`：16:9 画布尺寸、色彩及字体样式配置。
+3. `slide.typ`：封装好的组件宏（`#slide`, `#step`, `#chart`, `#video`, `#audio`, `#callout`）。
+4. `assets/data.csv`：示例图表数据集。
+5. `.gitignore`：过滤 `.build_tmp/`、`*.cache.csv`、`target/` 及编译生成的二进制文件。
+
+如果附带 `--rust` 参数，则会额外包含用于 Trait 扩展的 `Cargo.toml` 与 `src/main.rs`。
+
+### Q3: 编译为单二进制时，哪些资产直接内嵌？哪些需要单独放在 `assets/`？
+- **直接内嵌进二进制可执行文件（约 12 MB）：**
+  - 全部幻灯片的 SVG 矢量图元、排版几何、字形轮廓与 LaTeX 数学公式；
+  - 交互式热区元数据、步骤显现逻辑与页面转场属性；
+  - 经过预处理的 CSV、JSON、SQLite 图表数据表；
+  - `tiny-skia` 软件渲染器、转场算法、激光笔、画笔与 HUD 检查器内核。
+- **放置在 `assets/` 目录中随同携带：**
+  - **大型高清视频文件**（`.mp4`, `.webm`, `.mkv`）与外部音频文件。
+  - *设计权衡*：如果把几百 MB 的视频压入二进制，会导致二进制文件异常臃肿且加载缓慢。通过相对路径关联媒体并在放映时调度系统硬件播放器，既保持了二进制文件极其轻巧（约 12 MB），又获得了最佳的视频解码性能。
+
+### Q4: 幻灯片中的视频播放是如何工作的？
+Typst 会在页面上绘制视频占位卡片并留下坐标热区。放映过程中点击该卡片时，播放器会在独立子进程中唤起外部硬件加速播放器（如 `mpv`、`ffplay` 或系统默认播放器）进行全屏播放。放映结束后关闭播放器即切回幻灯片，规避了原生内嵌解码器的兼容性与开销问题。
+
+### Q5: 目标放映机没有安装对应字体时，文字能正常显示吗？
+可以。Typst 在编译时会将所有文字字形（包括中日韩汉字、特殊数学符号、Emoji）完全转换为 SVG `<defs><path id="..."/></defs>` 矢量轮廓。播放器直接栅格化这些贝塞尔数学曲线，因此目标机器完全不需要安装任何对应字体即可保证像素级保真。
+
+### Q6: 幻灯片垂直溢出防御机制是如何运作的？
+在 Typst 中，当内容超出 16:9 垂直画布上限（15.75 cm）时，Typst 会自动隐式分页，导致生成孤儿空白页并破坏幻灯片序号。  
+`cargo-slide` 会在编译期核对生成的 SVG 页数与声明的 `#slide` 数量。若发生溢出，会立即定位出溢出发生的幻灯片标题与代码行号：
+```text
+Typst slide content overflow detected!
+The presentation source declares 17 slide(s), but Typst compiled 18 pages (1 extra spillover page(s)).
+
+Overflow location:
+  Slide 4 ("Mathematical Typography & Code Syntax Highlighting", line 64) exceeded the vertical 16:9 canvas bounds.
+  Spillover content pushed onto compiled page 5.
+```
+作者可通过微调间距或高度解决此问题，也可通过设置 `CARGO_SLIDE_ALLOW_OVERFLOW=1` 环境变量放行。
+
+### Q7: `cargo-slide` 与 Marp、Slidev、LaTeX Beamer 的客观对比如何？
+
+| 特性对比 | `cargo-slide` | Marp / Slidev | LaTeX Beamer |
+| :--- | :--- | :--- | :--- |
+| **内核架构** | 原生 Rust (`tiny-skia`) | Web / Electron / Node.js | TeX 引擎 / PDF 查阅器 |
+| **交付形式** | 单个约 12 MB 独立二进制 | HTML 文件包 / PDF / App | 静态 PDF |
+| **排版保真度** | Typst 矢量字形曲线 | 浏览器 CSS / Web 字体 | LaTeX 原生排版 |
+| **数学公式质量** | LaTeX 级精美公式 | KaTeX / MathJax 网页渲染 | 原生 TeX 数学渲染 |
+| **放映帧率** | 锁定 60 FPS 稳定刷新 | 取决于 DOM 与浏览器性能 | 静态无转场 |
+| **演讲者工具** | 激光笔拖尾、画笔、混音器 | 依赖浏览器插件支持 | 取决于 PDF 阅读器功能 |
+| **产物运行依赖** | 无任何外部依赖 | 需要现代浏览器或运行时 | 需要 PDF 阅读器 |
+| **客观权衡** | 编辑需 Typst CLI 依赖 | 包体积大、不同浏览器有差异 | 编译慢、语法较为繁复 |
+
+### Q8: 可以在无图形界面的 CI/CD 流水线中使用吗？
+可以。`cargo slide build` 与 `cargo slide export` 均可在无头环境中执行。结合 `--log-format json` 参数可以输出标准 JSON 事件流，便于监控构建状态。
+
+---
+
+## 命令行完整参考 (CLI Reference)
+
+全局参数：`--log-format <human|json>`（默认：`human`）或环境变量 `CARGO_SLIDE_LOG_FORMAT=json`。
+
+### `cargo slide init`
+```bash
+cargo slide init [PATH] [--rust] [--log-format <human|json>]
+```
+在指定路径初始化幻灯片工作区（默认当前目录 `.`）。可选 `--rust` 参数以附加 Rust Trait 扩展脚手架。
+
+### `cargo slide new`
+```bash
+cargo slide new <NAME> [--rust] [--log-format <human|json>]
+```
+新建目录 `<NAME>` 并在其中初始化幻灯片工作区。
+
+### `cargo slide run`
+```bash
+cargo slide run [FILE] [--animation <NAME>] [--fullscreen]
+```
+启动原生演示播放器。默认读取 `slides.typ`，默认转场为 `fade`。
+
+### `cargo slide dev`
+```bash
+cargo slide dev [FILE] [--animation <NAME>]
+```
+以文件监控模式启动播放器，保存文件即自动编译并刷新画面。
+
+### `cargo slide build`
+```bash
+cargo slide build [FILE] [-o <OUTPUT>] [--animation <NAME>]
+```
+将幻灯片编译为自包含的单个独立发行版二进制文件。
+
+### `cargo slide export`
+```bash
+cargo slide export [FILE] --format <pdf|svg> -o <OUTPUT>
+```
+将演示文稿导出为单份多页 PDF 文件或分页 SVG 矢量图序列。
+
+---
+
+## 演讲操作与快捷键表 (Presenter Controls)
+
+| 按键 / 操作 | 功能说明 |
+| :--- | :--- |
+| **空格键** / **鼠标左键** | 下一步骤（若当前页步骤已完结则进入下一页） |
+| **退格键** / **鼠标右键** | 上一步骤（若当前页无上一步则返回上一页） |
+| **F11** / **F** / Dock `FULL` | 切换 **无边框全屏** 与 **窗口化** 模式 |
+| **L** / Dock `LSR` | 开启 / 关闭 **红外激光笔（带物理衰减拖尾）** |
+| **P** / Dock `PEN` | 开启 / 关闭 **白板涂鸦画笔** |
+| **K** / Dock `COL` | 弹出 / 隐藏 **7 色浮动调色盘** |
+| **数字键 1 .. 7** | 选择画笔与激光笔颜色（青/红/绿/黄/紫/白/橙） |
+| **C** / **X** / Dock `CLR` | 清除当前幻灯片上的全部画笔笔迹 |
+| **滚轮上/下** / **`+` / `-`** | 实时调节主音量（0% ~ 100%） |
+| **M** / Dock `VOL` | 静音 / 恢复音量 |
+| **H** / **?** | 显示 / 隐藏键盘快捷键帮助卡片 |
+| **Home** / **End** | 跳转到第一页 / 最后一页 |
+| **输入数字 + 回车** | 快速精准跳转到对应页码 |
+| **Esc** / **Q** | 退出放映 |
+
+---
+
+## 交互式图表与数据查询示例
+
+### 1. CSV 数据集图表
+```typst
+#chart(
+  data: "assets/data.csv",
+  type: "bar",
+  title: "系统内存开销对比",
+  width: 100%,
+  height: 6cm
+)
+```
+
+### 2. 内存 SQL 查询数据
+支持在 CSV、JSON 或 SQLite 数据库上执行标准 SQL：
+```typst
+#chart(
+  data: "assets/telemetry.db",
+  sql: "SELECT service, p99_latency FROM traces WHERE p99_latency > 50 ORDER BY p99_latency DESC",
+  type: "bar",
+  title: "高延迟微服务拓扑"
+)
+```
+
+### 3. 流水线 DSL 简易查询
+```typst
+#chart(
+  data: "assets/metrics.json",
+  dsl: "source -> filter(fps >= 30) -> select(Framework, FPS)",
+  type: "line",
+  title: "帧率表现分析"
+)
+```
+
+---
+
+## 使用 Rust Trait 扩展自定义动画
+
+面向希望实现专属渲染算法的开发者：
+
+```rust
+use slide_core::animation::{RenderContext, SlideAnimation, SlideSurface};
+use slide_player::SlideApp;
+use std::time::Duration;
+
+/// 自定义上下卷帘分割转场
+pub struct CurtainSplitTransition;
+
+impl SlideAnimation for CurtainSplitTransition {
+    fn name(&self) -> &str {
+        "curtain-split"
+    }
+
+    fn duration(&self) -> Duration {
+        Duration::from_millis(500)
+    }
+
+    fn render(
+        &self,
+        ctx: &mut RenderContext,
+        from: Option<&SlideSurface>,
+        to: &SlideSurface,
+        progress: f32,
+    ) {
+        let t = progress.clamp(0.0, 1.0);
+        let (w, h) = (ctx.width, ctx.height);
+        let split_y = (h as f32 * t * 0.5) as usize;
+
+        for y in 0..h {
+            let row = y * w;
+            for x in 0..w {
+                let pixel = if y < split_y || y >= (h - split_y) {
+                    to.get_pixel(x, y)
+                } else if let Some(f) = from {
+                    f.get_pixel(x, y)
+                } else {
+                    0
+                };
+                ctx.buffer[row + x] = pixel;
+            }
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    SlideApp::new("slides.typ")
+        .default_animation("curtain-split")
+        .register_animation(CurtainSplitTransition)
+        .run()?;
+    Ok(())
+}
+```
+
+---
+
+## 模块架构一览 (Project Structure)
+
+```text
+cargo-slide/
+├── Cargo.toml                      # 根 Workspace 配置
+├── crates/
+│   ├── slide-core/                 # 核心：数据模型、Typst 编译器桥接、SVG 解析、图表与内存 SQL、Trait、日志引擎
+│   ├── slide-player/               # 播放器：tiny-skia 光栅化内核、双窗口管理、音频混音、演讲者工具箱、HUD 检查器
+│   ├── slide-theme/                # 模板：默认主题、Typst 常用宏库（#slide, #step, #chart 等）
+│   └── cargo-slide/                # 命令行入口：init / new / run / dev / build / export
+└── examples/
+    └── geek-presentation/          # 17 页完整极客范例：涵盖公式、代码、转场、分步 Steps、图表、媒体与自定义 Trait
+```
+
+---
+
+## 开源许可证 (License)
+
+本项目遵循 [GNU Affero 通用公共许可证 v3.0 或更高版本](LICENSE) (`AGPL-3.0-or-later`) 开源。
