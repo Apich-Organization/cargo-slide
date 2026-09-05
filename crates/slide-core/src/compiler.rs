@@ -200,11 +200,7 @@ impl SlideCompiler {
                 "Typst compilation failed:\n{full_err}"
             )));
         } else if !stderr.trim().is_empty() {
-            let mut warn_text = format!("⚠️ Typst compiler warning:\n{}", stderr.trim());
-            let has_font_warning = stderr.contains("unknown font family");
-            if has_font_warning {
-                warn_text.push_str("\n💡 Tip: Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.");
-            }
+            let (warn_text, has_font_warning, missing_fonts) = format_typst_warnings(&stderr);
             crate::logger::log_event(
                 "warn",
                 &warn_text,
@@ -213,6 +209,7 @@ impl SlideCompiler {
                     "status": "warning",
                     "warning": stderr.trim(),
                     "has_font_warning": has_font_warning,
+                    "missing_fonts": missing_fonts,
                     "file": typ_file.display().to_string(),
                 })),
             );
@@ -307,11 +304,7 @@ impl SlideCompiler {
                 "Typst compilation failed:\n{stderr}"
             )));
         } else if !stderr.trim().is_empty() {
-            let mut warn_text = format!("⚠️ Typst compiler warning:\n{}", stderr.trim());
-            let has_font_warning = stderr.contains("unknown font family");
-            if has_font_warning {
-                warn_text.push_str("\n💡 Tip: Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.");
-            }
+            let (warn_text, has_font_warning, missing_fonts) = format_typst_warnings(&stderr);
             crate::logger::log_event(
                 "warn",
                 &warn_text,
@@ -320,6 +313,7 @@ impl SlideCompiler {
                     "status": "warning",
                     "warning": stderr.trim(),
                     "has_font_warning": has_font_warning,
+                    "missing_fonts": missing_fonts,
                     "file": typ_file.display().to_string(),
                 })),
             );
@@ -327,6 +321,70 @@ impl SlideCompiler {
 
         Ok(())
     }
+}
+
+/// Parse and format Typst compiler stderr output, segregating font fallback notices from critical warnings
+#[must_use]
+pub fn format_typst_warnings(stderr: &str) -> (String, bool, Vec<String>) {
+    let mut missing_fonts = Vec::new();
+    let mut other_blocks = Vec::new();
+    let mut current_block = Vec::new();
+    let mut is_font_block = false;
+    let mut font_name = String::new();
+
+    for line in stderr.lines() {
+        if line.starts_with("warning:") || line.starts_with("error:") {
+            if !current_block.is_empty() {
+                if is_font_block && !font_name.is_empty() {
+                    if !missing_fonts.contains(&font_name) {
+                        missing_fonts.push(font_name.clone());
+                    }
+                } else {
+                    other_blocks.push(current_block.join("\n"));
+                }
+                current_block.clear();
+            }
+            if let Some(rest) = line.strip_prefix("warning: unknown font family:") {
+                is_font_block = true;
+                font_name = rest.trim().to_string();
+            } else {
+                is_font_block = false;
+                font_name.clear();
+            }
+        }
+        current_block.push(line);
+    }
+
+    if !current_block.is_empty() {
+        if is_font_block && !font_name.is_empty() {
+            if !missing_fonts.contains(&font_name) {
+                missing_fonts.push(font_name);
+            }
+        } else {
+            other_blocks.push(current_block.join("\n"));
+        }
+    }
+
+    let mut output = String::new();
+    if !other_blocks.is_empty() {
+        output.push_str(&format!(
+            "⚠️ Typst compiler warning:\n{}\n",
+            other_blocks.join("\n\n")
+        ));
+    }
+
+    let has_font_warnings = !missing_fonts.is_empty();
+    if has_font_warnings {
+        if !other_blocks.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&format!(
+            "ℹ️ Typst font fallback notice:\n   The following font families were not found: {}\n   Typst automatically falls back to available system fonts.\n💡 Tip: Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.",
+            missing_fonts.join(", ")
+        ));
+    }
+
+    (output.trim().to_string(), has_font_warnings, missing_fonts)
 }
 
 #[derive(Debug, Clone)]

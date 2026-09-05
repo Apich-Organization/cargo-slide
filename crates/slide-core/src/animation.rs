@@ -118,23 +118,11 @@ impl SlideSurface {
     ) {
         for step in steps {
             if step.order > current_step {
-                let sx1 = step
-                    .rect
-                    .x
-                    .mul_add(metrics.scale, metrics.offset_x)
-                    .max(0.0) as usize;
-                let sy1 = step
-                    .rect
-                    .y
-                    .mul_add(metrics.scale, metrics.offset_y)
-                    .max(0.0) as usize;
-                let sx2 = ((step.rect.x + step.rect.width).mul_add(metrics.scale, metrics.offset_x)
-                    as usize)
-                    .min(self.width);
-                let sy2 =
-                    ((step.rect.y + step.rect.height).mul_add(metrics.scale, metrics.offset_y)
-                        as usize)
-                        .min(self.height);
+                let screen_rect = metrics.svg_to_screen_rect(&step.rect);
+                let sx1 = (screen_rect.x.max(0.0) as usize).min(self.width);
+                let sy1 = (screen_rect.y.max(0.0) as usize).min(self.height);
+                let sx2 = ((screen_rect.x + screen_rect.width).max(0.0) as usize).min(self.width);
+                let sy2 = ((screen_rect.y + screen_rect.height).max(0.0) as usize).min(self.height);
 
                 for y in sy1..sy2 {
                     let row = y * self.width;

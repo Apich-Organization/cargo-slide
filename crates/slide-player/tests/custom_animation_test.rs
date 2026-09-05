@@ -221,3 +221,69 @@ fn test_cjk_and_accessibility_svg_rasterization() {
         "Expected vector curves to render visible pixels"
     );
 }
+
+#[test]
+fn test_svg_renderer_viewbox_metrics() {
+    use slide_core::model::Rect;
+    use slide_player::renderer::SvgRenderer;
+
+    let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="50 20 500 300" width="500" height="300">
+        <rect x="50" y="20" width="500" height="300" fill="#112233"/>
+        <rect x="100" y="60" width="200" height="100" fill="#ff0000"/>
+    </svg>"##;
+
+    let renderer = SvgRenderer::new();
+    let (surface, metrics) = renderer.render_svg(svg_str, 1000, 600).expect("render svg");
+    assert_eq!(metrics.view_box_x, 50.0);
+    assert_eq!(metrics.view_box_y, 20.0);
+    assert_eq!(metrics.scale, 2.0);
+    assert_eq!(metrics.offset_x, 0.0);
+    assert_eq!(metrics.offset_y, 0.0);
+
+    let red_rect = Rect::new(100.0, 60.0, 200.0, 100.0);
+    let screen_rect = metrics.svg_to_screen_rect(&red_rect);
+    // x: 0.0 + (100.0 - 50.0) * 2.0 = 100.0
+    // y: 0.0 + (60.0 - 20.0) * 2.0 = 80.0
+    // w: 400.0, h: 200.0
+    assert_eq!(screen_rect.x, 100.0);
+    assert_eq!(screen_rect.y, 80.0);
+    assert_eq!(screen_rect.width, 400.0);
+    assert_eq!(screen_rect.height, 200.0);
+
+    // Verify pixel at center of red rect is indeed red (0xFFFF0000)
+    let p_center = surface.get_pixel(300, 180);
+    assert_eq!(p_center, 0xFFFF0000);
+}
+
+#[test]
+fn test_inspector_layout_clamping() {
+    use slide_player::hud::get_inspector_layout;
+
+    // Constrained small display (800x480)
+    let (
+        modal_rect,
+        _title_rect,
+        _toolbar,
+        _type_bar,
+        _trans_bar,
+        _series_bar,
+        left_pane,
+        right_pane,
+    ) = get_inspector_layout(800, 480);
+    assert!(modal_rect.x >= 10.0);
+    assert!(modal_rect.y >= 10.0);
+    assert!(modal_rect.x + modal_rect.width <= 800.0);
+    assert!(modal_rect.y + modal_rect.height <= 480.0);
+    assert!(left_pane.x >= modal_rect.x);
+    assert!(right_pane.x + right_pane.width <= modal_rect.x + modal_rect.width);
+    assert!(right_pane.y + right_pane.height <= modal_rect.y + modal_rect.height);
+
+    // Standard 1080p display (1920x1080)
+    let (m1080, _, _, _, _, _, l1080, r1080) = get_inspector_layout(1920, 1080);
+    assert!(m1080.x >= 10.0);
+    assert!(m1080.y >= 10.0);
+    assert!(m1080.x + m1080.width <= 1920.0);
+    assert!(m1080.y + m1080.height <= 1080.0);
+    assert!(l1080.x >= m1080.x);
+    assert!(r1080.x + r1080.width <= m1080.x + m1080.width);
+}

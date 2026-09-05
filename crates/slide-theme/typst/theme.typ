@@ -57,8 +57,8 @@
   )
 
   let active-fonts = if font != none {
-    if type(font) == array { font + default-fonts }
-    else { (font,) + default-fonts }
+    if type(font) == array { font }
+    else { (font,) }
   } else {
     default-fonts
   }
@@ -80,8 +80,8 @@
   )
 
   let active-code-fonts = if code-font != none {
-    if type(code-font) == array { code-font + default-code-fonts }
-    else { (code-font,) + default-code-fonts }
+    if type(code-font) == array { code-font }
+    else { (code-font,) }
   } else {
     default-code-fonts
   }

@@ -2206,10 +2206,12 @@ pub fn get_inspector_layout(
     width: usize,
     height: usize,
 ) -> (Rect, Rect, Rect, Rect, Rect, Rect, Rect, Rect) {
-    let modal_w = ((width as f32) * 0.90).clamp(760.0, 1240.0);
-    let modal_h = ((height as f32) * 0.88).clamp(500.0, 840.0);
-    let modal_x = (width as f32 - modal_w) * 0.5;
-    let modal_y = (height as f32 - modal_h) * 0.5;
+    let max_w = (width as f32 - 20.0).max(300.0);
+    let max_h = (height as f32 - 20.0).max(250.0);
+    let modal_w = ((width as f32) * 0.90).clamp(300.0, 1240.0).min(max_w);
+    let modal_h = ((height as f32) * 0.88).clamp(250.0, 840.0).min(max_h);
+    let modal_x = ((width as f32 - modal_w) * 0.5).max(10.0);
+    let modal_y = ((height as f32 - modal_h) * 0.5).max(10.0);
     let modal_rect = Rect::new(modal_x, modal_y, modal_w, modal_h);
 
     let header_rect = Rect::new(modal_x, modal_y, modal_w, 44.0);
@@ -2220,13 +2222,13 @@ pub fn get_inspector_layout(
     let kpi_strip = Rect::new(modal_x + 12.0, modal_y + 80.0, modal_w - 24.0, 52.0);
 
     let body_y = modal_y + 138.0;
-    let body_h = modal_h - 138.0 - 28.0;
+    let body_h = (modal_h - 138.0 - 28.0).max(60.0);
     let left_w = ((modal_w - 32.0) * 0.55).round();
     let left_pane = Rect::new(modal_x + 12.0, body_y, left_w, body_h);
     let right_pane = Rect::new(
         modal_x + 12.0 + left_w + 8.0,
         body_y,
-        modal_w - 24.0 - left_w - 8.0,
+        (modal_w - 24.0 - left_w - 8.0).max(100.0),
         body_h,
     );
 
@@ -2240,6 +2242,23 @@ pub fn get_inspector_layout(
         left_pane,
         right_pane,
     )
+}
+
+/// Calculate bounds for series filter chips in series_strip
+#[must_use]
+pub fn get_series_chip_rects(
+    series_strip: Rect,
+    series: &[slide_core::chart::SeriesData],
+) -> Vec<(usize, Rect)> {
+    let mut cur_x = series_strip.x + 56.0;
+    let mut chips = Vec::with_capacity(series.len());
+    for (s_idx, s) in series.iter().enumerate() {
+        let chip_w = (s.name.len().saturating_mul(6).saturating_add(26)).max(50) as f32;
+        let chip_rect = Rect::new(cur_x, series_strip.y + 2.0, chip_w, 22.0);
+        chips.push((s_idx, chip_rect));
+        cur_x += chip_w + 6.0;
+    }
+    chips
 }
 
 /// Hit-test within the Chart Data Inspector modal
@@ -2293,14 +2312,10 @@ pub fn hit_test_chart_inspector(
             }
         }
 
-        let mut cur_x = series_strip.x + 60.0;
-        for (s_idx, s) in state.chart_data.series.iter().enumerate() {
-            let chip_w = (s.name.len() * 6 + 26).max(50) as f32;
-            let chip_rect = Rect::new(cur_x, series_strip.y, chip_w, 24.0);
+        for (s_idx, chip_rect) in get_series_chip_rects(series_strip, &state.chart_data.series) {
             if chip_rect.contains(mouse_x, mouse_y) {
                 return Some(InspectorAction::ToggleSeries(s_idx));
             }
-            cur_x += chip_w + 6.0;
         }
     }
 
@@ -2309,10 +2324,14 @@ pub fn hit_test_chart_inspector(
         let header_h = 26.0;
         let row_h = 24.0;
         let table_y = right_pane.y + header_h;
-        if mouse_y >= table_y {
-            let row_idx = ((mouse_y - table_y) / row_h) as usize + state.table_scroll;
-            if row_idx < state.chart_data.categories.len() {
-                return Some(InspectorAction::SelectCategory(row_idx));
+        let visible_rows = ((right_pane.height - header_h - 2.0).max(0.0) / row_h) as usize;
+        if mouse_y >= table_y && mouse_y < (right_pane.y + right_pane.height) {
+            let row_slot = ((mouse_y - table_y) / row_h) as usize;
+            if row_slot < visible_rows {
+                let row_idx = row_slot + state.table_scroll;
+                if row_idx < state.chart_data.categories.len() {
+                    return Some(InspectorAction::SelectCategory(row_idx));
+                }
             }
         }
     }
@@ -2321,9 +2340,11 @@ pub fn hit_test_chart_inspector(
     if left_pane.contains(mouse_x, mouse_y) {
         let px = left_pane.x + 44.0;
         let pw = left_pane.width - 60.0;
+        let py = left_pane.y + 36.0;
+        let ph = left_pane.height - 70.0;
         let cat_count = state.chart_data.categories.len().max(1);
         let col_w = pw / cat_count as f32;
-        if mouse_x >= px && mouse_x <= (px + pw) {
+        if mouse_x >= px && mouse_x <= (px + pw) && mouse_y >= py && mouse_y <= (py + ph + 20.0) {
             let c_idx = (((mouse_x - px) / col_w) as usize).min(cat_count.saturating_sub(1));
             return Some(InspectorAction::SelectCategory(c_idx));
         }
@@ -2993,10 +3014,9 @@ pub fn draw_chart_inspector(
         "SERIES:",
         0xFF8b949e,
     );
-    let mut chip_x = series_strip.x + 56.0;
-    for (s_idx, s) in state.chart_data.series.iter().enumerate() {
-        let chip_w = (s.name.len() * 6 + 26).max(50) as f32;
-        let chip_rect = Rect::new(chip_x, series_strip.y + 2.0, chip_w, 22.0);
+    for (s_idx, chip_rect) in get_series_chip_rects(series_strip, &state.chart_data.series) {
+        let s = &state.chart_data.series[s_idx];
+        let chip_w = chip_rect.width;
         let is_hidden = state.hidden_series.contains(&s_idx);
         let is_hovered = chip_rect.contains(mouse_x, mouse_y);
 
@@ -3068,8 +3088,6 @@ pub fn draw_chart_inspector(
             &s.name,
             text_col,
         );
-
-        chip_x += chip_w + 6.0;
     }
 
     // Transform Presets (right-aligned in series_strip)

@@ -228,6 +228,55 @@ fn parse_dimension(val: &str) -> Option<f32> {
     trimmed.parse::<f32>().ok()
 }
 
+fn collect_descendant_bounds(
+    node: &Node<'_, '_>,
+    current_transform: &Transform,
+    min_x: &mut f64,
+    min_y: &mut f64,
+    max_x: &mut f64,
+    max_y: &mut f64,
+    found: &mut bool,
+) {
+    for child in node.children().filter(roxmltree::Node::is_element) {
+        let child_transform = child
+            .attribute("transform")
+            .and_then(|t| Transform::from_str(t).ok())
+            .unwrap_or_default();
+        let full_transform = multiply_transform(current_transform, &child_transform);
+
+        let tag = child.tag_name().name();
+        if tag == "rect" {
+            let x: f64 = child
+                .attribute("x")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let y: f64 = child
+                .attribute("y")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let w: f64 = child
+                .attribute("width")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let h: f64 = child
+                .attribute("height")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+
+            if w > 0.0 && h > 0.0 {
+                let r = transform_rect(&full_transform, x, y, w, h);
+                *min_x = min_x.min(f64::from(r.x));
+                *min_y = min_y.min(f64::from(r.y));
+                *max_x = max_x.max(f64::from(r.x + r.width));
+                *max_y = max_y.max(f64::from(r.y + r.height));
+                *found = true;
+            }
+        } else if tag == "g" || tag == "a" {
+            collect_descendant_bounds(&child, &full_transform, min_x, min_y, max_x, max_y, found);
+        }
+    }
+}
+
 fn parse_a_element(
     node: &Node<'_, '_>,
     root_dir: Option<&Path>,
@@ -251,49 +300,32 @@ fn parse_a_element(
     // Accumulate all ancestor transforms down to this <a> node
     let acc_transform = get_accumulated_transform(node);
 
-    // Look for child elements (e.g. rect) to determine exact bounding box
-    let mut rect_opt = None;
-    for child in node.children().filter(roxmltree::Node::is_element) {
-        if child.tag_name().name() == "rect" {
-            let x: f32 = child
-                .attribute("x")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
-            let y: f32 = child
-                .attribute("y")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
-            let w: f32 = child
-                .attribute("width")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
-            let h: f32 = child
-                .attribute("height")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    let mut found = false;
 
-            if w > 0.0 && h > 0.0 {
-                // If child rect itself has a transform attribute, multiply it
-                let child_transform = child
-                    .attribute("transform")
-                    .and_then(|t| Transform::from_str(t).ok())
-                    .unwrap_or_default();
-                let full_transform = multiply_transform(&acc_transform, &child_transform);
+    collect_descendant_bounds(
+        node,
+        &acc_transform,
+        &mut min_x,
+        &mut min_y,
+        &mut max_x,
+        &mut max_y,
+        &mut found,
+    );
 
-                let r = transform_rect(
-                    &full_transform,
-                    f64::from(x),
-                    f64::from(y),
-                    f64::from(w),
-                    f64::from(h),
-                );
-                rect_opt = Some(r);
-                break;
-            }
-        }
+    if !found || max_x <= min_x || max_y <= min_y {
+        return None;
     }
 
-    let rect = rect_opt?;
+    let rect = Rect::new(
+        min_x as f32,
+        min_y as f32,
+        (max_x - min_x) as f32,
+        (max_y - min_y) as f32,
+    );
 
     if let Some(step_query) = clean_href.strip_prefix("step:") {
         let (order_str, params) = match step_query.split_once('?') {

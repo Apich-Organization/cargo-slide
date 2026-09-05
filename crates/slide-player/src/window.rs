@@ -47,12 +47,12 @@ use slide_core::compiler::SlideCompiler;
 use slide_core::error::Result;
 use slide_core::error::SlideError;
 use slide_core::model::Hotspot;
-use slide_core::model::Rect;
 use slide_core::model::SlideDeck;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -245,8 +245,10 @@ pub fn get_screen_resolution() -> Option<(usize, usize)> {
             return Some((w, h));
         }
         // Fallback: query xrandr if available
-        if let Ok(output) = std::process::Command::new("xrandr").output() {
-            let text = String::from_utf8_lossy(&output.stdout);
+        if let Ok(output) = Command::new("xrandr").output()
+            && output.status.success()
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
             for line in text.lines() {
                 if line.contains(" connected ") {
                     for part in line.split_whitespace() {
@@ -296,6 +298,21 @@ pub fn get_screen_resolution() -> Option<(usize, usize)> {
 
     None
 }
+
+#[cfg(windows)]
+#[allow(clippy::single_call_fn)]
+fn init_dpi_awareness() {
+    unsafe extern "system" {
+        fn SetProcessDpiAwarenessContext(value: isize) -> i32;
+    }
+    unsafe {
+        let _ = SetProcessDpiAwarenessContext(-4);
+    }
+}
+
+#[cfg(not(windows))]
+#[allow(clippy::single_call_fn)]
+const fn init_dpi_awareness() {}
 
 #[cfg(target_os = "linux")]
 fn set_x11_fullscreen(
@@ -458,6 +475,7 @@ impl SlidePlayer {
 
     /// Run the presentation player event loop
     pub fn run(mut self) -> Result<()> {
+        init_dpi_awareness();
         if self.deck.slides.is_empty() {
             return Err(SlideError::Format(
                 "Slide deck has no slides to display".to_string(),
@@ -576,9 +594,18 @@ impl SlidePlayer {
                 && scroll_y != 0.0
             {
                 if let Some(ref mut inspector) = active_chart_inspector {
+                    let (_, _, _, _, _, _, _, right_pane) = get_inspector_layout(width, height);
+                    let header_h = 26.0;
+                    let row_h = 24.0;
+                    let visible_rows =
+                        ((right_pane.height - header_h - 2.0).max(0.0) / row_h) as usize;
+                    let max_scroll = inspector
+                        .chart_data
+                        .categories
+                        .len()
+                        .saturating_sub(visible_rows);
                     if scroll_y < 0.0 {
-                        inspector.table_scroll = (inspector.table_scroll + 1)
-                            .min(inspector.chart_data.categories.len().saturating_sub(1));
+                        inspector.table_scroll = (inspector.table_scroll + 1).min(max_scroll);
                     } else {
                         inspector.table_scroll = inspector.table_scroll.saturating_sub(1);
                     }
@@ -616,19 +643,12 @@ impl SlidePlayer {
                     let bg_color = 0xFF0f111a; // Slide dark background
                     for step in &slide.steps {
                         if step.order > current_step {
-                            let sx1 = (current_metrics.offset_x
-                                + step.rect.x * current_metrics.scale)
-                                .max(0.0) as usize;
-                            let sy1 = (current_metrics.offset_y
-                                + step.rect.y * current_metrics.scale)
-                                .max(0.0) as usize;
-                            let sx2 = ((current_metrics.offset_x
-                                + (step.rect.x + step.rect.width) * current_metrics.scale)
-                                as usize)
-                                .min(width);
-                            let sy2 = ((current_metrics.offset_y
-                                + (step.rect.y + step.rect.height) * current_metrics.scale)
-                                as usize)
+                            let screen_rect = current_metrics.svg_to_screen_rect(&step.rect);
+                            let sx1 = (screen_rect.x.max(0.0) as usize).min(width);
+                            let sy1 = (screen_rect.y.max(0.0) as usize).min(height);
+                            let sx2 =
+                                ((screen_rect.x + screen_rect.width).max(0.0) as usize).min(width);
+                            let sy2 = ((screen_rect.y + screen_rect.height).max(0.0) as usize)
                                 .min(height);
 
                             for y in sy1..sy2 {
@@ -658,13 +678,7 @@ impl SlidePlayer {
                                 chart_type_overrides.get(&(current_idx, hs_idx))
                             && override_type != data.chart_type
                         {
-                            let screen_x =
-                                current_metrics.offset_x + rect.x * current_metrics.scale;
-                            let screen_y =
-                                current_metrics.offset_y + rect.y * current_metrics.scale;
-                            let screen_w = rect.width * current_metrics.scale;
-                            let screen_h = rect.height * current_metrics.scale;
-                            let screen_rect = Rect::new(screen_x, screen_y, screen_w, screen_h);
+                            let screen_rect = current_metrics.svg_to_screen_rect(rect);
                             let empty_set = std::collections::HashSet::new();
                             draw_chart_visualizer(
                                 &mut buffer,
@@ -683,7 +697,18 @@ impl SlidePlayer {
             }
 
             // Mouse handling and cursor style
-            let mouse_pos = window.get_mouse_pos(MouseMode::Pass);
+            let raw_mouse_pos = window.get_mouse_pos(MouseMode::Pass);
+            #[cfg(target_os = "macos")]
+            let mouse_pos = raw_mouse_pos.map(|(mx, my)| {
+                let my = if is_fullscreen {
+                    my + 28.0
+                } else {
+                    my
+                };
+                (mx, my)
+            });
+            #[cfg(not(target_os = "macos"))]
+            let mouse_pos = raw_mouse_pos;
             if mouse_pos != prev_mouse_pos {
                 last_mouse_activity = Instant::now();
                 if cursor_hidden && presenter_mode != PresenterMode::Laser {
@@ -717,10 +742,17 @@ impl SlidePlayer {
                     let header_h = 26.0;
                     let row_h = 24.0;
                     let table_y = right_pane.y + header_h;
-                    if my >= table_y {
-                        let row_idx = ((my - table_y) / row_h) as usize + inspector.table_scroll;
-                        if row_idx < inspector.chart_data.categories.len() {
-                            inspector.hovered_category = Some(row_idx);
+                    let visible_rows =
+                        ((right_pane.height - header_h - 2.0).max(0.0) / row_h) as usize;
+                    if my >= table_y && my < (right_pane.y + right_pane.height) {
+                        let row_slot = ((my - table_y) / row_h) as usize;
+                        if row_slot < visible_rows {
+                            let row_idx = row_slot + inspector.table_scroll;
+                            if row_idx < inspector.chart_data.categories.len() {
+                                inspector.hovered_category = Some(row_idx);
+                            } else {
+                                inspector.hovered_category = None;
+                            }
                         } else {
                             inspector.hovered_category = None;
                         }
@@ -831,11 +863,7 @@ impl SlidePlayer {
                 && let Some(hotspot) = slide.hotspots.get(hs_idx)
             {
                 let rect = hotspot.rect();
-                let screen_x = current_metrics.offset_x + rect.x * current_metrics.scale;
-                let screen_y = current_metrics.offset_y + rect.y * current_metrics.scale;
-                let screen_w = rect.width * current_metrics.scale;
-                let screen_h = rect.height * current_metrics.scale;
-                let screen_rect = Rect::new(screen_x, screen_y, screen_w, screen_h);
+                let screen_rect = current_metrics.svg_to_screen_rect(&rect);
 
                 let color = match hotspot {
                     | Hotspot::Link { .. } => 0xFF58a6ff,  // Blue outline
@@ -940,11 +968,21 @@ impl SlidePlayer {
                                 inspector.hovered_category = Some(cat_idx);
                             },
                             | InspectorAction::ScrollTable(delta) => {
+                                let (_, _, _, _, _, _, _, right_pane) =
+                                    get_inspector_layout(width, height);
+                                let header_h = 26.0;
+                                let row_h = 24.0;
+                                let visible_rows = ((right_pane.height - header_h - 2.0).max(0.0)
+                                    / row_h)
+                                    as usize;
+                                let max_scroll = inspector
+                                    .chart_data
+                                    .categories
+                                    .len()
+                                    .saturating_sub(visible_rows);
                                 if delta > 0 {
                                     inspector.table_scroll =
-                                        (inspector.table_scroll + delta as usize).min(
-                                            inspector.chart_data.categories.len().saturating_sub(1),
-                                        );
+                                        (inspector.table_scroll + delta as usize).min(max_scroll);
                                 } else {
                                     inspector.table_scroll =
                                         inspector.table_scroll.saturating_sub((-delta) as usize);
@@ -1196,8 +1234,20 @@ impl SlidePlayer {
                                 inspector.table_scroll = inspector.table_scroll.saturating_sub(1);
                             },
                             | Key::Down => {
-                                inspector.table_scroll = (inspector.table_scroll + 1)
-                                    .min(inspector.chart_data.categories.len().saturating_sub(1));
+                                let (_, _, _, _, _, _, _, right_pane) =
+                                    get_inspector_layout(width, height);
+                                let header_h = 26.0;
+                                let row_h = 24.0;
+                                let visible_rows = ((right_pane.height - header_h - 2.0).max(0.0)
+                                    / row_h)
+                                    as usize;
+                                let max_scroll = inspector
+                                    .chart_data
+                                    .categories
+                                    .len()
+                                    .saturating_sub(visible_rows);
+                                inspector.table_scroll =
+                                    (inspector.table_scroll + 1).min(max_scroll);
                             },
                             | Key::O => {
                                 inspector.set_transform(slide_core::chart::ChartTransform::None)
@@ -1385,16 +1435,8 @@ impl SlidePlayer {
                     if let Some(slide) = self.deck.get_slide(current_idx)
                         && let Some(fragment) = slide.steps.iter().find(|s| s.order == current_step)
                     {
-                        let screen_x =
-                            current_metrics.offset_x + fragment.rect.x * current_metrics.scale;
-                        let screen_y =
-                            current_metrics.offset_y + fragment.rect.y * current_metrics.scale;
-                        let screen_w = fragment.rect.width * current_metrics.scale;
-                        let screen_h = fragment.rect.height * current_metrics.scale;
-                        transition_mgr.start_component_step(
-                            &fragment.effect,
-                            Rect::new(screen_x, screen_y, screen_w, screen_h),
-                        );
+                        let screen_rect = current_metrics.svg_to_screen_rect(&fragment.rect);
+                        transition_mgr.start_component_step(&fragment.effect, screen_rect);
                     }
                 } else if current_idx + 1 < total_slides {
                     next_slide = true;

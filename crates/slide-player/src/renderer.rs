@@ -33,8 +33,28 @@ impl SvgRenderer {
         let tree = Tree::from_str(&sanitized_svg, &self.options)
             .map_err(|e| SlideError::SvgParse(format!("usvg error: {}", e)))?;
 
-        let svg_w = tree.size().width();
-        let svg_h = tree.size().height();
+        let (vb_x, vb_y, vb_w, vb_h) = match slide_core::svg::parse_svg_slide(svg_content) {
+            | Ok(info) => {
+                (
+                    info.view_box.x,
+                    info.view_box.y,
+                    info.view_box.width,
+                    info.view_box.height,
+                )
+            },
+            | Err(_) => (0.0, 0.0, tree.size().width(), tree.size().height()),
+        };
+
+        let svg_w = if vb_w > 0.0 {
+            vb_w
+        } else {
+            tree.size().width()
+        };
+        let svg_h = if vb_h > 0.0 {
+            vb_h
+        } else {
+            tree.size().height()
+        };
 
         if target_width == 0 || target_height == 0 || svg_w <= 0.0 || svg_h <= 0.0 {
             return Ok((
@@ -97,6 +117,8 @@ impl SvgRenderer {
             offset_y: offset_y as f32,
             content_width: content_w as f32,
             content_height: content_h as f32,
+            view_box_x: vb_x,
+            view_box_y: vb_y,
         };
 
         Ok((surface, metrics))

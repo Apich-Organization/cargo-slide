@@ -1365,14 +1365,14 @@ impl ChartData {
         &self,
         chart_rect: Rect,
     ) -> Rect {
-        let left = 55.0f32;
-        let right = 20.0f32;
+        let left = 46.0f32;
+        let right = 26.0f32;
         let top = if self.title.is_some() {
-            36.0f32
+            35.0f32
         } else {
             20.0f32
         };
-        let bottom = 32.0f32;
+        let bottom = 25.0f32;
 
         Rect::new(
             chart_rect.x + left,

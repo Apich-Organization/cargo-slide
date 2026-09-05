@@ -39,6 +39,8 @@ pub struct RenderMetrics {
     pub offset_y: f32,
     pub content_width: f32,
     pub content_height: f32,
+    pub view_box_x: f32,
+    pub view_box_y: f32,
 }
 
 impl RenderMetrics {
@@ -61,24 +63,40 @@ impl RenderMetrics {
             return None;
         }
 
-        let svg_x = (screen_x - self.offset_x) / self.scale;
-        let svg_y = (screen_y - self.offset_y) / self.scale;
+        let svg_x = self.view_box_x + (screen_x - self.offset_x) / self.scale;
+        let svg_y = self.view_box_y + (screen_y - self.offset_y) / self.scale;
         Some((svg_x, svg_y))
     }
 
     /// Convert SVG coordinate (x, y) to window screen coordinates
     #[must_use]
-    pub const fn svg_to_screen(
+    pub fn svg_to_screen(
         &self,
         svg_x: f32,
         svg_y: f32,
     ) -> (f32, f32) {
         (
-            svg_x.mul_add(self.scale, self.offset_x),
-            svg_y.mul_add(self.scale, self.offset_y),
+            (svg_x - self.view_box_x).mul_add(self.scale, self.offset_x),
+            (svg_y - self.view_box_y).mul_add(self.scale, self.offset_y),
         )
     }
+
+    /// Convert SVG `Rect` to window screen coordinate `Rect`
+    #[must_use]
+    pub fn svg_to_screen_rect(
+        &self,
+        rect: &Rect,
+    ) -> Rect {
+        let (x, y) = self.svg_to_screen(rect.x, rect.y);
+        Rect {
+            x,
+            y,
+            width: rect.width * self.scale,
+            height: rect.height * self.scale,
+        }
+    }
 }
+
 
 /// Interactive hotspot on a slide
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

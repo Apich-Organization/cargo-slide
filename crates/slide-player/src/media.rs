@@ -23,8 +23,10 @@ impl MediaPlayer {
                 .arg("Cargo Slide Video Player")
                 .arg(video_path);
 
-            let child = cmd.spawn()?;
-            let _ = child.wait_with_output();
+            let mut child = cmd.spawn()?;
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
             return Ok(());
         }
 
@@ -34,8 +36,10 @@ impl MediaPlayer {
         {
             let mut cmd = Command::new("mpv");
             cmd.arg("--fs").arg(video_path);
-            let child = cmd.spawn()?;
-            let _ = child.wait_with_output();
+            let mut child = cmd.spawn()?;
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
             return Ok(());
         }
 
