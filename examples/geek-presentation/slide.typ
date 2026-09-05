@@ -70,13 +70,13 @@
   if title != none [
     #block(
       width: 100%,
-      inset: (bottom: 0.5cm),
+      inset: (bottom: 0.35cm),
       stroke: (bottom: 1pt + slide-colors.card-border),
       [
-        #text(size: 20pt, weight: "bold", fill: slide-colors.accent)[#title]
+        #text(size: 19pt, weight: "bold", fill: slide-colors.accent)[#title]
       ]
     )
-    #v(0.2cm)
+    #v(0.12cm)
   ]
   
   body

@@ -153,6 +153,21 @@ impl SlideCompiler {
         // Preprocess any SQLite database and JSON chart queries so Typst can load cached CSV
         preprocess_charts(typ_file, &root_dir);
 
+        // Auto-detect project font directories and TYPST_FONT_PATHS for cross-platform deterministic rendering
+        let fonts_dir = root_dir.join("fonts");
+        if fonts_dir.is_dir() {
+            cmd.arg("--font-path").arg(&fonts_dir);
+        }
+        let assets_fonts_dir = root_dir.join("assets").join("fonts");
+        if assets_fonts_dir.is_dir() {
+            cmd.arg("--font-path").arg(&assets_fonts_dir);
+        }
+        if let Ok(extra_fonts) = std::env::var("TYPST_FONT_PATHS") {
+            for p in std::env::split_paths(&extra_fonts) {
+                cmd.arg("--font-path").arg(p);
+            }
+        }
+
         cmd.arg("--root").arg(&root_dir);
 
         let output = cmd.output().map_err(|e| {
@@ -185,13 +200,19 @@ impl SlideCompiler {
                 "Typst compilation failed:\n{full_err}"
             )));
         } else if !stderr.trim().is_empty() {
+            let mut warn_text = format!("⚠️ Typst compiler warning:\n{}", stderr.trim());
+            let has_font_warning = stderr.contains("unknown font family");
+            if has_font_warning {
+                warn_text.push_str("\n💡 Tip: Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.");
+            }
             crate::logger::log_event(
                 "warn",
-                &format!("⚠️ Typst compiler warning:\n{}", stderr.trim()),
+                &warn_text,
                 Some(serde_json::json!({
                     "stage": "typst_compile",
                     "status": "warning",
                     "warning": stderr.trim(),
+                    "has_font_warning": has_font_warning,
                     "file": typ_file.display().to_string(),
                 })),
             );
@@ -260,17 +281,48 @@ impl SlideCompiler {
                 std::path::Path::to_path_buf,
             );
 
+        let fonts_dir = root_dir.join("fonts");
+        if fonts_dir.is_dir() {
+            cmd.arg("--font-path").arg(&fonts_dir);
+        }
+        let assets_fonts_dir = root_dir.join("assets").join("fonts");
+        if assets_fonts_dir.is_dir() {
+            cmd.arg("--font-path").arg(&assets_fonts_dir);
+        }
+        if let Ok(extra_fonts) = std::env::var("TYPST_FONT_PATHS") {
+            for p in std::env::split_paths(&extra_fonts) {
+                cmd.arg("--font-path").arg(p);
+            }
+        }
+
         cmd.arg("--root").arg(&root_dir);
 
         let output = cmd
             .output()
             .map_err(|e| SlideError::Compilation(format!("Failed to execute typst: {e}")))?;
 
+        let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(SlideError::Compilation(format!(
                 "Typst compilation failed:\n{stderr}"
             )));
+        } else if !stderr.trim().is_empty() {
+            let mut warn_text = format!("⚠️ Typst compiler warning:\n{}", stderr.trim());
+            let has_font_warning = stderr.contains("unknown font family");
+            if has_font_warning {
+                warn_text.push_str("\n💡 Tip: Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.");
+            }
+            crate::logger::log_event(
+                "warn",
+                &warn_text,
+                Some(serde_json::json!({
+                    "stage": "typst_compile_pdf",
+                    "status": "warning",
+                    "warning": stderr.trim(),
+                    "has_font_warning": has_font_warning,
+                    "file": typ_file.display().to_string(),
+                })),
+            );
         }
 
         Ok(())

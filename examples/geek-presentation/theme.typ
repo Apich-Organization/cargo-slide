@@ -4,6 +4,8 @@
 #let slide-theme(
   aspect-ratio: "16-9",
   theme: "dark",
+  font: none,
+  code-font: none,
   body
 ) = {
   let page-width = 28cm
@@ -20,7 +22,7 @@
   set page(
     width: page-width,
     height: page-height,
-    margin: (x: 1.6cm, top: 1.1cm, bottom: 1.0cm),
+    margin: (x: 1.6cm, top: 0.9cm, bottom: 0.8cm),
     fill: bg-color,
     footer: context [
       #set text(size: 9pt, fill: rgb("8b949e"))
@@ -37,11 +39,52 @@
     ]
   )
 
+  let default-fonts = (
+    "Noto Sans",
+    "Segoe UI",
+    "SF Pro Display",
+    "SF Pro Text",
+    "Helvetica Neue",
+    "Cantarell",
+    "Arial",
+    "PingFang SC",
+    "Microsoft YaHei",
+    "Noto Sans CJK SC",
+    "Source Han Sans SC",
+    "WenQuanYi Micro Hei",
+    "Liberation Sans",
+    "DejaVu Sans",
+  )
+
+  let active-fonts = if font != none {
+    if type(font) == array { font + default-fonts }
+    else { (font,) + default-fonts }
+  } else {
+    default-fonts
+  }
+
   set text(
-    font: ("Noto Sans", "Open Sans", "Cantarell", "Adwaita Sans", "DejaVu Sans Mono"),
-    size: 13pt,
+    font: active-fonts,
+    size: 11.5pt,
     fill: fg-color,
   )
+
+  let default-code-fonts = (
+    "DejaVu Sans Mono",
+    "Consolas",
+    "SF Mono",
+    "Cascadia Code",
+    "Liberation Mono",
+    "Menlo",
+    "Courier New",
+  )
+
+  let active-code-fonts = if code-font != none {
+    if type(code-font) == array { code-font + default-code-fonts }
+    else { (code-font,) + default-code-fonts }
+  } else {
+    default-code-fonts
+  }
 
   // Math formula styling
   show math.equation: set text(weight: "regular")
@@ -50,14 +93,15 @@
   show link: it => text(fill: rgb("58a6ff"))[#it]
 
   // Raw code block styling
+  show raw: set text(font: active-code-fonts)
   show raw.where(block: true): it => block(
     width: 100%,
     fill: rgb("161b22"),
-    inset: 10pt,
+    inset: 9pt,
     radius: 6pt,
     stroke: 1pt + rgb("30363d"),
     [
-      #set text(size: 11pt)
+      #set text(size: 10pt)
       #it
     ]
   )

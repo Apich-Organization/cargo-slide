@@ -185,8 +185,13 @@ If `--rust` is supplied, `Cargo.toml` and `src/main.rs` are added for trait exte
 ### Q4: How does video playback work?
 Typst generates a styled video placeholder card with an embedded hotspot bounding box. During presentation, clicking the video card dispatches the video path to an external hardware-accelerated player (`mpv`, `ffplay`, or default system handler) in a detached sub-process. This ensures smooth 4K 60FPS playback with zero GPU overhead on the presentation engine itself.
 
-### Q5: How does font rendering work on machines without fonts installed?
-Typst vectorizes all text glyphs into SVG `<defs><path id="..."/></defs>` outlines during compilation. The presentation player rasterizes these mathematical Bézier paths directly through `tiny-skia`. As a result, CJK characters (Chinese, Japanese, Korean), math fonts (Computer Modern), and custom typefaces render with exact fidelity on any machine, regardless of local system fonts.
+### Q5: How do custom fonts and cross-platform font rendering work?
+- **Vectorized Glyph Output**: Typst vectorizes text glyphs into SVG `<path>` outlines during compilation. The presentation player rasterizes these mathematical Bézier curves directly through `tiny-skia`, ensuring that presentations look identical on all machines without requiring target systems to have fonts installed.
+- **Custom Fonts**: Authors can customize fonts in three flexible ways:
+  1. **Theme configuration**: Pass `font: "Inter"` (or an array `font: ("Inter", "PingFang SC")`) and `code-font: "Fira Code"` directly into `#show: slide-theme.with(...)`.
+  2. **Typst primitives**: Use `#set text(font: "...")` anywhere in `slides.typ`.
+  3. **Bundling local font files**: Drop `.ttf` or `.otf` font files into a `fonts/` or `assets/fonts/` directory in your presentation project. `cargo-slide` automatically detects them and passes `--font-path` to Typst. You can also specify the `TYPST_FONT_PATHS` environment variable.
+- **Missing Font Warnings**: If a requested font family cannot be found on your system or in bundled font directories, Typst emits an `unknown font family` warning. `cargo-slide` catches this warning and displays an actionable notice with bundling tips while safely falling back to available system fonts.
 
 ### Q6: How does slide overflow protection work?
 In Typst, when content exceeds the 16:9 vertical page height (15.75 cm), Typst inserts an implicit pagebreak, creating an orphan spillover page that disrupts slide numbering.  
