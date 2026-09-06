@@ -952,6 +952,7 @@ impl SlidePlayer {
         let mut slide_ink: HashMap<usize, Vec<InkStroke>> = HashMap::new();
         let mut active_pen_stroke: Option<InkStroke> = None;
         let mut laser_trail: VecDeque<(usize, usize, Instant)> = VecDeque::new();
+        let mut laser_trail_scratch: Vec<(usize, usize, f32)> = Vec::with_capacity(64);
 
         // In-slide component step state
         let get_max_step = |deck: &SlideDeck, idx: usize| -> usize {
@@ -1172,11 +1173,15 @@ impl SlidePlayer {
                         let c_idx = (((mx - px) / col_w) as usize).min(cat_count.saturating_sub(1));
                         inspector.hovered_category = Some(c_idx);
                         if window.get_mouse_down(MouseButton::Left) {
+                            let old_range = inspector.marquee_range;
                             if let Some(start) = inspector.marquee_drag_start {
                                 inspector.marquee_range = Some((start, c_idx));
                             } else {
                                 inspector.marquee_drag_start = Some(c_idx);
                                 inspector.marquee_range = Some((c_idx, c_idx));
+                            }
+                            if inspector.marquee_range != old_range {
+                                inspector.recompute_cache();
                             }
                         }
                     } else {
@@ -1481,6 +1486,7 @@ impl SlidePlayer {
                                     inspector.sort_column = Some(col);
                                     inspector.sort_ascending = true;
                                 }
+                                inspector.recompute_cache();
                                 let label = if col == 0 {
                                     format!(
                                         "Sorted by Category {}",
@@ -1911,6 +1917,7 @@ impl SlidePlayer {
                                 },
                                 | _ => {},
                             }
+                            inspector.recompute_cache();
                         } else {
                             match key {
                                 | Key::Escape => {
@@ -2268,15 +2275,19 @@ impl SlidePlayer {
 
             // Draw laser pointer and trailing effect if in Laser mode
             if presenter_mode == PresenterMode::Laser {
-                let trail_data: Vec<(usize, usize, f32)> = laser_trail
-                    .iter()
-                    .map(|(x, y, t)| {
-                        let age_ms = now.duration_since(*t).as_millis() as f32;
-                        let freshness = (1.0 - age_ms / 220.0).clamp(0.0, 1.0);
-                        (*x, *y, freshness)
-                    })
-                    .collect();
-                render_laser_trail(&mut buffer, width, height, &trail_data, active_color);
+                laser_trail_scratch.clear();
+                laser_trail_scratch.extend(laser_trail.iter().map(|(x, y, t)| {
+                    let age_ms = now.duration_since(*t).as_millis() as f32;
+                    let freshness = (1.0 - age_ms / 220.0).clamp(0.0, 1.0);
+                    (*x, *y, freshness)
+                }));
+                render_laser_trail(
+                    &mut buffer,
+                    width,
+                    height,
+                    &laser_trail_scratch,
+                    active_color,
+                );
 
                 if let Some((mx, my)) = mouse_pos
                     && mx >= 0.0

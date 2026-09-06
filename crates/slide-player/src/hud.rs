@@ -1599,17 +1599,21 @@ fn draw_char(
     };
 
     for (row, bits) in bitmap.iter().enumerate() {
-        let py = y + row;
+        let py = y.saturating_add(row);
         if py >= height {
             break;
         }
+        let row_start = py.saturating_mul(width);
         for col in 0..5 {
-            let px = x + col;
+            let px = x.saturating_add(col);
             if px >= width {
                 break;
             }
-            if (bits & (1 << (4 - col))) != 0 {
-                buffer[py * width + px] = color;
+            let shift = 4usize.saturating_sub(col);
+            if (bits & (1 << shift)) != 0
+                && let Some(pixel) = buffer.get_mut(row_start.saturating_add(px))
+            {
+                *pixel = color;
             }
         }
     }
@@ -1705,6 +1709,9 @@ pub struct ChartInspectorState {
     pub sort_ascending: bool,
     pub marquee_range: Option<(usize, usize)>,
     pub marquee_drag_start: Option<usize>,
+
+    pub cached_filtered_indices: Vec<usize>,
+    pub cached_stats: slide_core::chart::ChartStats,
 }
 
 impl ChartInspectorState {
@@ -1712,12 +1719,15 @@ impl ChartInspectorState {
         chart_data: ChartData,
         initial_type: ChartType,
     ) -> Self {
+        let empty_set = std::collections::HashSet::new();
+        let cached_filtered_indices: Vec<usize> = (0..chart_data.categories.len()).collect();
+        let cached_stats = chart_data.summary_stats_filtered(&empty_set, &cached_filtered_indices);
         Self {
             original_chart_data: chart_data.clone(),
             chart_data,
             active_type: initial_type,
             active_transform: ChartTransform::None,
-            hidden_series: std::collections::HashSet::new(),
+            hidden_series: empty_set,
             hovered_category: None,
             hovered_series: None,
             table_scroll: 0,
@@ -1728,6 +1738,8 @@ impl ChartInspectorState {
             sort_ascending: true,
             marquee_range: None,
             marquee_drag_start: None,
+            cached_filtered_indices,
+            cached_stats,
         }
     }
 
@@ -1737,6 +1749,7 @@ impl ChartInspectorState {
         self.marquee_range = None;
         self.marquee_drag_start = None;
         self.table_scroll = 0;
+        self.recompute_cache();
         self.show_toast("Filter Cleared");
     }
 
@@ -1762,9 +1775,10 @@ impl ChartInspectorState {
             | NumberFormat::Standard => "Format: Standard",
         };
         self.show_toast(name);
+        self.recompute_cache();
     }
 
-    pub fn get_filtered_category_indices(&self) -> Vec<usize> {
+    pub fn compute_filtered_category_indices(&self) -> Vec<usize> {
         let total_cats = self.chart_data.categories.len();
         let mut indices: Vec<usize> = (0..total_cats).collect();
 
@@ -1870,6 +1884,18 @@ impl ChartInspectorState {
         indices
     }
 
+    pub fn recompute_cache(&mut self) {
+        self.cached_filtered_indices = self.compute_filtered_category_indices();
+        self.cached_stats = self
+            .chart_data
+            .summary_stats_filtered(&self.hidden_series, &self.cached_filtered_indices);
+    }
+
+    #[must_use]
+    pub fn get_filtered_category_indices(&self) -> &[usize] {
+        &self.cached_filtered_indices
+    }
+
     pub fn set_transform(
         &mut self,
         transform: ChartTransform,
@@ -1892,6 +1918,7 @@ impl ChartInspectorState {
             };
             self.show_toast(&msg);
         }
+        self.recompute_cache();
     }
 
     pub fn cycle_type(&mut self) {
@@ -1918,6 +1945,7 @@ impl ChartInspectorState {
                     self.hidden_series.insert(s_idx);
                 }
             }
+            self.recompute_cache();
         }
     }
 
@@ -2039,12 +2067,17 @@ pub fn fill_rect(
     h: usize,
     color: u32,
 ) {
-    let x2 = (x + w).min(width);
-    let y2 = (y + h).min(height);
-    for py in y.min(height)..y2 {
-        let row = py * width;
-        for px in x.min(width)..x2 {
-            buffer[row + px] = color;
+    let x2 = (x.saturating_add(w)).min(width);
+    let y2 = (y.saturating_add(h)).min(height);
+    let start_x = x.min(width);
+    if start_x < x2 {
+        for py in y.min(height)..y2 {
+            let row = py.saturating_mul(width);
+            let start = row.saturating_add(start_x);
+            let end = row.saturating_add(x2);
+            if let Some(slice) = buffer.get_mut(start..end) {
+                slice.fill(color);
+            }
         }
     }
 }
@@ -2061,12 +2094,19 @@ pub fn fill_rect_alpha(
     color: u32,
     alpha_256: u32,
 ) {
-    let x2 = (x + w).min(width);
-    let y2 = (y + h).min(height);
-    for py in y.min(height)..y2 {
-        let row = py * width;
-        for px in x.min(width)..x2 {
-            buffer[row + px] = blend_pixel_fast(buffer[row + px], color, alpha_256);
+    let x2 = (x.saturating_add(w)).min(width);
+    let y2 = (y.saturating_add(h)).min(height);
+    let start_x = x.min(width);
+    if start_x < x2 {
+        for py in y.min(height)..y2 {
+            let row = py.saturating_mul(width);
+            let start = row.saturating_add(start_x);
+            let end = row.saturating_add(x2);
+            if let Some(slice) = buffer.get_mut(start..end) {
+                for pixel in slice {
+                    *pixel = blend_pixel_fast(*pixel, color, alpha_256);
+                }
+            }
         }
     }
 }
@@ -3561,20 +3601,63 @@ pub fn draw_chart_inspector(
         right_pane,
     ) = get_inspector_layout(width, height);
 
-    // 1. Fullscreen dark glass backdrop
-    fill_rect_alpha(buffer, width, height, 0, 0, width, height, 0x00000000, 180);
+    // 1. Dark glass backdrop on surrounding margins outside modal dialog (avoids blending 2M interior pixels)
+    let mx = modal_rect.x as usize;
+    let my = modal_rect.y as usize;
+    let mw = modal_rect.width as usize;
+    let mh = modal_rect.height as usize;
+    let mx2 = mx.saturating_add(mw).min(width);
+    let my2 = my.saturating_add(mh).min(height);
+
+    // Top margin
+    if my > 0 {
+        fill_rect_alpha(buffer, width, height, 0, 0, width, my, 0x0000_0000, 180);
+    }
+    // Bottom margin
+    if my2 < height {
+        fill_rect_alpha(
+            buffer,
+            width,
+            height,
+            0,
+            my2,
+            width,
+            height.saturating_sub(my2),
+            0x0000_0000,
+            180,
+        );
+    }
+    // Left margin
+    if mx > 0 && my2 > my {
+        fill_rect_alpha(
+            buffer,
+            width,
+            height,
+            0,
+            my,
+            mx,
+            my2.saturating_sub(my),
+            0x0000_0000,
+            180,
+        );
+    }
+    // Right margin
+    if mx2 < width && my2 > my {
+        fill_rect_alpha(
+            buffer,
+            width,
+            height,
+            mx2,
+            my,
+            width.saturating_sub(mx2),
+            my2.saturating_sub(my),
+            0x0000_0000,
+            180,
+        );
+    }
 
     // 2. Main modal dialog body
-    fill_rect(
-        buffer,
-        width,
-        height,
-        modal_rect.x as usize,
-        modal_rect.y as usize,
-        modal_rect.width as usize,
-        modal_rect.height as usize,
-        0xFF0d1117,
-    );
+    fill_rect(buffer, width, height, mx, my, mw, mh, 0xFF0d1117);
     draw_rect_outline(
         buffer,
         width,
@@ -3894,11 +3977,9 @@ pub fn draw_chart_inspector(
         draw_text_centered(buffer, width, height, rect, label, text_col);
     }
 
-    // 5. KPI Stat Cards Strip (dynamically computed on filtered records)
+    // 5. KPI Stat Cards Strip (using precomputed cached stats)
     let filtered_indices = state.get_filtered_category_indices();
-    let stats = state
-        .chart_data
-        .summary_stats_filtered(&state.hidden_series, &filtered_indices);
+    let stats = &state.cached_stats;
     let card_count = 6.0;
     let gap = 6.0;
     let kpi_w = (kpi_strip.width - (card_count - 1.0) * gap) / card_count;
@@ -4289,10 +4370,9 @@ pub fn draw_chart_inspector(
     } else {
         for row_i in 0..visible_rows {
             let list_idx = state.table_scroll.saturating_add(row_i);
-            if list_idx >= filtered_indices.len() {
+            let Some(&cat_idx) = filtered_indices.get(list_idx) else {
                 break;
-            }
-            let cat_idx = filtered_indices[list_idx];
+            };
             let row_y = table_y.saturating_add(row_i.saturating_mul(row_h));
             let is_hovered = state.hovered_category == Some(cat_idx);
 
@@ -4523,19 +4603,22 @@ mod tests {
 
         // Filter by numeric query "> 150"
         inspector.search_query = "> 150".into();
+        inspector.recompute_cache();
         let filtered = inspector.get_filtered_category_indices();
         // Series Revenue has 120, 200, 150, 310. Q2 (200) and Q4 (310) match.
-        assert_eq!(filtered, vec![1, 3]);
+        assert_eq!(filtered, &[1, 3]);
 
         // Filter by text query "Q1"
         inspector.search_query = "q1".into();
-        assert_eq!(inspector.get_filtered_category_indices(), vec![0]);
+        inspector.recompute_cache();
+        assert_eq!(inspector.get_filtered_category_indices(), &[0]);
 
         // Sorting by category descending
         inspector.search_query.clear();
         inspector.sort_column = Some(0);
         inspector.sort_ascending = false;
-        assert_eq!(inspector.get_filtered_category_indices(), vec![3, 2, 1, 0]);
+        inspector.recompute_cache();
+        assert_eq!(inspector.get_filtered_category_indices(), &[3, 2, 1, 0]);
 
         // Clear filter
         inspector.clear_filter();

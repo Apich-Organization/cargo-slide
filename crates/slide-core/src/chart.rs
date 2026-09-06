@@ -593,7 +593,7 @@ impl ChartData {
         &self,
         sql: &str,
     ) -> Result<Self> {
-        let conn = rusqlite::Connection::open_in_memory().map_err(|e| {
+        let mut conn = rusqlite::Connection::open_in_memory().map_err(|e| {
             SlideError::Database(format!("Failed to create in-memory SQLite database: {e}"))
         })?;
 
@@ -633,34 +633,50 @@ impl ChartData {
         conn.execute(&create_sql, [])
             .map_err(|e| SlideError::Database(format!("Failed to create in-memory table: {e}")))?;
 
+        let mut insert_sql = String::from("INSERT INTO data (id, category");
+        for col in &col_names {
+            insert_sql.push_str(&format!(", \"{col}\""));
+        }
+        insert_sql.push_str(") VALUES (?1, ?2");
+        for (i, _) in col_names.iter().enumerate() {
+            insert_sql.push_str(&format!(", ?{}", i.saturating_add(3)));
+        }
+        insert_sql.push(')');
+
         let row_count = self.categories.len();
-        for row_idx in 0..row_count {
-            let cat = self.categories.get(row_idx).cloned().unwrap_or_default();
-            let mut insert_sql = String::from("INSERT INTO data (id, category");
-            for col in &col_names {
-                insert_sql.push_str(&format!(", \"{col}\""));
-            }
-            insert_sql.push_str(") VALUES (?1, ?2");
-            for i in 0..col_names.len() {
-                insert_sql.push_str(&format!(", ?{}", i + 3));
-            }
-            insert_sql.push(')');
-
-            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-            let id = (row_idx + 1) as i64;
-            params.push(Box::new(id));
-            params.push(Box::new(cat));
-            for s in &self.series {
-                let v = s.values.get(row_idx).copied().unwrap_or(0.0);
-                params.push(Box::new(v));
-            }
-
-            let slice: Vec<&dyn rusqlite::ToSql> =
-                params.iter().map(std::convert::AsRef::as_ref).collect();
-            conn.execute(&insert_sql, rusqlite::params_from_iter(slice))
-                .map_err(|e| {
-                    SlideError::Database(format!("Failed to insert row into in-memory table: {e}"))
+        {
+            let tx = conn
+                .transaction()
+                .map_err(|e| SlideError::Database(format!("Failed to start transaction: {e}")))?;
+            {
+                let mut stmt = tx.prepare(&insert_sql).map_err(|e| {
+                    SlideError::Database(format!("Failed to prepare insert statement: {e}"))
                 })?;
+                for row_idx in 0..row_count {
+                    let cat = self.categories.get(row_idx).cloned().unwrap_or_default();
+                    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+                        Vec::with_capacity(self.series.len().saturating_add(2));
+                    let id = (row_idx.saturating_add(1)) as i64;
+                    params.push(Box::new(id));
+                    params.push(Box::new(cat));
+                    for s in &self.series {
+                        let v = s.values.get(row_idx).copied().unwrap_or(0.0);
+                        params.push(Box::new(v));
+                    }
+
+                    let slice: Vec<&dyn rusqlite::ToSql> =
+                        params.iter().map(std::convert::AsRef::as_ref).collect();
+                    stmt.execute(rusqlite::params_from_iter(slice))
+                        .map_err(|e| {
+                            SlideError::Database(format!(
+                                "Failed to insert row into in-memory table: {e}"
+                            ))
+                        })?;
+                }
+            }
+            tx.commit().map_err(|e| {
+                SlideError::Database(format!("Failed to commit insert transaction: {e}"))
+            })?;
         }
 
         let mut stmt = conn
@@ -1320,10 +1336,11 @@ impl ChartData {
         let mut total_sum = 0.0f64;
         let mut max_val = f64::NEG_INFINITY;
         let mut min_val = f64::INFINITY;
-        let mut max_cat = String::new();
-        let mut max_series = String::new();
-        let mut min_cat = String::new();
-        let mut all_vals = Vec::new();
+        let mut max_c_idx = None;
+        let mut max_s_idx = None;
+        let mut min_c_idx = None;
+        let mut all_vals =
+            Vec::with_capacity(self.series.len().saturating_mul(category_indices.len()));
 
         for (s_idx, s) in self.series.iter().enumerate() {
             if hidden_series.contains(&s_idx) {
@@ -1333,19 +1350,31 @@ impl ChartData {
                 if let Some(&val) = s.values.get(c_idx) {
                     all_vals.push(val);
                     total_sum += val;
-                    let cat_name = self.categories.get(c_idx).cloned().unwrap_or_default();
                     if val > max_val {
                         max_val = val;
-                        max_cat = cat_name.clone();
-                        max_series = s.name.clone();
+                        max_c_idx = Some(c_idx);
+                        max_s_idx = Some(s_idx);
                     }
                     if val < min_val {
                         min_val = val;
-                        min_cat = cat_name;
+                        min_c_idx = Some(c_idx);
                     }
                 }
             }
         }
+
+        let max_cat = max_c_idx
+            .and_then(|idx| self.categories.get(idx))
+            .cloned()
+            .unwrap_or_default();
+        let max_series = max_s_idx
+            .and_then(|idx| self.series.get(idx))
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        let min_cat = min_c_idx
+            .and_then(|idx| self.categories.get(idx))
+            .cloned()
+            .unwrap_or_default();
 
         let count = all_vals.len();
         let avg = if count > 0 {

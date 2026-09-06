@@ -122,28 +122,26 @@ impl SvgRenderer {
         };
 
         // Allocate surface buffer for full window and blit pixmap with seamless letterbox padding
-        let mut surface_pixels = vec![detected_bg; target_width * target_height];
+        let total_pixels = target_width.saturating_mul(target_height);
+        let mut surface_pixels = vec![detected_bg; total_pixels];
+
+        let copy_w = content_w.min(target_width.saturating_sub(offset_x));
+        let copy_bytes = copy_w.saturating_mul(4);
 
         for cy in 0..content_h {
-            let win_y = offset_y + cy;
+            let win_y = offset_y.saturating_add(cy);
             if win_y >= target_height {
                 break;
             }
-            let win_row_start = win_y * target_width;
-            let pix_row_start = cy * content_w * 4;
+            let win_row_start = win_y.saturating_mul(target_width).saturating_add(offset_x);
+            let pix_row_start = cy.saturating_mul(content_w).saturating_mul(4);
 
-            for cx in 0..content_w {
-                let win_x = offset_x + cx;
-                if win_x >= target_width {
-                    break;
-                }
-                let idx = pix_row_start + cx * 4;
-                if let (Some(&r), Some(&g), Some(&b), Some(&a)) = (
-                    pixmap_data.get(idx),
-                    pixmap_data.get(idx + 1),
-                    pixmap_data.get(idx + 2),
-                    pixmap_data.get(idx + 3),
-                ) && let Some(pixel) = surface_pixels.get_mut(win_row_start + win_x)
+            if let (Some(src_row), Some(dst_row)) = (
+                pixmap_data.get(pix_row_start..pix_row_start.saturating_add(copy_bytes)),
+                surface_pixels.get_mut(win_row_start..win_row_start.saturating_add(copy_w)),
+            ) {
+                for (&[r, g, b, a], pixel) in
+                    src_row.as_chunks::<4>().0.iter().zip(dst_row.iter_mut())
                 {
                     *pixel =
                         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);

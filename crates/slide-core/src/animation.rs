@@ -128,10 +128,14 @@ impl SlideSurface {
                 let sx2 = ((screen_rect.x + screen_rect.width).max(0.0) as usize).min(self.width);
                 let sy2 = ((screen_rect.y + screen_rect.height).max(0.0) as usize).min(self.height);
 
-                for y in sy1..sy2 {
-                    let row = y * self.width;
-                    for x in sx1..sx2 {
-                        self.pixels[row + x] = bg_color;
+                if sx1 < sx2 {
+                    for y in sy1..sy2 {
+                        let row = y.saturating_mul(self.width);
+                        let start = row.saturating_add(sx1);
+                        let end = row.saturating_add(sx2);
+                        if let Some(slice) = self.pixels.get_mut(start..end) {
+                            slice.fill(bg_color);
+                        }
                     }
                 }
             }
@@ -145,17 +149,28 @@ impl SlideSurface {
         progress: f32,
     ) {
         let t = progress.clamp(0.0, 1.0);
+        let alpha_256 = (t * 256.0).round() as u32;
         let len = self.pixels.len().min(to.pixels.len());
         match from {
             | Some(f) => {
                 let f_len = len.min(f.pixels.len());
-                for i in 0..f_len {
-                    self.pixels[i] = blend_pixel(f.pixels[i], to.pixels[i], t);
+                if let (Some(dst), Some(src_f), Some(src_to)) = (
+                    self.pixels.get_mut(..f_len),
+                    f.pixels.get(..f_len),
+                    to.pixels.get(..f_len),
+                ) {
+                    for (d, (&p1, &p2)) in dst.iter_mut().zip(src_f.iter().zip(src_to.iter())) {
+                        *d = blend_pixel_fast(p1, p2, alpha_256);
+                    }
                 }
             },
             | None => {
-                for i in 0..len {
-                    self.pixels[i] = blend_pixel(0xFF000000, to.pixels[i], t);
+                if let (Some(dst), Some(src_to)) =
+                    (self.pixels.get_mut(..len), to.pixels.get(..len))
+                {
+                    for (d, &p2) in dst.iter_mut().zip(src_to.iter()) {
+                        *d = blend_pixel_fast(0xFF000000, p2, alpha_256);
+                    }
                 }
             },
         }
@@ -223,12 +238,17 @@ impl<'a> RenderContext<'a> {
         h: usize,
         color: u32,
     ) {
-        let x2 = (x + w).min(self.width);
-        let y2 = (y + h).min(self.height);
-        for cy in y..y2 {
-            let row = cy * self.width;
-            for cx in x..x2 {
-                self.buffer[row + cx] = color;
+        let x2 = (x.saturating_add(w)).min(self.width);
+        let y2 = (y.saturating_add(h)).min(self.height);
+        let start_x = x.min(self.width);
+        if start_x < x2 {
+            for cy in y.min(self.height)..y2 {
+                let row = cy.saturating_mul(self.width);
+                let start = row.saturating_add(start_x);
+                let end = row.saturating_add(x2);
+                if let Some(slice) = self.buffer.get_mut(start..end) {
+                    slice.fill(color);
+                }
             }
         }
     }
@@ -238,7 +258,9 @@ impl<'a> RenderContext<'a> {
         src: &SlideSurface,
     ) {
         let len = self.buffer.len().min(src.pixels.len());
-        self.buffer[..len].copy_from_slice(&src.pixels[..len]);
+        if let (Some(dst), Some(src_slice)) = (self.buffer.get_mut(..len), src.pixels.get(..len)) {
+            dst.copy_from_slice(src_slice);
+        }
     }
 
     pub fn blend_from_to(
@@ -248,17 +270,28 @@ impl<'a> RenderContext<'a> {
         progress: f32,
     ) {
         let t = progress.clamp(0.0, 1.0);
+        let alpha_256 = (t * 256.0).round() as u32;
         let len = self.buffer.len().min(to.pixels.len());
         match from {
             | Some(f) => {
                 let f_len = len.min(f.pixels.len());
-                for i in 0..f_len {
-                    self.buffer[i] = blend_pixel(f.pixels[i], to.pixels[i], t);
+                if let (Some(dst), Some(src_f), Some(src_to)) = (
+                    self.buffer.get_mut(..f_len),
+                    f.pixels.get(..f_len),
+                    to.pixels.get(..f_len),
+                ) {
+                    for (d, (&p1, &p2)) in dst.iter_mut().zip(src_f.iter().zip(src_to.iter())) {
+                        *d = blend_pixel_fast(p1, p2, alpha_256);
+                    }
                 }
             },
             | None => {
-                for i in 0..len {
-                    self.buffer[i] = blend_pixel(0xFF000000, to.pixels[i], t);
+                if let (Some(dst), Some(src_to)) =
+                    (self.buffer.get_mut(..len), to.pixels.get(..len))
+                {
+                    for (d, &p2) in dst.iter_mut().zip(src_to.iter()) {
+                        *d = blend_pixel_fast(0xFF000000, p2, alpha_256);
+                    }
                 }
             },
         }
