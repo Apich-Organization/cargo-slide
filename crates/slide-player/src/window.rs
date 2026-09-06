@@ -16,6 +16,7 @@ use crate::hud::draw_volume_toast;
 use crate::hud::get_chart_quick_action_rects;
 use crate::hud::get_dock_rects;
 use crate::hud::get_inspector_layout;
+use crate::hud::get_volume_slider_hover_rect;
 use crate::hud::get_volume_slider_rects;
 use crate::hud::hit_test_chart_inspector;
 use crate::hud::hit_test_dock;
@@ -131,6 +132,14 @@ impl SlideApp {
         self
     }
 
+    pub fn fullscreen(
+        mut self,
+        fullscreen: bool,
+    ) -> Self {
+        self.config.fullscreen = fullscreen;
+        self
+    }
+
     pub fn default_animation(
         mut self,
         animation: impl Into<String>,
@@ -198,29 +207,262 @@ pub struct SlidePlayer {
     source_file: Option<PathBuf>,
 }
 
+/// URL percent-decode a UTF-8 string (e.g. `%20` -> `' '`, `%2F` -> `'/'`)
+#[must_use]
+pub fn url_decode(s: &str) -> String {
+    let parse_hex = |b: u8| {
+        match b {
+            | b'0'..=b'9' => Some(b.saturating_sub(b'0')),
+            | b'a'..=b'f' => Some(b.saturating_sub(b'a').saturating_add(10)),
+            | b'A'..=b'F' => Some(b.saturating_sub(b'A').saturating_add(10)),
+            | _ => None,
+        }
+    };
+
+    let bytes = s.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if let Some(&b'%') = bytes.get(i)
+            && let (Some(&h1), Some(&h2)) = (
+                bytes.get(i.saturating_add(1)),
+                bytes.get(i.saturating_add(2)),
+            )
+            && let (Some(n1), Some(n2)) = (parse_hex(h1), parse_hex(h2))
+        {
+            let byte_val = (n1 << 4) | n2;
+            decoded.push(byte_val);
+            i = i.saturating_add(3);
+            continue;
+        }
+        if let Some(&b) = bytes.get(i) {
+            decoded.push(b);
+        }
+        i = i.saturating_add(1);
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+/// Normalize Windows verbatim extended-length path prefix (`\\?\` or `\\?\UNC\`)
+/// so it can be safely passed to system shells and desktop launchers without failing.
+#[must_use]
+pub fn normalize_windows_path(p: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = p.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{stripped}"))
+        } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            PathBuf::from(stripped)
+        } else {
+            p
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        p
+    }
+}
+
+/// Detached, non-blocking opener for URLs and external files across Linux, macOS, and Windows.
+/// Spawns a background thread so the main render/event loop never freezes.
+pub fn open_external_target_detached(target: &str) {
+    let target_str = target.to_string();
+    let _ = std::thread::spawn(move || {
+        // 1. Try open crate in detached mode
+        if open::that_detached(&target_str).is_ok() {
+            return;
+        }
+
+        // 2. Cross-platform fallback if open::that_detached fails
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdg-open")
+                .arg(&target_str)
+                .spawn();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(&target_str).spawn();
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", &target_str])
+                .spawn();
+        }
+    });
+}
+
+/// Robust multi-tier local file resolver supporting:
+/// 1. `file://` scheme stripping and RFC 8089 Windows leading slash fix (`/C:/` -> `C:/`)
+/// 2. URL percent-decoding (`%20` -> `' '`)
+/// 3. Direct absolute path resolution & canonicalization
+/// 4. Parent directory traversal relative to Typst presentation source file (up to 6 levels)
+/// 5. Current Working Directory (CWD) and ancestor traversal (up to 4 levels)
+/// 6. Executable directory traversal for standalone binary mode
+/// 7. Windows verbatim path prefix (`\\?\`) normalization
+#[must_use]
+pub fn resolve_local_file_path(
+    raw_path: &str,
+    source_file: Option<&Path>,
+) -> Option<PathBuf> {
+    // 1. Strip file:// scheme if present
+    let path_no_scheme = raw_path.strip_prefix("file://").unwrap_or(raw_path);
+
+    // 2. URL percent-decode
+    let decoded = url_decode(path_no_scheme);
+
+    // 3. Normalize RFC 8089 Windows drive paths: `/C:/foo` -> `C:/foo`
+    let clean_str = if decoded.starts_with('/') && decoded.len() >= 3 {
+        let bytes = decoded.as_bytes();
+        if let (Some(&b1), Some(&b2)) = (bytes.get(1), bytes.get(2)) {
+            if b1.is_ascii_alphabetic() && b2 == b':' {
+                decoded.strip_prefix('/').unwrap_or(&decoded)
+            } else {
+                &decoded
+            }
+        } else {
+            &decoded
+        }
+    } else {
+        &decoded
+    };
+
+    let p = Path::new(clean_str);
+
+    // 4. If absolute path and exists on disk
+    if p.is_absolute() && p.exists() {
+        return Some(
+            p.canonicalize()
+                .ok()
+                .map(normalize_windows_path)
+                .unwrap_or_else(|| p.to_path_buf()),
+        );
+    }
+
+    // 5. Traverse ancestors relative to source_file parent
+    if let Some(sf) = source_file {
+        let mut cur_dir = sf.parent();
+        let mut depth = 0usize;
+        while let Some(dir) = cur_dir {
+            if depth >= 6 {
+                break;
+            }
+            let candidate = dir.join(p);
+            if candidate.exists() {
+                return Some(
+                    candidate
+                        .canonicalize()
+                        .ok()
+                        .map(normalize_windows_path)
+                        .unwrap_or(candidate),
+                );
+            }
+            cur_dir = dir.parent();
+            depth = depth.saturating_add(1);
+        }
+    }
+
+    // 6. Check relative to CWD and ancestors
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut cur_dir: Option<&Path> = Some(&cwd);
+        let mut depth = 0usize;
+        while let Some(dir) = cur_dir {
+            if depth >= 4 {
+                break;
+            }
+            let candidate = dir.join(p);
+            if candidate.exists() {
+                return Some(
+                    candidate
+                        .canonicalize()
+                        .ok()
+                        .map(normalize_windows_path)
+                        .unwrap_or(candidate),
+                );
+            }
+            cur_dir = dir.parent();
+            depth = depth.saturating_add(1);
+        }
+    }
+
+    // 7. Check relative to current executable (crucial for standalone packaged binary mode)
+    if let Ok(exe_path) = std::env::current_exe() {
+        let mut cur_dir = exe_path.parent();
+        let mut depth = 0usize;
+        while let Some(dir) = cur_dir {
+            if depth >= 4 {
+                break;
+            }
+            let candidate = dir.join(p);
+            if candidate.exists() {
+                return Some(
+                    candidate
+                        .canonicalize()
+                        .ok()
+                        .map(normalize_windows_path)
+                        .unwrap_or(candidate),
+                );
+            }
+            cur_dir = dir.parent();
+            depth = depth.saturating_add(1);
+        }
+    }
+
+    None
+}
+
 fn resolve_media_path(
     path: &str,
     source_file: Option<&Path>,
 ) -> String {
-    let p = Path::new(path);
-    if p.is_absolute() || p.exists() {
-        return path.to_string();
+    if let Some(resolved) = resolve_local_file_path(path, source_file) {
+        resolved.to_string_lossy().to_string()
+    } else {
+        path.to_string()
     }
-    if let Some(sf) = source_file
-        && let Some(parent) = sf.parent()
-    {
-        let resolved = parent.join(p);
-        if resolved.exists() {
-            return resolved.to_string_lossy().to_string();
-        }
-    }
-    path.to_string()
 }
 
 /// Query the screen resolution of the active display across platforms
 pub fn get_screen_resolution() -> Option<(usize, usize)> {
     #[cfg(target_os = "linux")]
     {
+        // 1. Try xrandr first to get active/primary display resolution on multi-monitor setups
+        if let Ok(output) = Command::new("xrandr").output()
+            && output.status.success()
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            let mut primary_res = None;
+            let mut first_connected = None;
+            for line in text.lines() {
+                if line.contains(" connected ") {
+                    let is_primary = line.contains(" primary ");
+                    for part in line.split_whitespace() {
+                        if let Some((w_s, rest)) = part.split_once('x')
+                            && let Some((h_s, _)) = rest.split_once('+')
+                            && let (Ok(w), Ok(h)) = (w_s.parse::<usize>(), h_s.parse::<usize>())
+                            && w > 0
+                            && h > 0
+                        {
+                            if is_primary {
+                                primary_res = Some((w, h));
+                                break;
+                            } else if first_connected.is_none() {
+                                first_connected = Some((w, h));
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(res) = primary_res.or(first_connected) {
+                return Some(res);
+            }
+        }
+
+        // 2. Query X11 screen dimensions via Xlib
         if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
             unsafe {
                 let display = (xlib.XOpenDisplay)(std::ptr::null());
@@ -235,7 +477,7 @@ pub fn get_screen_resolution() -> Option<(usize, usize)> {
                 }
             }
         }
-        // Fallback: /sys/class/graphics/fb0/virtual_size
+        // 3. Fallback: /sys/class/graphics/fb0/virtual_size
         if let Ok(content) = std::fs::read_to_string("/sys/class/graphics/fb0/virtual_size")
             && let Some((w_s, h_s)) = content.trim().split_once(',')
             && let (Ok(w), Ok(h)) = (w_s.parse::<usize>(), h_s.parse::<usize>())
@@ -243,26 +485,6 @@ pub fn get_screen_resolution() -> Option<(usize, usize)> {
             && h > 0
         {
             return Some((w, h));
-        }
-        // Fallback: query xrandr if available
-        if let Ok(output) = Command::new("xrandr").output()
-            && output.status.success()
-            && let Ok(text) = String::from_utf8(output.stdout)
-        {
-            for line in text.lines() {
-                if line.contains(" connected ") {
-                    for part in line.split_whitespace() {
-                        if let Some((w_s, rest)) = part.split_once('x')
-                            && let Some((h_s, _)) = rest.split_once('+')
-                            && let (Ok(w), Ok(h)) = (w_s.parse::<usize>(), h_s.parse::<usize>())
-                            && w > 0
-                            && h > 0
-                        {
-                            return Some((w, h));
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -315,9 +537,12 @@ fn init_dpi_awareness() {
 const fn init_dpi_awareness() {}
 
 #[cfg(target_os = "linux")]
+#[allow(clippy::similar_names, clippy::single_call_fn, unsafe_code)]
 fn set_x11_fullscreen(
     window_handle: *mut std::ffi::c_void,
     fullscreen: bool,
+    width: usize,
+    height: usize,
 ) {
     if window_handle.is_null() {
         return;
@@ -337,7 +562,77 @@ fn set_x11_fullscreen(
                 b"_NET_WM_STATE_FULLSCREEN\0".as_ptr() as *const _,
                 0,
             );
+            let atom_type = (xlib.XInternAtom)(display, b"ATOM\0".as_ptr() as *const _, 0);
+            let cardinal_type = (xlib.XInternAtom)(display, b"CARDINAL\0".as_ptr() as *const _, 0);
 
+            // 1. Direct property setting on client window (required for unmapped state per EWMH spec)
+            if fullscreen {
+                (xlib.XChangeProperty)(
+                    display,
+                    xid,
+                    net_wm_state,
+                    atom_type,
+                    32,
+                    x11_dl::xlib::PropModeReplace,
+                    &net_wm_state_fullscreen as *const _ as *const _,
+                    1,
+                );
+            } else {
+                (xlib.XDeleteProperty)(display, xid, net_wm_state);
+            }
+
+            // 2. Clear Motif decorations to eliminate any title bars or window borders
+            let motif_atom =
+                (xlib.XInternAtom)(display, b"_MOTIF_WM_HINTS\0".as_ptr() as *const _, 0);
+            if motif_atom != 0 {
+                #[repr(C)]
+                struct MwmHints {
+                    flags: std::os::raw::c_ulong,
+                    functions: std::os::raw::c_ulong,
+                    decorations: std::os::raw::c_ulong,
+                    input_mode: std::os::raw::c_long,
+                    status: std::os::raw::c_ulong,
+                }
+                let hints = MwmHints {
+                    flags: 2, // MWM_HINTS_DECORATIONS
+                    functions: 0,
+                    decorations: if fullscreen { 0 } else { 1 },
+                    input_mode: 0,
+                    status: 0,
+                };
+                (xlib.XChangeProperty)(
+                    display,
+                    xid,
+                    motif_atom,
+                    motif_atom,
+                    32,
+                    x11_dl::xlib::PropModeReplace,
+                    &hints as *const _ as *const _,
+                    5,
+                );
+            }
+
+            // 3. Bypass compositor for direct unredirected fullscreen presentation
+            let bypass_atom = (xlib.XInternAtom)(
+                display,
+                b"_NET_WM_BYPASS_COMPOSITOR\0".as_ptr() as *const _,
+                0,
+            );
+            if bypass_atom != 0 {
+                let val: std::os::raw::c_ulong = if fullscreen { 1 } else { 0 };
+                (xlib.XChangeProperty)(
+                    display,
+                    xid,
+                    bypass_atom,
+                    cardinal_type,
+                    32,
+                    x11_dl::xlib::PropModeReplace,
+                    &val as *const _ as *const _,
+                    1,
+                );
+            }
+
+            // 4. Send ClientMessage to root window (for mapped state per EWMH spec)
             let mut data = x11_dl::xlib::ClientMessageData::new();
             data.set_long(0, if fullscreen { 1 } else { 0 }); // 1 = ADD, 0 = REMOVE
             data.set_long(1, net_wm_state_fullscreen as _);
@@ -362,9 +657,159 @@ fn set_x11_fullscreen(
             let mask =
                 x11_dl::xlib::SubstructureRedirectMask | x11_dl::xlib::SubstructureNotifyMask;
             (xlib.XSendEvent)(display, root, 0, mask, &mut ev);
+
+            if fullscreen {
+                (xlib.XSetWindowBorderWidth)(display, xid, 0);
+                (xlib.XMoveResizeWindow)(display, xid, 0, 0, width as u32, height as u32);
+                (xlib.XRaiseWindow)(display, xid);
+                (xlib.XSetInputFocus)(display, xid, x11_dl::xlib::RevertToParent, 0);
+            }
+
             (xlib.XFlush)(display);
             (xlib.XCloseDisplay)(display);
         }
+    }
+}
+
+#[cfg(windows)]
+#[allow(clippy::single_call_fn, unsafe_code)]
+fn set_windows_fullscreen(
+    window_handle: *mut std::ffi::c_void,
+    fullscreen: bool,
+    width: usize,
+    height: usize,
+) {
+    if window_handle.is_null() {
+        return;
+    }
+    unsafe extern "system" {
+        fn SetWindowLongW(
+            hWnd: *mut std::ffi::c_void,
+            nIndex: i32,
+            dwNewLong: i32,
+        ) -> i32;
+        fn SetWindowPos(
+            hWnd: *mut std::ffi::c_void,
+            hWndInsertAfter: *mut std::ffi::c_void,
+            X: i32,
+            Y: i32,
+            cx: i32,
+            cy: i32,
+            uFlags: u32,
+        ) -> i32;
+    }
+    const GWL_STYLE: i32 = -16;
+    const WS_POPUP: i32 = 0x8000_0000u32 as i32;
+    const WS_OVERLAPPEDWINDOW: i32 = 0x00CF_0000;
+    const WS_VISIBLE: i32 = 0x1000_0000;
+    const HWND_TOPMOST: *mut std::ffi::c_void = -1isize as *mut std::ffi::c_void;
+    const HWND_NOTOPMOST: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
+    const SWP_SHOWWINDOW: u32 = 0x0040;
+
+    unsafe {
+        if fullscreen {
+            SetWindowLongW(window_handle, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+            SetWindowPos(
+                window_handle,
+                HWND_TOPMOST,
+                0,
+                0,
+                width as i32,
+                height as i32,
+                SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            );
+        } else {
+            SetWindowLongW(window_handle, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+            SetWindowPos(
+                window_handle,
+                HWND_NOTOPMOST,
+                100,
+                100,
+                width as i32,
+                height as i32,
+                SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::single_call_fn, unsafe_code)]
+fn set_macos_fullscreen(
+    window_handle: *mut std::ffi::c_void,
+    fullscreen: bool,
+) {
+    if window_handle.is_null() {
+        return;
+    }
+    unsafe {
+        #[link(name = "objc", kind = "dylib")]
+        extern "C" {
+            fn sel_registerName(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+            fn objc_getClass(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+            fn objc_msgSend(
+                receiver: *mut std::ffi::c_void,
+                selector: *mut std::ffi::c_void,
+                ...
+            ) -> *mut std::ffi::c_void;
+        }
+
+        let nswindow = window_handle;
+        let set_collection_behavior =
+            sel_registerName(b"setCollectionBehavior:\0".as_ptr() as *const _);
+        let _ = objc_msgSend(nswindow, set_collection_behavior, 128usize);
+
+        let style_mask_sel = sel_registerName(b"styleMask\0".as_ptr() as *const _);
+        let mask = objc_msgSend(nswindow, style_mask_sel) as usize;
+        let is_currently_fullscreen = (mask & 16384) != 0;
+
+        if is_currently_fullscreen != fullscreen {
+            let toggle_full_screen = sel_registerName(b"toggleFullScreen:\0".as_ptr() as *const _);
+            let _ = objc_msgSend(
+                nswindow,
+                toggle_full_screen,
+                std::ptr::null_mut::<std::ffi::c_void>(),
+            );
+        }
+
+        let nsapp_class = objc_getClass(b"NSApplication\0".as_ptr() as *const _);
+        let shared_app_sel = sel_registerName(b"sharedApplication\0".as_ptr() as *const _);
+        let app = objc_msgSend(nsapp_class, shared_app_sel);
+        if !app.is_null() {
+            let set_presentation_opts_sel =
+                sel_registerName(b"setPresentationOptions:\0".as_ptr() as *const _);
+            let options: usize = if fullscreen {
+                1 | 4 | 1024
+            } else {
+                0
+            };
+            let _ = objc_msgSend(app, set_presentation_opts_sel, options);
+        }
+    }
+}
+
+fn apply_native_fullscreen(
+    window_handle: *mut std::ffi::c_void,
+    fullscreen: bool,
+    width: usize,
+    height: usize,
+) {
+    if window_handle.is_null() {
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    set_x11_fullscreen(window_handle, fullscreen, width, height);
+
+    #[cfg(windows)]
+    set_windows_fullscreen(window_handle, fullscreen, width, height);
+
+    #[cfg(target_os = "macos")]
+    set_macos_fullscreen(window_handle, fullscreen);
+
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+    {
+        let _ = (fullscreen, width, height);
     }
 }
 
@@ -400,12 +845,8 @@ fn create_window(
 
     if fullscreen {
         window.set_position(0, 0);
-        #[cfg(target_os = "linux")]
-        set_x11_fullscreen(window.get_window_handle(), true);
-    } else {
-        #[cfg(target_os = "linux")]
-        set_x11_fullscreen(window.get_window_handle(), false);
     }
+    apply_native_fullscreen(window.get_window_handle(), fullscreen, width, height);
 
     Ok(window)
 }
@@ -506,6 +947,8 @@ impl SlidePlayer {
         let mut presenter_mode = PresenterMode::Normal;
         let mut active_color_idx = 0usize; // Cyan by default (index 0)
         let mut palette_open = false;
+        let mut volume_slider_open = false;
+        let mut volume_dragging = false;
         let mut slide_ink: HashMap<usize, Vec<InkStroke>> = HashMap::new();
         let mut active_pen_stroke: Option<InkStroke> = None;
         let mut laser_trail: VecDeque<(usize, usize, Instant)> = VecDeque::new();
@@ -574,6 +1017,8 @@ impl SlidePlayer {
             self.source_file.as_deref(),
         );
 
+        let mut first_frame = true;
+
         while window.is_open() && !exit_requested && !window.is_key_down(Key::Q) {
             let (new_w, new_h) = window.get_size();
             if (new_w != width || new_h != height) && new_w >= 100 && new_h >= 100 {
@@ -640,7 +1085,7 @@ impl SlidePlayer {
 
                 // Blank / mask component steps that have not yet been revealed
                 if let Some(slide) = self.deck.get_slide(current_idx) {
-                    let bg_color = 0xFF0f111a; // Slide dark background
+                    let bg_color = current_surface.bg_color;
                     for step in &slide.steps {
                         if step.order > current_step {
                             let screen_rect = current_metrics.svg_to_screen_rect(&step.rect);
@@ -690,6 +1135,7 @@ impl SlidePlayer {
                                 &empty_set,
                                 None,
                                 None,
+                                None,
                             );
                         }
                     }
@@ -698,16 +1144,6 @@ impl SlidePlayer {
 
             // Mouse handling and cursor style
             let raw_mouse_pos = window.get_mouse_pos(MouseMode::Pass);
-            #[cfg(target_os = "macos")]
-            let mouse_pos = raw_mouse_pos.map(|(mx, my)| {
-                let my = if is_fullscreen {
-                    my + 28.0
-                } else {
-                    my
-                };
-                (mx, my)
-            });
-            #[cfg(not(target_os = "macos"))]
             let mouse_pos = raw_mouse_pos;
             if mouse_pos != prev_mouse_pos {
                 last_mouse_activity = Instant::now();
@@ -735,11 +1171,19 @@ impl SlidePlayer {
                     if mx >= px && mx <= (px + pw) {
                         let c_idx = (((mx - px) / col_w) as usize).min(cat_count.saturating_sub(1));
                         inspector.hovered_category = Some(c_idx);
+                        if window.get_mouse_down(MouseButton::Left) {
+                            if let Some(start) = inspector.marquee_drag_start {
+                                inspector.marquee_range = Some((start, c_idx));
+                            } else {
+                                inspector.marquee_drag_start = Some(c_idx);
+                                inspector.marquee_range = Some((c_idx, c_idx));
+                            }
+                        }
                     } else {
                         inspector.hovered_category = None;
                     }
                 } else if right_pane.contains(mx, my) {
-                    let header_h = 26.0;
+                    let header_h = 56.0;
                     let row_h = 24.0;
                     let table_y = right_pane.y + header_h;
                     let visible_rows =
@@ -747,9 +1191,10 @@ impl SlidePlayer {
                     if my >= table_y && my < (right_pane.y + right_pane.height) {
                         let row_slot = ((my - table_y) / row_h) as usize;
                         if row_slot < visible_rows {
-                            let row_idx = row_slot + inspector.table_scroll;
-                            if row_idx < inspector.chart_data.categories.len() {
-                                inspector.hovered_category = Some(row_idx);
+                            let filtered_indices = inspector.get_filtered_category_indices();
+                            let list_idx = row_slot.saturating_add(inspector.table_scroll);
+                            if let Some(&cat_idx) = filtered_indices.get(list_idx) {
+                                inspector.hovered_category = Some(cat_idx);
                             } else {
                                 inspector.hovered_category = None;
                             }
@@ -761,6 +1206,9 @@ impl SlidePlayer {
                     }
                 } else {
                     inspector.hovered_category = None;
+                }
+                if !window.get_mouse_down(MouseButton::Left) {
+                    inspector.marquee_drag_start = None;
                 }
             }
 
@@ -774,12 +1222,27 @@ impl SlidePlayer {
             let hovered_dock_action =
                 mouse_pos.and_then(|(mx, my)| hit_test_dock(width, height, is_fullscreen, mx, my));
 
-            let (slider_popup_rect, _) = get_volume_slider_rects(width, height, is_fullscreen);
-            let mouse_in_slider = mouse_pos
-                .map(|(mx, my)| slider_popup_rect.contains(mx, my))
+            let (slider_popup_rect, track_rect) =
+                get_volume_slider_rects(width, height, is_fullscreen);
+            let vol_hover_rect = get_volume_slider_hover_rect(width, height, is_fullscreen);
+            let is_vol_btn_hovered = hovered_dock_action == Some(DockAction::ToggleMute);
+            let is_vol_zone_hovered = mouse_pos
+                .map(|(mx, my)| vol_hover_rect.contains(mx, my))
                 .unwrap_or(false);
-            let show_volume_slider =
-                mouse_in_slider || hovered_dock_action == Some(DockAction::ToggleMute);
+
+            if palette_open || active_chart_inspector.is_some() {
+                volume_slider_open = false;
+                volume_dragging = false;
+            } else if volume_dragging || is_vol_btn_hovered {
+                volume_slider_open = true;
+            } else if volume_slider_open && !is_vol_zone_hovered {
+                volume_slider_open = false;
+            }
+            let show_volume_slider = volume_slider_open;
+            let mouse_in_slider = show_volume_slider
+                && mouse_pos
+                    .map(|(mx, my)| slider_popup_rect.contains(mx, my))
+                    .unwrap_or(false);
 
             let hovered_palette_idx = mouse_pos
                 .and_then(|(mx, my)| hit_test_palette(width, height, is_fullscreen, mx, my));
@@ -922,14 +1385,23 @@ impl SlidePlayer {
             }
 
             // Interactive dragging on volume slider track
-            if mouse_down
-                && mouse_in_slider
-                && active_chart_inspector.is_none()
-                && let Some((mx, my)) = mouse_pos
-                && let Some(vol) = hit_test_volume_slider(width, height, is_fullscreen, mx, my)
-            {
-                audio_engine.set_volume(vol);
-                last_volume_change = Some(Instant::now());
+            if mouse_down && active_chart_inspector.is_none() {
+                if volume_dragging {
+                    if let Some((_, my)) = mouse_pos {
+                        let norm = 1.0 - ((my - track_rect.y) / track_rect.height).clamp(0.0, 1.0);
+                        audio_engine.set_volume(norm);
+                        last_volume_change = Some(Instant::now());
+                    }
+                } else if show_volume_slider
+                    && let Some((mx, my)) = mouse_pos
+                    && let Some(vol) = hit_test_volume_slider(width, height, is_fullscreen, mx, my)
+                {
+                    volume_dragging = true;
+                    audio_engine.set_volume(vol);
+                    last_volume_change = Some(Instant::now());
+                }
+            } else {
+                volume_dragging = false;
             }
 
             if left_clicked {
@@ -948,14 +1420,18 @@ impl SlidePlayer {
                             },
                             | InspectorAction::SetType(t) => {
                                 inspector.active_type = t;
+                                inspector.search_active = false;
                             },
                             | InspectorAction::SetTransform(t) => {
                                 inspector.set_transform(t);
+                                inspector.search_active = false;
                             },
                             | InspectorAction::ToggleSeries(s_idx) => {
                                 inspector.toggle_series(s_idx);
+                                inspector.search_active = false;
                             },
                             | InspectorAction::ExportCsv => {
+                                inspector.search_active = false;
                                 let csv = inspector.chart_data.export_csv(&inspector.hidden_series);
                                 if let Err(e) = std::fs::write("chart_export.csv", csv) {
                                     eprintln!("Failed to export CSV: {}", e);
@@ -966,20 +1442,19 @@ impl SlidePlayer {
                             },
                             | InspectorAction::SelectCategory(cat_idx) => {
                                 inspector.hovered_category = Some(cat_idx);
+                                inspector.search_active = false;
                             },
                             | InspectorAction::ScrollTable(delta) => {
+                                inspector.search_active = false;
                                 let (_, _, _, _, _, _, _, right_pane) =
                                     get_inspector_layout(width, height);
-                                let header_h = 26.0;
+                                let header_h = 56.0;
                                 let row_h = 24.0;
                                 let visible_rows = ((right_pane.height - header_h - 2.0).max(0.0)
                                     / row_h)
                                     as usize;
-                                let max_scroll = inspector
-                                    .chart_data
-                                    .categories
-                                    .len()
-                                    .saturating_sub(visible_rows);
+                                let filtered_len = inspector.get_filtered_category_indices().len();
+                                let max_scroll = filtered_len.saturating_sub(visible_rows);
                                 if delta > 0 {
                                     inspector.table_scroll =
                                         (inspector.table_scroll + delta as usize).min(max_scroll);
@@ -987,6 +1462,52 @@ impl SlidePlayer {
                                     inspector.table_scroll =
                                         inspector.table_scroll.saturating_sub((-delta) as usize);
                                 }
+                            },
+                            | InspectorAction::FocusSearch => {
+                                inspector.search_active = true;
+                            },
+                            | InspectorAction::ClearFilter => {
+                                inspector.clear_filter();
+                            },
+                            | InspectorAction::CycleFormat => {
+                                inspector.cycle_format();
+                                inspector.search_active = false;
+                            },
+                            | InspectorAction::SortColumn(col) => {
+                                inspector.search_active = false;
+                                if inspector.sort_column == Some(col) {
+                                    inspector.sort_ascending = !inspector.sort_ascending;
+                                } else {
+                                    inspector.sort_column = Some(col);
+                                    inspector.sort_ascending = true;
+                                }
+                                let label = if col == 0 {
+                                    format!(
+                                        "Sorted by Category {}",
+                                        if inspector.sort_ascending {
+                                            "Ascending"
+                                        } else {
+                                            "Descending"
+                                        }
+                                    )
+                                } else {
+                                    let s_name = inspector
+                                        .chart_data
+                                        .series
+                                        .get(col.saturating_sub(1))
+                                        .map(|s| s.name.as_str())
+                                        .unwrap_or("Series");
+                                    format!(
+                                        "Sorted by {} {}",
+                                        s_name,
+                                        if inspector.sort_ascending {
+                                            "Ascending"
+                                        } else {
+                                            "Descending"
+                                        }
+                                    )
+                                };
+                                inspector.show_toast(&label);
                             },
                         }
                     }
@@ -1005,8 +1526,12 @@ impl SlidePlayer {
                             active_pen_stroke = None;
                         },
                         | DockAction::ToggleMute => {
-                            audio_engine.toggle_mute();
-                            last_volume_change = Some(Instant::now());
+                            if !volume_slider_open {
+                                volume_slider_open = true;
+                            } else {
+                                audio_engine.toggle_mute();
+                                last_volume_change = Some(Instant::now());
+                            }
                         },
                         | DockAction::ToggleFullscreen => toggle_fullscreen_requested = true,
                         | DockAction::ToggleHelp => show_help = !show_help,
@@ -1016,6 +1541,7 @@ impl SlidePlayer {
                         && let Some(vol) =
                             hit_test_volume_slider(width, height, is_fullscreen, mx, my)
                     {
+                        volume_dragging = true;
                         audio_engine.set_volume(vol);
                         last_volume_change = Some(Instant::now());
                     }
@@ -1046,11 +1572,11 @@ impl SlidePlayer {
                                         || clean_target.starts_with("transition:")
                                     {
                                         // Internal metadata markers; never invoke OS open
-                                    } else if target.starts_with("http://")
-                                        || target.starts_with("https://")
-                                        || target.starts_with("mailto:")
+                                    } else if target.starts_with("mailto:")
+                                        || (target.contains("://")
+                                            && !target.starts_with("file://"))
                                     {
-                                        let _ = open::that(target);
+                                        open_external_target_detached(target);
                                     } else if let Some(page_str) = target
                                         .strip_prefix("#page=")
                                         .or_else(|| target.strip_prefix("#slide="))
@@ -1059,23 +1585,24 @@ impl SlidePlayer {
                                         if let Ok(page) = page_str.parse::<usize>()
                                             && page >= 1
                                             && page <= total_slides
-                                            && page - 1 != current_idx
+                                            && page.saturating_sub(1) != current_idx
                                         {
-                                            jump_target = Some(page - 1);
+                                            jump_target = Some(page.saturating_sub(1));
                                         }
                                     } else {
                                         // Local document or file path relative to presentation
-                                        let clean_file =
-                                            target.strip_prefix("file://").unwrap_or(target);
-                                        if !clean_file.is_empty()
-                                            && !clean_file.starts_with('#')
-                                            && !clean_file.contains(':')
-                                        {
-                                            let resolved = resolve_media_path(
-                                                clean_file,
-                                                self.source_file.as_deref(),
+                                        if let Some(resolved_path) = resolve_local_file_path(
+                                            target,
+                                            self.source_file.as_deref(),
+                                        ) {
+                                            open_external_target_detached(
+                                                &resolved_path.to_string_lossy(),
                                             );
-                                            let _ = open::that(&resolved);
+                                        } else {
+                                            let clean =
+                                                target.strip_prefix("file://").unwrap_or(target);
+                                            let decoded = url_decode(clean);
+                                            open_external_target_detached(&decoded);
                                         }
                                     }
                                 },
@@ -1201,79 +1728,287 @@ impl SlidePlayer {
             for key in &keys {
                 if !prev_pressed_keys.contains(key) {
                     if let Some(ref mut inspector) = active_chart_inspector {
-                        match key {
-                            | Key::Escape => {
-                                if let Some(hs_idx) = hovered_hotspot_idx {
-                                    chart_type_overrides
-                                        .insert((current_idx, hs_idx), inspector.active_type);
-                                }
-                                active_chart_inspector = None;
-                            },
-                            | Key::Tab => {
-                                inspector.cycle_type();
-                            },
-                            | Key::Key1 | Key::NumPad1 => inspector.toggle_series(0),
-                            | Key::Key2 | Key::NumPad2 => inspector.toggle_series(1),
-                            | Key::Key3 | Key::NumPad3 => inspector.toggle_series(2),
-                            | Key::Key4 | Key::NumPad4 => inspector.toggle_series(3),
-                            | Key::Key5 | Key::NumPad5 => inspector.toggle_series(4),
-                            | Key::Key6 | Key::NumPad6 => inspector.toggle_series(5),
-                            | Key::Key7 | Key::NumPad7 => inspector.toggle_series(6),
-                            | Key::Key8 | Key::NumPad8 => inspector.toggle_series(7),
-                            | Key::Key9 | Key::NumPad9 => inspector.toggle_series(8),
-                            | Key::C | Key::E => {
-                                let csv = inspector.chart_data.export_csv(&inspector.hidden_series);
-                                if let Err(e) = std::fs::write("chart_export.csv", csv) {
-                                    eprintln!("Failed to export CSV: {}", e);
-                                    inspector.show_toast("Export failed!");
-                                } else {
-                                    inspector.show_toast("Exported to chart_export.csv");
-                                }
-                            },
-                            | Key::Up => {
-                                inspector.table_scroll = inspector.table_scroll.saturating_sub(1);
-                            },
-                            | Key::Down => {
-                                let (_, _, _, _, _, _, _, right_pane) =
-                                    get_inspector_layout(width, height);
-                                let header_h = 26.0;
-                                let row_h = 24.0;
-                                let visible_rows = ((right_pane.height - header_h - 2.0).max(0.0)
-                                    / row_h)
-                                    as usize;
-                                let max_scroll = inspector
-                                    .chart_data
-                                    .categories
-                                    .len()
-                                    .saturating_sub(visible_rows);
-                                inspector.table_scroll =
-                                    (inspector.table_scroll + 1).min(max_scroll);
-                            },
-                            | Key::O => {
-                                inspector.set_transform(slide_core::chart::ChartTransform::None)
-                            },
-                            | Key::T => {
-                                inspector.set_transform(slide_core::chart::ChartTransform::TopK(5))
-                            },
-                            | Key::S => {
-                                inspector.set_transform(slide_core::chart::ChartTransform::SortDesc)
-                            },
-                            | Key::A => {
-                                inspector.set_transform(slide_core::chart::ChartTransform::SortAsc)
-                            },
-                            | Key::U => {
-                                inspector
-                                    .set_transform(slide_core::chart::ChartTransform::Cumulative)
-                            },
-                            | Key::P => {
-                                inspector
-                                    .set_transform(slide_core::chart::ChartTransform::Percent100)
-                            },
-                            | Key::M => {
-                                inspector
-                                    .set_transform(slide_core::chart::ChartTransform::MovingAvg(3))
-                            },
-                            | _ => {},
+                        let is_shift =
+                            keys.contains(&Key::LeftShift) || keys.contains(&Key::RightShift);
+                        if inspector.search_active {
+                            match key {
+                                | Key::Escape | Key::Enter => {
+                                    inspector.search_active = false;
+                                },
+                                | Key::Backspace => {
+                                    inspector.search_query.pop();
+                                },
+                                | Key::Space => {
+                                    inspector.search_query.push(' ');
+                                },
+                                | Key::Period => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { '>' } else { '.' });
+                                },
+                                | Key::Comma => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { '<' } else { ',' });
+                                },
+                                | Key::Equal => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { '+' } else { '=' });
+                                },
+                                | Key::Minus => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { '_' } else { '-' });
+                                },
+                                | Key::Slash => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { '?' } else { '/' });
+                                },
+                                | Key::Key1 if is_shift => {
+                                    inspector.search_query.push('!');
+                                },
+                                | Key::Key0 | Key::NumPad0 => inspector.search_query.push('0'),
+                                | Key::Key1 | Key::NumPad1 => inspector.search_query.push('1'),
+                                | Key::Key2 | Key::NumPad2 => inspector.search_query.push('2'),
+                                | Key::Key3 | Key::NumPad3 => inspector.search_query.push('3'),
+                                | Key::Key4 | Key::NumPad4 => inspector.search_query.push('4'),
+                                | Key::Key5 | Key::NumPad5 => inspector.search_query.push('5'),
+                                | Key::Key6 | Key::NumPad6 => inspector.search_query.push('6'),
+                                | Key::Key7 | Key::NumPad7 => inspector.search_query.push('7'),
+                                | Key::Key8 | Key::NumPad8 => inspector.search_query.push('8'),
+                                | Key::Key9 | Key::NumPad9 => inspector.search_query.push('9'),
+                                | Key::A => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'A' } else { 'a' })
+                                },
+                                | Key::B => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'B' } else { 'b' })
+                                },
+                                | Key::C => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'C' } else { 'c' })
+                                },
+                                | Key::D => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'D' } else { 'd' })
+                                },
+                                | Key::E => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'E' } else { 'e' })
+                                },
+                                | Key::F => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'F' } else { 'f' })
+                                },
+                                | Key::G => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'G' } else { 'g' })
+                                },
+                                | Key::H => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'H' } else { 'h' })
+                                },
+                                | Key::I => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'I' } else { 'i' })
+                                },
+                                | Key::J => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'J' } else { 'j' })
+                                },
+                                | Key::K => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'K' } else { 'k' })
+                                },
+                                | Key::L => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'L' } else { 'l' })
+                                },
+                                | Key::M => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'M' } else { 'm' })
+                                },
+                                | Key::N => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'N' } else { 'n' })
+                                },
+                                | Key::O => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'O' } else { 'o' })
+                                },
+                                | Key::P => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'P' } else { 'p' })
+                                },
+                                | Key::Q => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'Q' } else { 'q' })
+                                },
+                                | Key::R => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'R' } else { 'r' })
+                                },
+                                | Key::S => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'S' } else { 's' })
+                                },
+                                | Key::T => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'T' } else { 't' })
+                                },
+                                | Key::U => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'U' } else { 'u' })
+                                },
+                                | Key::V => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'V' } else { 'v' })
+                                },
+                                | Key::W => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'W' } else { 'w' })
+                                },
+                                | Key::X => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'X' } else { 'x' })
+                                },
+                                | Key::Y => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'Y' } else { 'y' })
+                                },
+                                | Key::Z => {
+                                    inspector
+                                        .search_query
+                                        .push(if is_shift { 'Z' } else { 'z' })
+                                },
+                                | _ => {},
+                            }
+                        } else {
+                            match key {
+                                | Key::Escape => {
+                                    if !inspector.search_query.is_empty()
+                                        || inspector.marquee_range.is_some()
+                                    {
+                                        inspector.clear_filter();
+                                    } else {
+                                        if let Some(hs_idx) = hovered_hotspot_idx {
+                                            chart_type_overrides.insert(
+                                                (current_idx, hs_idx),
+                                                inspector.active_type,
+                                            );
+                                        }
+                                        active_chart_inspector = None;
+                                    }
+                                },
+                                | Key::Slash => {
+                                    inspector.search_active = true;
+                                },
+                                | Key::F => {
+                                    inspector.cycle_format();
+                                },
+                                | Key::X => {
+                                    inspector.clear_filter();
+                                },
+                                | Key::Tab => {
+                                    inspector.cycle_type();
+                                },
+                                | Key::Key1 | Key::NumPad1 => inspector.toggle_series(0),
+                                | Key::Key2 | Key::NumPad2 => inspector.toggle_series(1),
+                                | Key::Key3 | Key::NumPad3 => inspector.toggle_series(2),
+                                | Key::Key4 | Key::NumPad4 => inspector.toggle_series(3),
+                                | Key::Key5 | Key::NumPad5 => inspector.toggle_series(4),
+                                | Key::Key6 | Key::NumPad6 => inspector.toggle_series(5),
+                                | Key::Key7 | Key::NumPad7 => inspector.toggle_series(6),
+                                | Key::Key8 | Key::NumPad8 => inspector.toggle_series(7),
+                                | Key::Key9 | Key::NumPad9 => inspector.toggle_series(8),
+                                | Key::C | Key::E => {
+                                    let csv =
+                                        inspector.chart_data.export_csv(&inspector.hidden_series);
+                                    if let Err(e) = std::fs::write("chart_export.csv", csv) {
+                                        eprintln!("Failed to export CSV: {}", e);
+                                        inspector.show_toast("Export failed!");
+                                    } else {
+                                        inspector.show_toast("Exported to chart_export.csv");
+                                    }
+                                },
+                                | Key::Up => {
+                                    inspector.table_scroll =
+                                        inspector.table_scroll.saturating_sub(1);
+                                },
+                                | Key::Down => {
+                                    let (_, _, _, _, _, _, _, right_pane) =
+                                        get_inspector_layout(width, height);
+                                    let header_h = 56.0;
+                                    let row_h = 24.0;
+                                    let visible_rows =
+                                        ((right_pane.height - header_h - 2.0).max(0.0) / row_h)
+                                            as usize;
+                                    let filtered_len =
+                                        inspector.get_filtered_category_indices().len();
+                                    let max_scroll = filtered_len.saturating_sub(visible_rows);
+                                    inspector.table_scroll =
+                                        (inspector.table_scroll + 1).min(max_scroll);
+                                },
+                                | Key::O => {
+                                    inspector.set_transform(slide_core::chart::ChartTransform::None)
+                                },
+                                | Key::T => {
+                                    inspector
+                                        .set_transform(slide_core::chart::ChartTransform::TopK(5))
+                                },
+                                | Key::S => {
+                                    inspector
+                                        .set_transform(slide_core::chart::ChartTransform::SortDesc)
+                                },
+                                | Key::A => {
+                                    inspector
+                                        .set_transform(slide_core::chart::ChartTransform::SortAsc)
+                                },
+                                | Key::U => {
+                                    inspector.set_transform(
+                                        slide_core::chart::ChartTransform::Cumulative,
+                                    )
+                                },
+                                | Key::P => {
+                                    inspector.set_transform(
+                                        slide_core::chart::ChartTransform::Percent100,
+                                    )
+                                },
+                                | Key::M => {
+                                    inspector.set_transform(
+                                        slide_core::chart::ChartTransform::MovingAvg(3),
+                                    )
+                                },
+                                | _ => {},
+                            }
                         }
                     } else {
                         match key {
@@ -1401,6 +2136,7 @@ impl SlidePlayer {
                 window = create_window(&self.config.title, width, height, is_fullscreen)?;
                 buffer.resize(width * height, 0);
                 cache.clear();
+                first_frame = true;
             }
 
             // Live reload (R key)
@@ -1494,17 +2230,13 @@ impl SlidePlayer {
                     0
                 };
 
-                let bg_color = 0xFF0f111a;
+                let from_bg = current_surface.bg_color;
                 let mut from_stepped = (*current_surface).clone();
-                from_stepped.mask_steps(
-                    &from_slide.steps,
-                    current_step,
-                    &current_metrics,
-                    bg_color,
-                );
+                from_stepped.mask_steps(&from_slide.steps, current_step, &current_metrics, from_bg);
 
+                let to_bg = target_surf.bg_color;
                 let mut to_stepped = (*target_surf).clone();
-                to_stepped.mask_steps(&to_slide.steps, next_step, &target_metrics, bg_color);
+                to_stepped.mask_steps(&to_slide.steps, next_step, &target_metrics, to_bg);
 
                 transition_mgr.start_transition(
                     anim_name,
@@ -1646,8 +2378,64 @@ impl SlidePlayer {
             window
                 .update_with_buffer(&buffer, width, height)
                 .map_err(|e| SlideError::Format(format!("Window update error: {}", e)))?;
+
+            if first_frame {
+                first_frame = false;
+                if is_fullscreen {
+                    apply_native_fullscreen(window.get_window_handle(), true, width, height);
+                }
+            }
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_decode() {
+        assert_eq!(url_decode("hello%20world"), "hello world");
+        assert_eq!(url_decode("path%2Fto%2Ffile.pdf"), "path/to/file.pdf");
+        assert_eq!(url_decode("no_percent"), "no_percent");
+        assert_eq!(url_decode("%E4%BD%A0%E5%A5%BD"), "你好");
+        // Malformed or trailing percents
+        assert_eq!(url_decode("bad%"), "bad%");
+        assert_eq!(url_decode("bad%2"), "bad%2");
+        assert_eq!(url_decode("bad%ZZ"), "bad%ZZ");
+    }
+
+    #[test]
+    fn test_normalize_windows_path() {
+        let p = PathBuf::from("normal/path/file.txt");
+        assert_eq!(normalize_windows_path(p.clone()), p);
+    }
+
+    #[test]
+    fn test_resolve_local_file_path() {
+        // Resolve README.md from repo root
+        let root_readme = resolve_local_file_path("README.md", None);
+        assert!(
+            root_readme.is_some(),
+            "Should find README.md in CWD or ancestors"
+        );
+
+        // Resolve with file:// and percent encoding
+        let encoded_file = resolve_local_file_path("file://README.md", None);
+        assert!(encoded_file.is_some());
+
+        // Resolve relative to a nested hypothetical source file
+        let fake_slide = PathBuf::from("examples/geek-presentation/slides.typ");
+        let found_from_nested = resolve_local_file_path("README.md", Some(&fake_slide));
+        assert!(
+            found_from_nested.is_some(),
+            "Should find README.md via ancestor traversal"
+        );
+
+        // Nonexistent file should return None
+        let not_found = resolve_local_file_path("non_existent_file_xyz_12345.typ", None);
+        assert!(not_found.is_none());
     }
 }

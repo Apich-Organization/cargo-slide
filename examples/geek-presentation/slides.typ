@@ -215,7 +215,8 @@
       #link("#page=3")[*⚡ Builds*] #h(14pt)
       #link("#page=5")[*✨ Transitions*] #h(14pt)
       #link("#page=13")[*📊 CSV Data*] #h(14pt)
-      #link("#page=15")[*🗄 SQLite DB*]
+      #link("#page=15")[*🗄 SQLite DB*] #h(14pt)
+      #link("#page=16")[*📈 KPI Analytics*]
     ]
   ]
 ]
@@ -409,7 +410,46 @@
   )
 ]
 
-// Slide 16: Automatic Slide Overflow Protection & Layout Safety (Transition: Slide-Up)
+// Slide 16: Interactive Charts: Custom Formats, Live Search & Statistical KPIs (Transition: Slide-Left)
+#slide(title: "Interactive Charts: Custom Formats, Live Search & Statistical KPIs", transition: "slide-left")[
+  Live presentation interactivity with dynamic filtering, statistical summaries, and formatting:
+
+  #chart(
+    type: "bar",
+    title: "Cloud Infrastructure Cost & Efficiency Analytics (2024)",
+    format: "currency",
+    unit: "USD",
+    precision: 0,
+    data: (
+      categories: ("US-East", "US-West", "EU-Central", "AP-East", "AP-South", "SA-East"),
+      series: (
+        (name: "Monthly Spend", values: (12400, 9800, 15600, 8200, 6400, 4300)),
+        (name: "Optimized Savings", values: (3800, 2900, 5100, 2400, 1900, 1100)),
+      ),
+    ),
+    height: 110pt,
+  )
+
+  #v(0.1cm)
+  #grid(
+    columns: (1fr, 1fr, 1fr),
+    gutter: 0.6cm,
+    callout(title: "Custom Formats & Units", stroke-color: slide-colors.accent)[
+      - *Format Enum*: Currency (`$`), Percent (`%`), Compact (`1K/1M`), Scientific (`1e6`), Integer.
+      - *Cycle Format*: Press `F` in HUD or click `[FMT]` to dynamically cycle formats.
+    ],
+    callout(title: "Live Search & Numeric Filters", stroke-color: slide-colors.accent-cyan)[
+      - *Instant Typing*: Press `/` to search categories or series values in real time.
+      - *Comparison Filters*: Enter expressions like `> 5000`, `<= 3000`, or `!= 0`.
+    ],
+    callout(title: "Marquee Drag & 6-KPI Stats", stroke-color: slide-colors.accent-purple)[
+      - *Box Selection*: Click and drag across columns in visualizer to isolate ranges.
+      - *6-Card Metrics*: Recomputes Total, Mean, Median, StdDev, Max, Min instantly.
+    ],
+  )
+]
+
+// Slide 17: Automatic Slide Overflow Protection & Layout Safety (Transition: Slide-Up)
 #slide(title: "Automatic Slide Overflow Protection & Layout Safety", transition: "slide-up")[
   #cols(
     callout(title: "The Slide Overflow Problem", stroke-color: slide-colors.accent-red)[
@@ -432,7 +472,7 @@
   ]
 ]
 
-// Slide 17: Summary & Standalone Binary Delivery (Transition: Iris)
+// Slide 18: Summary & Standalone Binary Delivery (Transition: Iris)
 #slide(title: "Ready for Your Next Presentation", transition: "iris")[
   #align(center + horizon)[
     #text(size: 24pt, weight: "bold", fill: slide-colors.accent)[One Command to Build & Deliver]

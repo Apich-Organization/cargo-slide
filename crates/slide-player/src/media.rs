@@ -44,7 +44,16 @@ impl MediaPlayer {
         }
 
         // 3. Fallback to system default video opener (ShellExecute on Windows, open on macOS, xdg-open on Linux)
-        open::that(source).map_err(|e| std::io::Error::other(e.to_string()))?;
+        if open::that_detached(source).is_err() {
+            #[cfg(target_os = "linux")]
+            let _ = Command::new("xdg-open").arg(source).spawn();
+            #[cfg(target_os = "macos")]
+            let _ = Command::new("open").arg(source).spawn();
+            #[cfg(target_os = "windows")]
+            let _ = Command::new("cmd")
+                .args(["/C", "start", "", source])
+                .spawn();
+        }
 
         Ok(())
     }

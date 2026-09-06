@@ -14,6 +14,12 @@
   if aspect-ratio == "4-3" {
     page-width = 21cm
     page-height = 15.75cm
+  } else if aspect-ratio == "16-10" {
+    page-width = 25.2cm
+    page-height = 15.75cm
+  } else if aspect-ratio == "3-2" {
+    page-width = 23.625cm
+    page-height = 15.75cm
   }
   
   let bg-color = if theme == "light" { rgb("f6f8fa") } else { rgb("0f111a") }

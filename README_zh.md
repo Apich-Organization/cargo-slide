@@ -21,7 +21,7 @@
 - **普通用户无需编写 Rust**：演示文稿完全由 Typst 标记语言（`slides.typ`）编写。只有在需要实现底层自定义转场或组件动画 Trait 时才需要编写 Rust。
 - **极简的项目文件结构**：`cargo slide init` 生成的标准工作区仅包含 5 个文件，轻量且结构清晰。
 - **自包含单二进制打包**：通过 `cargo slide build`，可将幻灯片矢量资产、布局元数据与播放器内核直接编译为单个跨平台可执行二进制文件（约 12 MB）。目标运行机器无需安装 Typst、Node.js、Python 或 Rust。
-- **双窗口放映模式**：按 `F11` 或 `F` 可在无边框全屏模式与窗口化模式之间无缝切换。全屏时具备自动黑边填充（Letterboxing），在任意显示器长宽比下均能保持 16:9 画布不变形。
+- **跨平台原生真全屏与无缝背景延展**：支持按 `F11` / `F` / 底部 Dock `FULL` 在原生无边框真全屏与窗口化模式间无缝切换。Linux (EWMH)、Windows (顶层无边框 Popup) 与 macOS (Cocoa 自动隐藏菜单栏与程序坞) 深度原生适配；外围黑边区域自动采样并延展幻灯片背景色，在各类屏幕上均无上下接缝。原生支持 `16-9`、`16-10`（如 MacBook、Dell XPS、ThinkPad）、`3-2`（Surface、Framework）及 `4-3` 画布长宽比。
 - **13 种内置页面转场特效**：`fade`（平滑淡入淡出）、`cut`（硬切）、`slide-left` / `slide-right` / `slide-up` / `slide-down`（滑动推移）、`zoom`（径向缩放）、`wipe-left` / `wipe-right`（百叶窗擦除）、`iris`（光圈收缩）、`glitch`（赛博朋克 RGB 故障）、`cube`（3D 立体翻转）与 `particles`（伪随机粒子重组）。
 - **页内组件分步显现（Steps）**：使用 `#step(order, effect: "...")` 控制内容序列化展开，支持 `fade-in`、`slide-up`、`glitch` 与 `typewriter` 效果。使用空格键 / 左键前进，Backspace / 右键回退。
 - **交互式数据图表**：
@@ -93,7 +93,7 @@ my-talk/
 #import "theme.typ": *
 
 #show: slide-theme.with(
-  aspect-ratio: "16-9",
+  aspect-ratio: "16-9", // "16-9", "16-10"（MacBook / Dell XPS / ThinkPad 等）, "3-2"（Surface / Framework 等）, 或 "4-3"
   theme: "dark"
 )
 

@@ -82,9 +82,47 @@ impl SvgRenderer {
         let transform = tiny_skia::Transform::from_scale(scale, scale);
         resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-        // Allocate surface buffer for full window and blit pixmap with letterbox padding
-        let mut surface_pixels = vec![0xFF0f111a; target_width * target_height];
         let pixmap_data = pixmap.data();
+
+        // Detect slide background color by sampling margin pixels (top, left, right margins)
+        let detected_bg = {
+            let sample_points = [
+                (
+                    (content_w / 2).min(content_w.saturating_sub(1)),
+                    2.min(content_h.saturating_sub(1)),
+                ),
+                (
+                    2.min(content_w.saturating_sub(1)),
+                    2.min(content_h.saturating_sub(1)),
+                ),
+                (
+                    content_w.saturating_sub(3),
+                    2.min(content_h.saturating_sub(1)),
+                ),
+                (
+                    2.min(content_w.saturating_sub(1)),
+                    (content_h / 2).min(content_h.saturating_sub(1)),
+                ),
+            ];
+            let mut bg = 0xFF0f111a;
+            for (sx, sy) in sample_points {
+                let idx = (sy * content_w + sx) * 4;
+                if let (Some(&r), Some(&g), Some(&b), Some(&a)) = (
+                    pixmap_data.get(idx),
+                    pixmap_data.get(idx + 1),
+                    pixmap_data.get(idx + 2),
+                    pixmap_data.get(idx + 3),
+                ) && a > 0
+                {
+                    bg = ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+                    break;
+                }
+            }
+            bg
+        };
+
+        // Allocate surface buffer for full window and blit pixmap with seamless letterbox padding
+        let mut surface_pixels = vec![detected_bg; target_width * target_height];
 
         for cy in 0..content_h {
             let win_y = offset_y + cy;
@@ -100,17 +138,20 @@ impl SvgRenderer {
                     break;
                 }
                 let idx = pix_row_start + cx * 4;
-                let r = pixmap_data[idx] as u32;
-                let g = pixmap_data[idx + 1] as u32;
-                let b = pixmap_data[idx + 2] as u32;
-                let a = pixmap_data[idx + 3] as u32;
-
-                // Pack ARGB
-                surface_pixels[win_row_start + win_x] = (a << 24) | (r << 16) | (g << 8) | b;
+                if let (Some(&r), Some(&g), Some(&b), Some(&a)) = (
+                    pixmap_data.get(idx),
+                    pixmap_data.get(idx + 1),
+                    pixmap_data.get(idx + 2),
+                    pixmap_data.get(idx + 3),
+                ) && let Some(pixel) = surface_pixels.get_mut(win_row_start + win_x)
+                {
+                    *pixel =
+                        ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+                }
             }
         }
 
-        let surface = SlideSurface::new(target_width, target_height, surface_pixels);
+        let surface = SlideSurface::new(target_width, target_height, surface_pixels, detected_bg);
         let metrics = RenderMetrics {
             scale,
             offset_x: offset_x as f32,

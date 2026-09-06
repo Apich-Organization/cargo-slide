@@ -21,7 +21,7 @@
 - **No Rust Required for Presentation Authors**: Authors write slides entirely in Typst markup (`slides.typ`). Rust is only needed if implementing custom low-level transition or fragment animation traits.
 - **Minimal Project Footprint**: `cargo slide init` scaffolds a clean project consisting of just 5 files.
 - **Standalone Single-Binary Packaging**: `cargo slide build` compiles your presentation, slide vector assets, layout metadata, and the runtime player into a single portable binary (~12 MB). Target machines do not need Typst, Node.js, Python, or Rust installed.
-- **Dual Window Modes**: Seamless toggle between borderless fullscreen (`F11` / `F`) with automatic letterboxing to maintain aspect ratio on any monitor, and resizable windowed mode.
+- **True Native Fullscreen & Seamless Background Extension**: Seamless toggle between true native fullscreen (`F11` / `F` / Dock `FULL`) and resizable windowed mode across Linux (EWMH), Windows (borderless topmost popup), and macOS (Cocoa auto-hiding menu bar and Dock). Letterbox margins automatically sample and extend the slide's background color to eliminate top/bottom seams on any display. Supports `16-9`, `16-10`, `3-2`, and `4-3` aspect ratios natively.
 - **13 Built-in Page Transitions**: `fade`, `cut`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `zoom`, `wipe-left`, `wipe-right`, `iris`, `glitch`, `cube`, and `particles`.
 - **In-Slide Component Steps**: Define sequential reveals using `#step(order, effect: "...")` with effects like `fade-in`, `slide-up`, `glitch`, or `typewriter`. Steps advance with `Space` / Left-Click and reverse with `Backspace` / Right-Click.
 - **Interactive Data Charts**:
@@ -93,7 +93,7 @@ Edit `slides.typ` with any text editor:
 #import "theme.typ": *
 
 #show: slide-theme.with(
-  aspect-ratio: "16-9",
+  aspect-ratio: "16-9", // "16-9", "16-10" (MacBook / Dell XPS / ThinkPad), "3-2" (Surface / Framework), or "4-3"
   theme: "dark"
 )
 

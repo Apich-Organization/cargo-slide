@@ -644,17 +644,25 @@ pub fn get_palette_rects(
             26.0,
         ));
 
-    let popup_w = 200.0f32;
+    let vol_btn_x = dock_items
+        .iter()
+        .find(|(a, _, _)| *a == DockAction::ToggleMute)
+        .map(|(_, r, _)| r.x)
+        .unwrap_or(col_btn.x + 80.0);
+
+    let popup_w = 175.0f32;
     let popup_h = 36.0f32;
-    let popup_x = (col_btn.x + col_btn.width / 2.0 - popup_w / 2.0)
-        .clamp(10.0, screen_w as f32 - popup_w - 10.0);
+    // Constrain palette popup so its right edge is strictly clear of the volume control
+    let max_x = vol_btn_x - 8.0 - popup_w;
+    let desired_x = col_btn.x + col_btn.width / 2.0 - popup_w / 2.0;
+    let popup_x = desired_x.clamp(10.0, max_x.max(10.0));
     let popup_y = col_btn.y - popup_h - 8.0;
 
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
     let count = PALETTE_COLORS.len();
-    let pad = 8.0f32;
-    let gap = 4.0f32;
+    let pad = 6.0f32;
+    let gap = 3.0f32;
     let chip_w = (popup_w - pad * 2.0 - (count - 1) as f32 * gap) / count as f32;
     let chip_h = popup_h - pad * 2.0;
 
@@ -791,20 +799,52 @@ pub fn get_volume_slider_rects(
             26.0,
         ));
 
-    let popup_w = 38.0f32;
-    let popup_h = 130.0f32;
+    let popup_w = 34.0f32;
+    let popup_h = 132.0f32;
     let popup_x = vol_btn.x + (vol_btn.width - popup_w) / 2.0;
-    let popup_y = vol_btn.y - popup_h - 8.0;
+    let popup_y = vol_btn.y - popup_h - 4.0;
 
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
     let track_w = 8.0f32;
-    let track_h = 100.0f32;
+    let track_h = 88.0f32;
     let track_x = popup_x + (popup_w - track_w) / 2.0;
-    let track_y = popup_y + 15.0;
+    let track_y = popup_y + 24.0;
     let track_rect = Rect::new(track_x, track_y, track_w, track_h);
 
     (popup_rect, track_rect)
+}
+
+/// Bounding hover/interaction zone seamlessly bridging the volume dock button and popup slider
+pub fn get_volume_slider_hover_rect(
+    screen_w: usize,
+    screen_h: usize,
+    is_fullscreen: bool,
+) -> Rect {
+    let (popup_rect, _) = get_volume_slider_rects(screen_w, screen_h, is_fullscreen);
+    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen);
+    let vol_btn = dock_items
+        .iter()
+        .find(|(a, _, _)| *a == DockAction::ToggleMute)
+        .map(|(_, r, _)| *r)
+        .unwrap_or(Rect::new(
+            popup_rect.x,
+            popup_rect.y + popup_rect.height,
+            popup_rect.width,
+            30.0,
+        ));
+
+    let left = popup_rect.x.min(vol_btn.x) - 10.0;
+    let right = (popup_rect.x + popup_rect.width).max(vol_btn.x + vol_btn.width) + 10.0;
+    let top = popup_rect.y - 10.0;
+    let bottom = vol_btn.y + vol_btn.height + 6.0;
+
+    Rect::new(
+        left,
+        top,
+        (right - left).max(20.0),
+        (bottom - top).max(20.0),
+    )
 }
 
 /// Check if mouse interacted with vertical volume slider track
@@ -816,7 +856,12 @@ pub fn hit_test_volume_slider(
     my: f32,
 ) -> Option<f32> {
     let (popup_rect, track_rect) = get_volume_slider_rects(screen_w, screen_h, is_fullscreen);
-    if !popup_rect.contains(mx, my) {
+    let test_x_min = popup_rect.x - 10.0;
+    let test_x_max = popup_rect.x + popup_rect.width + 10.0;
+    let test_y_min = popup_rect.y - 6.0;
+    let test_y_max = popup_rect.y + popup_rect.height + 6.0;
+
+    if mx < test_x_min || mx > test_x_max || my < test_y_min || my > test_y_max {
         return None;
     }
     // Fraction: bottom is 0.0, top is 1.0
@@ -842,20 +887,42 @@ pub fn render_volume_slider_popup(
 
     // Background
     for y in y1..=y2 {
-        let row = y * width;
+        let row = y.saturating_mul(width);
         for x in x1..=x2 {
-            buffer[row + x] = 0xF0161b22;
+            buffer[row.saturating_add(x)] = 0xF0161b22;
         }
     }
     // Border
     for x in x1..=x2 {
-        buffer[y1 * width + x] = 0xFF58a6ff;
-        buffer[y2 * width + x] = 0xFF58a6ff;
+        buffer[y1.saturating_mul(width).saturating_add(x)] = 0xFF58a6ff;
+        buffer[y2.saturating_mul(width).saturating_add(x)] = 0xFF58a6ff;
     }
     for y in y1..=y2 {
-        buffer[y * width + x1] = 0xFF58a6ff;
-        buffer[y * width + x2] = 0xFF58a6ff;
+        buffer[y.saturating_mul(width).saturating_add(x1)] = 0xFF58a6ff;
+        buffer[y.saturating_mul(width).saturating_add(x2)] = 0xFF58a6ff;
     }
+
+    // Top indicator text: "MUT" or "85%"
+    let pct_str = if is_muted {
+        "MUT".to_string()
+    } else {
+        format!("{}%", (volume.clamp(0.0, 1.0) * 100.0).round() as u32)
+    };
+    let text_col = if is_muted {
+        0xFFf85149
+    } else {
+        0xFF58a6ff
+    };
+    let text_x = (popup_rect.x + (popup_rect.width - pct_str.len() as f32 * 7.0) * 0.5) as usize;
+    draw_text(
+        buffer,
+        width,
+        height,
+        text_x,
+        y1.saturating_add(7),
+        &pct_str,
+        text_col,
+    );
 
     // Draw track
     let tx1 = track_rect.x as usize;
@@ -871,12 +938,12 @@ pub fn render_volume_slider_popup(
     let fill_start_y = ty2.saturating_sub(fill_h);
 
     for y in ty1..=ty2 {
-        let row = y * width;
+        let row = y.saturating_mul(width);
         for x in tx1..=tx2 {
             if y >= fill_start_y && !is_muted {
-                buffer[row + x] = 0xFF39d353; // Green fill
+                buffer[row.saturating_add(x)] = 0xFF39d353; // Green fill
             } else {
-                buffer[row + x] = 0xFF30363d; // Inactive track
+                buffer[row.saturating_add(x)] = 0xFF30363d; // Inactive track
             }
         }
     }
@@ -1121,6 +1188,51 @@ pub fn draw_help_overlay(
         };
 
         draw_text(buffer, width, height, start_x + padding, y, line, color);
+    }
+}
+
+/// Truncate text to fit within `max_px` pixels, appending "..." if truncated.
+#[must_use]
+pub fn truncate_text_to_width(
+    text: &str,
+    max_px: usize,
+) -> String {
+    let char_step = 7usize;
+    let max_chars = max_px.saturating_div(char_step);
+    if max_chars == 0 {
+        return String::new();
+    }
+    let total_chars = text.chars().count();
+    if total_chars <= max_chars {
+        return text.to_string();
+    }
+    if max_chars <= 3 {
+        return text.chars().take(max_chars).collect();
+    }
+    let take_count = max_chars.saturating_sub(3);
+    let mut truncated: String = text.chars().take(take_count).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+/// Draw a line of text at (x, y) with right boundary clipping (`max_x`)
+pub fn draw_text_clipped(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    mut x: usize,
+    y: usize,
+    text: &str,
+    color: u32,
+    max_x: usize,
+) {
+    let char_w = 6usize;
+    for ch in text.chars() {
+        if x.saturating_add(char_w) >= max_x || x.saturating_add(char_w) >= width {
+            break;
+        }
+        draw_char(buffer, width, height, x, y, ch, color);
+        x = x.saturating_add(char_w).saturating_add(1);
     }
 }
 
@@ -1468,6 +1580,16 @@ fn draw_char(
                 0b00000, 0b10101, 0b01110, 0b11111, 0b01110, 0b10101, 0b00000,
             ]
         },
+        | '^' => {
+            [
+                0b00100, 0b01010, 0b10001, 0b00000, 0b00000, 0b00000, 0b00000,
+            ]
+        },
+        | '!' => {
+            [
+                0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100, 0b00000,
+            ]
+        },
         | ' ' => [0; 7],
         | _ => {
             [
@@ -1510,6 +1632,10 @@ pub enum InspectorAction {
     ExportCsv,
     SelectCategory(usize),
     ScrollTable(isize),
+    FocusSearch,
+    ClearFilter,
+    CycleFormat,
+    SortColumn(usize), // 0: category, 1+: series
 }
 
 pub const TRANSFORM_PRESETS: [(&str, ChartTransform); 7] = [
@@ -1539,6 +1665,27 @@ pub fn get_transform_preset_rects(series_strip: Rect) -> Vec<(Rect, &'static str
     result
 }
 
+fn parse_filter_condition(q: &str) -> Option<(&'static str, &str)> {
+    let trimmed = q.trim();
+    if let Some(rest) = trimmed.strip_prefix(">=") {
+        Some((">=", rest.trim()))
+    } else if let Some(rest) = trimmed.strip_prefix("<=") {
+        Some(("<=", rest.trim()))
+    } else if let Some(rest) = trimmed.strip_prefix("!=") {
+        Some(("!=", rest.trim()))
+    } else if let Some(rest) = trimmed.strip_prefix("==") {
+        Some(("==", rest.trim()))
+    } else if let Some(rest) = trimmed.strip_prefix('>') {
+        Some((">", rest.trim()))
+    } else if let Some(rest) = trimmed.strip_prefix('<') {
+        Some(("<", rest.trim()))
+    } else if let Some(rest) = trimmed.strip_prefix('=') {
+        Some(("=", rest.trim()))
+    } else {
+        None
+    }
+}
+
 /// State of the active Chart Data Inspector modal
 #[derive(Debug, Clone)]
 pub struct ChartInspectorState {
@@ -1551,6 +1698,13 @@ pub struct ChartInspectorState {
     pub hovered_series: Option<usize>,
     pub table_scroll: usize,
     pub toast_message: Option<(String, std::time::Instant)>,
+
+    pub search_query: String,
+    pub search_active: bool,
+    pub sort_column: Option<usize>,
+    pub sort_ascending: bool,
+    pub marquee_range: Option<(usize, usize)>,
+    pub marquee_drag_start: Option<usize>,
 }
 
 impl ChartInspectorState {
@@ -1568,7 +1722,152 @@ impl ChartInspectorState {
             hovered_series: None,
             table_scroll: 0,
             toast_message: None,
+            search_query: String::new(),
+            search_active: false,
+            sort_column: None,
+            sort_ascending: true,
+            marquee_range: None,
+            marquee_drag_start: None,
         }
+    }
+
+    pub fn clear_filter(&mut self) {
+        self.search_query.clear();
+        self.search_active = false;
+        self.marquee_range = None;
+        self.marquee_drag_start = None;
+        self.table_scroll = 0;
+        self.show_toast("Filter Cleared");
+    }
+
+    pub fn cycle_format(&mut self) {
+        use slide_core::chart::NumberFormat;
+        self.chart_data.format = match self.chart_data.format {
+            | NumberFormat::Auto => NumberFormat::Currency,
+            | NumberFormat::Currency => NumberFormat::Percentage,
+            | NumberFormat::Percentage => NumberFormat::Compact,
+            | NumberFormat::Compact => NumberFormat::Scientific,
+            | NumberFormat::Scientific => NumberFormat::Integer,
+            | NumberFormat::Integer => NumberFormat::Standard,
+            | NumberFormat::Standard => NumberFormat::Auto,
+        };
+        self.original_chart_data.format = self.chart_data.format;
+        let name = match self.chart_data.format {
+            | NumberFormat::Auto => "Format: Auto",
+            | NumberFormat::Currency => "Format: Currency ($)",
+            | NumberFormat::Percentage => "Format: Percent (%)",
+            | NumberFormat::Compact => "Format: Compact (K/M/B)",
+            | NumberFormat::Scientific => "Format: Scientific",
+            | NumberFormat::Integer => "Format: Integer",
+            | NumberFormat::Standard => "Format: Standard",
+        };
+        self.show_toast(name);
+    }
+
+    pub fn get_filtered_category_indices(&self) -> Vec<usize> {
+        let total_cats = self.chart_data.categories.len();
+        let mut indices: Vec<usize> = (0..total_cats).collect();
+
+        if let Some((start, end)) = self.marquee_range {
+            let min_i = start.min(end);
+            let max_i = start.max(end);
+            indices.retain(|&i| i >= min_i && i <= max_i);
+        }
+
+        let query = self.search_query.trim();
+        if !query.is_empty() {
+            let query_lower = query.to_lowercase();
+            if let Some((op, num_str)) = parse_filter_condition(query) {
+                if let Ok(target_num) = num_str.parse::<f64>() {
+                    indices.retain(|&cat_i| {
+                        self.chart_data.series.iter().enumerate().any(|(s_i, s)| {
+                            if self.hidden_series.contains(&s_i) {
+                                return false;
+                            }
+                            if let Some(&val) = s.values.get(cat_i) {
+                                match op {
+                                    | ">" => val > target_num,
+                                    | ">=" => val >= target_num,
+                                    | "<" => val < target_num,
+                                    | "<=" => val <= target_num,
+                                    | "==" | "=" => (val - target_num).abs() < 1e-6,
+                                    | "!=" => (val - target_num).abs() >= 1e-6,
+                                    | _ => true,
+                                }
+                            } else {
+                                false
+                            }
+                        })
+                    });
+                }
+            } else {
+                indices.retain(|&cat_i| {
+                    if let Some(cat_name) = self.chart_data.categories.get(cat_i)
+                        && cat_name.to_lowercase().contains(&query_lower)
+                    {
+                        return true;
+                    }
+                    self.chart_data.series.iter().enumerate().any(|(s_i, s)| {
+                        if self.hidden_series.contains(&s_i) {
+                            return false;
+                        }
+                        if let Some(&val) = s.values.get(cat_i) {
+                            let formatted = self.chart_data.format_number(val).to_lowercase();
+                            if formatted.contains(&query_lower) {
+                                return true;
+                            }
+                        }
+                        false
+                    })
+                });
+            }
+        }
+
+        if let Some(col) = self.sort_column {
+            indices.sort_by(|&a, &b| {
+                let ord = if col == 0 {
+                    let cat_a = self
+                        .chart_data
+                        .categories
+                        .get(a)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    let cat_b = self
+                        .chart_data
+                        .categories
+                        .get(b)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    cat_a.cmp(cat_b)
+                } else {
+                    let s_idx = col.saturating_sub(1);
+                    let val_a = self
+                        .chart_data
+                        .series
+                        .get(s_idx)
+                        .and_then(|s| s.values.get(a))
+                        .copied()
+                        .unwrap_or(0.0);
+                    let val_b = self
+                        .chart_data
+                        .series
+                        .get(s_idx)
+                        .and_then(|s| s.values.get(b))
+                        .copied()
+                        .unwrap_or(0.0);
+                    val_a
+                        .partial_cmp(&val_b)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                };
+                if self.sort_ascending {
+                    ord
+                } else {
+                    ord.reverse()
+                }
+            });
+        }
+
+        indices
     }
 
     pub fn set_transform(
@@ -2060,54 +2359,79 @@ fn render_tooltip_card(
     series: &[slide_core::chart::SeriesData],
     cat_idx: usize,
 ) {
-    let card_w = 170usize;
-    let card_h = 32 + series.len() * 18;
+    let mut max_chars = title.chars().count().saturating_add(2);
+    for s in series {
+        let val_str = s
+            .values
+            .get(cat_idx)
+            .map(|&v| slide_core::chart::ChartData::format_value(v))
+            .unwrap_or_else(|| "0".into());
+        let line_chars = s
+            .name
+            .chars()
+            .count()
+            .saturating_add(val_str.chars().count())
+            .saturating_add(3);
+        if line_chars > max_chars {
+            max_chars = line_chars;
+        }
+    }
+    let needed_w = max_chars.saturating_mul(7).saturating_add(34);
+    let card_w = needed_w.clamp(170, (width.saturating_sub(40)).min(640));
+    let card_h = 32usize.saturating_add(series.len().saturating_mul(18));
 
-    let card_x = if mx + 16 + card_w < width {
-        mx + 16
+    let card_x = if mx.saturating_add(16).saturating_add(card_w) < width {
+        mx.saturating_add(16)
     } else {
-        mx.saturating_sub(card_w + 10)
+        mx.saturating_sub(card_w.saturating_add(10))
     };
-    let card_y = if my + 16 + card_h < height {
-        my + 16
+    let card_y = if my.saturating_add(16).saturating_add(card_h) < height {
+        my.saturating_add(16)
     } else {
-        my.saturating_sub(card_h + 10)
+        my.saturating_sub(card_h.saturating_add(10))
     };
 
-    for y in card_y..(card_y + card_h).min(height) {
-        let row = y * width;
-        let is_edge_y = y == card_y || y == card_y + card_h - 1;
-        for x in card_x..(card_x + card_w).min(width) {
-            let is_edge_x = x == card_x || x == card_x + card_w - 1;
+    for y in card_y..(card_y.saturating_add(card_h)).min(height) {
+        let row = y.saturating_mul(width);
+        let is_edge_y = y == card_y || y == card_y.saturating_add(card_h).saturating_sub(1);
+        for x in card_x..(card_x.saturating_add(card_w)).min(width) {
+            let is_edge_x = x == card_x || x == card_x.saturating_add(card_w).saturating_sub(1);
             if is_edge_y || is_edge_x {
-                buffer[row + x] = 0xFF30363d;
+                buffer[row.saturating_add(x)] = 0xFF30363d;
             } else {
-                buffer[row + x] = blend_pixel_fast(buffer[row + x], 0xFF161b22, 235);
+                buffer[row.saturating_add(x)] =
+                    blend_pixel_fast(buffer[row.saturating_add(x)], 0xFF161b22, 235);
             }
         }
     }
 
-    draw_text(
+    let title_display = truncate_text_to_width(title, card_w.saturating_sub(20));
+    draw_text_clipped(
         buffer,
         width,
         height,
-        card_x + 10,
-        card_y + 8,
-        title,
+        card_x.saturating_add(10),
+        card_y.saturating_add(8),
+        &title_display,
         0xFF58a6ff,
+        card_x.saturating_add(card_w).saturating_sub(6),
     );
 
-    let div_y = card_y + 22;
+    let div_y = card_y.saturating_add(22);
     if div_y < height {
-        let row = div_y * width;
-        for x in (card_x + 8)..(card_x + card_w - 8).min(width) {
-            buffer[row + x] = 0xFF30363d;
+        let row = div_y.saturating_mul(width);
+        for x in
+            (card_x.saturating_add(8))..(card_x.saturating_add(card_w).saturating_sub(8)).min(width)
+        {
+            buffer[row.saturating_add(x)] = 0xFF30363d;
         }
     }
 
     for (i, s) in series.iter().enumerate() {
-        let sy = card_y + 28 + i * 18;
-        if sy + 10 >= height {
+        let sy = card_y
+            .saturating_add(28)
+            .saturating_add(i.saturating_mul(18));
+        if sy.saturating_add(10) >= height {
             break;
         }
 
@@ -2118,10 +2442,13 @@ fn render_tooltip_card(
         };
 
         for by in 0..6 {
-            let brow = (sy + by) * width;
+            let brow = (sy.saturating_add(by)).saturating_mul(width);
             for bx in 0..6 {
-                if card_x + 10 + bx < width {
-                    buffer[brow + card_x + 10 + bx] = color;
+                if card_x.saturating_add(10).saturating_add(bx) < width {
+                    buffer[brow
+                        .saturating_add(card_x)
+                        .saturating_add(10)
+                        .saturating_add(bx)] = color;
                 }
             }
         }
@@ -2132,7 +2459,17 @@ fn render_tooltip_card(
             .map(|&v| slide_core::chart::ChartData::format_value(v))
             .unwrap_or_else(|| "0".into());
         let label = format!("{}: {}", s.name, val_str);
-        draw_text(buffer, width, height, card_x + 22, sy, &label, 0xFFe6edf3);
+        let label_display = truncate_text_to_width(&label, card_w.saturating_sub(32));
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            card_x.saturating_add(22),
+            sy,
+            &label_display,
+            0xFFe6edf3,
+            card_x.saturating_add(card_w).saturating_sub(6),
+        );
     }
 }
 
@@ -2145,47 +2482,254 @@ fn render_simple_tooltip(
     title: &str,
     lines: &[String],
 ) {
-    let card_w = 150usize;
-    let card_h = 28 + lines.len() * 16;
+    let max_line_chars = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let title_chars = title.chars().count();
+    let max_chars = title_chars.max(max_line_chars);
+    let needed_w = max_chars.saturating_mul(7).saturating_add(28);
+    let card_w = needed_w.clamp(150, (width.saturating_sub(40)).min(640));
+    let card_h = 28usize.saturating_add(lines.len().saturating_mul(16));
 
-    let card_x = if mx + 16 + card_w < width {
-        mx + 16
+    let card_x = if mx.saturating_add(16).saturating_add(card_w) < width {
+        mx.saturating_add(16)
     } else {
-        mx.saturating_sub(card_w + 10)
+        mx.saturating_sub(card_w.saturating_add(10))
     };
-    let card_y = if my + 16 + card_h < height {
-        my + 16
+    let card_y = if my.saturating_add(16).saturating_add(card_h) < height {
+        my.saturating_add(16)
     } else {
-        my.saturating_sub(card_h + 10)
+        my.saturating_sub(card_h.saturating_add(10))
     };
 
-    for y in card_y..(card_y + card_h).min(height) {
-        let row = y * width;
-        let is_edge_y = y == card_y || y == card_y + card_h - 1;
-        for x in card_x..(card_x + card_w).min(width) {
-            let is_edge_x = x == card_x || x == card_x + card_w - 1;
+    for y in card_y..(card_y.saturating_add(card_h)).min(height) {
+        let row = y.saturating_mul(width);
+        let is_edge_y = y == card_y || y == card_y.saturating_add(card_h).saturating_sub(1);
+        for x in card_x..(card_x.saturating_add(card_w)).min(width) {
+            let is_edge_x = x == card_x || x == card_x.saturating_add(card_w).saturating_sub(1);
             if is_edge_y || is_edge_x {
-                buffer[row + x] = 0xFF30363d;
+                buffer[row.saturating_add(x)] = 0xFF30363d;
             } else {
-                buffer[row + x] = blend_pixel_fast(buffer[row + x], 0xFF161b22, 235);
+                buffer[row.saturating_add(x)] =
+                    blend_pixel_fast(buffer[row.saturating_add(x)], 0xFF161b22, 235);
             }
         }
     }
 
-    draw_text(
+    let title_display = truncate_text_to_width(title, card_w.saturating_sub(20));
+    draw_text_clipped(
         buffer,
         width,
         height,
-        card_x + 10,
-        card_y + 8,
-        title,
+        card_x.saturating_add(10),
+        card_y.saturating_add(8),
+        &title_display,
         0xFF58a6ff,
+        card_x.saturating_add(card_w).saturating_sub(6),
     );
 
     for (i, line) in lines.iter().enumerate() {
-        let ly = card_y + 24 + i * 16;
-        draw_text(buffer, width, height, card_x + 10, ly, line, 0xFFe6edf3);
+        let ly = card_y
+            .saturating_add(24)
+            .saturating_add(i.saturating_mul(16));
+        let line_display = truncate_text_to_width(line, card_w.saturating_sub(20));
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            card_x.saturating_add(10),
+            ly,
+            &line_display,
+            0xFFe6edf3,
+            card_x.saturating_add(card_w).saturating_sub(6),
+        );
     }
+}
+
+fn render_table_hover_card(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    mx: usize,
+    my: usize,
+    cat_name: &str,
+    lines: &[String],
+    visible_series: &[(usize, &SeriesData)],
+) {
+    let mut max_chars = cat_name.chars().count().saturating_add(12);
+    for l in lines {
+        let count = l.chars().count();
+        if count > max_chars {
+            max_chars = count;
+        }
+    }
+    let needed_w = max_chars.saturating_mul(7).saturating_add(34);
+    let card_w = needed_w.clamp(180, (width.saturating_sub(40)).min(640));
+    let card_h = 28usize.saturating_add(lines.len().saturating_mul(18));
+
+    let card_x = if mx.saturating_add(16).saturating_add(card_w) < width {
+        mx.saturating_add(16)
+    } else {
+        mx.saturating_sub(card_w.saturating_add(12))
+    };
+    let card_y = if my.saturating_add(16).saturating_add(card_h) < height {
+        my.saturating_add(16)
+    } else {
+        my.saturating_sub(card_h.saturating_add(12))
+    };
+
+    fill_rect_alpha(
+        buffer, width, height, card_x, card_y, card_w, card_h, 0xFF0d1117, 242,
+    );
+    draw_rect_outline(
+        buffer, width, height, card_x, card_y, card_w, card_h, 0xFF388bfd,
+    );
+
+    let title = format!("Category: {}", cat_name);
+    let title_disp = truncate_text_to_width(&title, card_w.saturating_sub(16));
+    draw_text_clipped(
+        buffer,
+        width,
+        height,
+        card_x.saturating_add(8),
+        card_y.saturating_add(7),
+        &title_disp,
+        0xFF58a6ff,
+        card_x.saturating_add(card_w).saturating_sub(4),
+    );
+
+    let div_y = card_y.saturating_add(22);
+    if div_y < height {
+        let row = div_y.saturating_mul(width);
+        for x in
+            (card_x.saturating_add(6))..(card_x.saturating_add(card_w).saturating_sub(6)).min(width)
+        {
+            buffer[row.saturating_add(x)] = 0xFF30363d;
+        }
+    }
+
+    for (i, line) in lines.iter().enumerate() {
+        let sy = card_y
+            .saturating_add(26)
+            .saturating_add(i.saturating_mul(18));
+        if sy.saturating_add(12) >= height {
+            break;
+        }
+        let col = if let Some((s_idx, s)) = visible_series.get(i) {
+            parse_hex_color(
+                s.color
+                    .as_deref()
+                    .unwrap_or(DEFAULT_CHART_COLORS[s_idx % DEFAULT_CHART_COLORS.len()]),
+            )
+        } else {
+            0xFFe6edf3
+        };
+        fill_rect(
+            buffer,
+            width,
+            height,
+            card_x.saturating_add(8),
+            sy.saturating_add(4),
+            6,
+            6,
+            col,
+        );
+        let line_disp = truncate_text_to_width(line, card_w.saturating_sub(26));
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            card_x.saturating_add(18),
+            sy.saturating_add(2),
+            &line_disp,
+            0xFFe6edf3,
+            card_x.saturating_add(card_w).saturating_sub(4),
+        );
+    }
+}
+
+fn render_kpi_hover_card(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    mx: usize,
+    my: usize,
+    title: &str,
+    val: &str,
+    sub: &str,
+    desc: &str,
+    accent_col: u32,
+) {
+    let line1 = format!("Metric: {}", title);
+    let line2 = format!("Value:  {}", val);
+    let line3 = format!("Scope:  {}", sub);
+    let line4 = desc.to_string();
+    let max_chars = line1
+        .len()
+        .max(line2.len())
+        .max(line3.len())
+        .max(line4.len());
+    let needed_w = max_chars.saturating_mul(7).saturating_add(32);
+    let card_w = needed_w.clamp(200, (width.saturating_sub(40)).min(640));
+    let card_h = 76usize;
+
+    let card_x = if mx.saturating_add(16).saturating_add(card_w) < width {
+        mx.saturating_add(16)
+    } else {
+        mx.saturating_sub(card_w.saturating_add(12))
+    };
+    let card_y = if my.saturating_add(16).saturating_add(card_h) < height {
+        my.saturating_add(16)
+    } else {
+        my.saturating_sub(card_h.saturating_add(12))
+    };
+
+    fill_rect_alpha(
+        buffer, width, height, card_x, card_y, card_w, card_h, 0xFF0d1117, 242,
+    );
+    draw_rect_outline(
+        buffer, width, height, card_x, card_y, card_w, card_h, accent_col,
+    );
+    fill_rect(buffer, width, height, card_x, card_y, card_w, 2, accent_col);
+
+    draw_text_clipped(
+        buffer,
+        width,
+        height,
+        card_x.saturating_add(8),
+        card_y.saturating_add(6),
+        &line1,
+        accent_col,
+        card_x.saturating_add(card_w).saturating_sub(4),
+    );
+    draw_text_clipped(
+        buffer,
+        width,
+        height,
+        card_x.saturating_add(8),
+        card_y.saturating_add(22),
+        &line2,
+        0xFFFFFFFF,
+        card_x.saturating_add(card_w).saturating_sub(4),
+    );
+    draw_text_clipped(
+        buffer,
+        width,
+        height,
+        card_x.saturating_add(8),
+        card_y.saturating_add(38),
+        &line3,
+        0xFF8b949e,
+        card_x.saturating_add(card_w).saturating_sub(4),
+    );
+    draw_text_clipped(
+        buffer,
+        width,
+        height,
+        card_x.saturating_add(8),
+        card_y.saturating_add(56),
+        &line4,
+        0xFFe6edf3,
+        card_x.saturating_add(card_w).saturating_sub(4),
+    );
 }
 
 pub fn parse_hex_color(hex: &str) -> u32 {
@@ -2244,21 +2788,117 @@ pub fn get_inspector_layout(
     )
 }
 
-/// Calculate bounds for series filter chips in series_strip
+/// Calculate bounds for series filter chips in series_strip.
+/// Dynamically calculates available space to the transform preset buttons on the right,
+/// ensuring chips expand generously into available space so series names are never truncated with "...".
 #[must_use]
 pub fn get_series_chip_rects(
     series_strip: Rect,
     series: &[slide_core::chart::SeriesData],
 ) -> Vec<(usize, Rect)> {
-    let mut cur_x = series_strip.x + 56.0;
-    let mut chips = Vec::with_capacity(series.len());
-    for (s_idx, s) in series.iter().enumerate() {
-        let chip_w = (s.name.len().saturating_mul(6).saturating_add(26)).max(50) as f32;
-        let chip_rect = Rect::new(cur_x, series_strip.y + 2.0, chip_w, 22.0);
+    if series.is_empty() {
+        return Vec::new();
+    }
+    let cur_x = series_strip.x + 58.0;
+    let presets = get_transform_preset_rects(series_strip);
+    let right_limit = presets
+        .first()
+        .map(|(r, _, _)| r.x - 12.0)
+        .unwrap_or(series_strip.x + series_strip.width - 8.0);
+    let available_w = (right_limit - cur_x).max(60.0);
+
+    let num_chips = series.len();
+    let gap = 6.0f32;
+    let total_gaps = (num_chips.saturating_sub(1) as f32) * gap;
+    let net_available_w = (available_w - total_gaps).max(50.0);
+
+    // Calculate minimum width required to comfortably show full series name without any truncation
+    let min_fit_widths: Vec<f32> = series
+        .iter()
+        .map(|s| (s.name.chars().count() as f32 * 7.5 + 28.0).max(64.0))
+        .collect();
+    let total_min_fit: f32 = min_fit_widths.iter().sum();
+
+    let mut chips = Vec::with_capacity(num_chips);
+    let mut x = cur_x;
+    for (s_idx, &min_fit_w) in min_fit_widths.iter().enumerate() {
+        let chip_w = if total_min_fit <= net_available_w {
+            // Generously expand into the available space to the right instead of leaving a huge empty void!
+            let extra_space = net_available_w - total_min_fit;
+            let extra_per_chip = (extra_space / num_chips as f32).min(80.0);
+            min_fit_w + extra_per_chip
+        } else {
+            // Proportionally allocate available width when space is tight
+            ((min_fit_w / total_min_fit) * net_available_w).max(48.0)
+        };
+        let chip_rect = Rect::new(x, series_strip.y + 2.0, chip_w, 22.0);
         chips.push((s_idx, chip_rect));
-        cur_x += chip_w + 6.0;
+        x += chip_w + gap;
     }
     chips
+}
+
+/// Compute adaptive column widths for data table in inspector right pane.
+/// Dynamically balances category column and series columns based on actual text lengths and available space,
+/// avoiding arbitrary truncation of either category or series names whenever space permits.
+#[must_use]
+pub fn get_table_column_widths(
+    right_pane_w: f32,
+    chart_data: &ChartData,
+    num_visible_series: usize,
+) -> (f32, f32) {
+    let max_cat_chars = chart_data
+        .categories
+        .iter()
+        .map(|c| c.chars().count())
+        .max()
+        .unwrap_or(8)
+        .max(8);
+
+    let max_series_chars = chart_data
+        .series
+        .iter()
+        .map(|s| s.name.chars().count())
+        .max()
+        .unwrap_or(6)
+        .max(6);
+
+    let needed_cat_w = (max_cat_chars as f32 * 7.5 + 24.0).max(90.0);
+    let needed_series_w = (max_series_chars as f32 * 7.5 + 24.0).max(75.0);
+    let num_s = num_visible_series.max(1);
+
+    if needed_cat_w + needed_series_w * num_s as f32 <= right_pane_w {
+        let cat_col_w = needed_cat_w;
+        let s_col_w = (right_pane_w - cat_col_w) / num_s as f32;
+        (cat_col_w, s_col_w)
+    } else {
+        let min_series_col_w = 68.0f32;
+        let series_needed = min_series_col_w * num_s as f32;
+        let max_avail_cat_w = (right_pane_w - series_needed).max(85.0);
+        let cat_col_w = needed_cat_w.min(max_avail_cat_w).max(85.0);
+        let remaining_w = (right_pane_w - cat_col_w).max(20.0);
+        let s_col_w = remaining_w / num_s as f32;
+        (cat_col_w, s_col_w)
+    }
+}
+
+/// Calculate bounds for table controls (search box, clear button, format toggle)
+#[must_use]
+pub fn get_table_control_rects(right_pane: Rect) -> (Rect, Rect, Rect) {
+    let bar_y = right_pane.y + 4.0;
+    let bar_h = 22.0;
+    let format_w = 66.0;
+    let clear_w = 56.0;
+    let format_btn = Rect::new(
+        right_pane.x + right_pane.width - format_w - 6.0,
+        bar_y,
+        format_w,
+        bar_h,
+    );
+    let clear_btn = Rect::new(format_btn.x - clear_w - 4.0, bar_y, clear_w, bar_h);
+    let search_w = (clear_btn.x - right_pane.x - 12.0).max(60.0);
+    let search_box = Rect::new(right_pane.x + 6.0, bar_y, search_w, bar_h);
+    (search_box, clear_btn, format_btn)
 }
 
 /// Hit-test within the Chart Data Inspector modal
@@ -2319,18 +2959,52 @@ pub fn hit_test_chart_inspector(
         }
     }
 
-    // Hit test data table rows in right pane
+    // Hit test controls and table in right pane
     if right_pane.contains(mouse_x, mouse_y) {
-        let header_h = 26.0;
+        let (search_box, clear_btn, format_btn) = get_table_control_rects(right_pane);
+        if search_box.contains(mouse_x, mouse_y) {
+            return Some(InspectorAction::FocusSearch);
+        }
+        if clear_btn.contains(mouse_x, mouse_y) {
+            return Some(InspectorAction::ClearFilter);
+        }
+        if format_btn.contains(mouse_x, mouse_y) {
+            return Some(InspectorAction::CycleFormat);
+        }
+
+        let header_y = right_pane.y + 30.0;
+        let header_h = 24.0;
+        if mouse_y >= header_y && mouse_y < header_y + header_h {
+            let visible_series: Vec<usize> = state
+                .chart_data
+                .series
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| !state.hidden_series.contains(idx))
+                .map(|(idx, _)| idx)
+                .collect();
+            let (cat_col_w, s_col_w) =
+                get_table_column_widths(right_pane.width, &state.chart_data, visible_series.len());
+            if mouse_x < right_pane.x + cat_col_w {
+                return Some(InspectorAction::SortColumn(0));
+            }
+            let rel_x = mouse_x - (right_pane.x + cat_col_w);
+            let s_slot = (rel_x / s_col_w) as usize;
+            if let Some(&real_s_idx) = visible_series.get(s_slot) {
+                return Some(InspectorAction::SortColumn(real_s_idx.saturating_add(1)));
+            }
+        }
+
+        let table_y = right_pane.y + 56.0;
         let row_h = 24.0;
-        let table_y = right_pane.y + header_h;
-        let visible_rows = ((right_pane.height - header_h - 2.0).max(0.0) / row_h) as usize;
+        let visible_rows = ((right_pane.height - 58.0).max(0.0) / row_h) as usize;
+        let filtered_indices = state.get_filtered_category_indices();
         if mouse_y >= table_y && mouse_y < (right_pane.y + right_pane.height) {
             let row_slot = ((mouse_y - table_y) / row_h) as usize;
             if row_slot < visible_rows {
-                let row_idx = row_slot + state.table_scroll;
-                if row_idx < state.chart_data.categories.len() {
-                    return Some(InspectorAction::SelectCategory(row_idx));
+                let list_idx = row_slot.saturating_add(state.table_scroll);
+                if let Some(&cat_idx) = filtered_indices.get(list_idx) {
+                    return Some(InspectorAction::SelectCategory(cat_idx));
                 }
             }
         }
@@ -2364,6 +3038,7 @@ pub fn draw_chart_visualizer(
     hidden_series: &std::collections::HashSet<usize>,
     hovered_cat: Option<usize>,
     _mouse_pos: Option<(f32, f32)>,
+    marquee_range: Option<(usize, usize)>,
 ) {
     let rx = rect.x as usize;
     let ry = rect.y as usize;
@@ -2521,7 +3196,7 @@ pub fn draw_chart_visualizer(
                     height,
                     cx as usize,
                     (cy + 4) as usize,
-                    &ChartData::format_value(total),
+                    &chart_data.format_number(total),
                     0xFFFFFFFF,
                 );
             }
@@ -2539,10 +3214,14 @@ pub fn draw_chart_visualizer(
                 let tip_text = format!(
                     "{}: {} ({:.1}%)",
                     names[cat_idx],
-                    ChartData::format_value(val),
+                    chart_data.format_number(val),
                     pct
                 );
-                let tip_y = (cy as usize) + radius as usize + 12;
+                let tip_max_px = rw.saturating_sub(24);
+                let tip_display = truncate_text_to_width(&tip_text, tip_max_px);
+                let tip_y = (cy as usize)
+                    .saturating_add(radius as usize)
+                    .saturating_add(12);
                 if tip_y < height {
                     draw_text_at_center(
                         buffer,
@@ -2550,7 +3229,7 @@ pub fn draw_chart_visualizer(
                         height,
                         cx as usize,
                         tip_y,
-                        &tip_text,
+                        &tip_display,
                         0xFF58a6ff,
                     );
                 }
@@ -2588,7 +3267,7 @@ pub fn draw_chart_visualizer(
                 let tick_val = y_min + (step as f64 / 4.0) * (y_max - y_min);
                 let tick_y = (py + ph).saturating_sub(((step as f32 / 4.0) * ph as f32) as usize);
                 draw_dashed_hline(buffer, width, height, px, px + pw, tick_y, 0xFF21262d, 3, 3);
-                let tick_str = ChartData::format_value(tick_val);
+                let tick_str = chart_data.format_number(tick_val);
                 let label_x = px.saturating_sub(tick_str.len() * 6 + 6);
                 draw_text(
                     buffer,
@@ -2606,17 +3285,33 @@ pub fn draw_chart_visualizer(
 
             let cat_count = chart_data.categories.len().max(1);
             let col_w = pw as f32 / cat_count as f32;
+            let is_staggered = col_w < 72.0 && cat_count > 3;
 
             // X-axis category labels
             for (c_idx, cat) in chart_data.categories.iter().enumerate() {
                 let cx = px as f32 + (c_idx as f32 + 0.5) * col_w;
+                let (label_y, max_cat_w) = if is_staggered {
+                    let y_offset = if c_idx.is_multiple_of(2) {
+                        6
+                    } else {
+                        19
+                    };
+                    let stagger_w = (col_w * 2.0 - 6.0).max(col_w - 4.0) as usize;
+                    (py.saturating_add(ph).saturating_add(y_offset), stagger_w)
+                } else {
+                    (
+                        py.saturating_add(ph).saturating_add(8),
+                        (col_w - 4.0).max(12.0) as usize,
+                    )
+                };
+                let cat_display = truncate_text_to_width(cat, max_cat_w);
                 draw_text_at_center(
                     buffer,
                     width,
                     height,
                     cx as usize,
-                    py + ph + 8,
-                    cat,
+                    label_y,
+                    &cat_display,
                     0xFF8b949e,
                 );
             }
@@ -2635,6 +3330,17 @@ pub fn draw_chart_visualizer(
                     0xFF388bfd,
                     35,
                 );
+            }
+
+            // Highlight marquee range if active
+            if let Some((start, end)) = marquee_range {
+                let min_c = start.min(end).min(cat_count.saturating_sub(1));
+                let max_c = start.max(end).min(cat_count.saturating_sub(1));
+                let mx1 = (px as f32 + min_c as f32 * col_w) as usize;
+                let mx2 = (px as f32 + (max_c as f32 + 1.0) * col_w) as usize;
+                let mw = mx2.saturating_sub(mx1).max(1);
+                fill_rect_alpha(buffer, width, height, mx1, py, mw, ph, 0xFF388bfd, 65);
+                draw_rect_outline(buffer, width, height, mx1, py, mw, ph, 0xFF58a6ff);
             }
 
             if chart_type == ChartType::Bar {
@@ -2702,15 +3408,17 @@ pub fn draw_chart_visualizer(
                         for window in pts.windows(2) {
                             let (x0, y0) = window[0];
                             let (x1, y1) = window[1];
-                            let dx = (x1 as isize - x0 as isize).max(1) as f32;
-                            for x in x0..x1 {
-                                let t = (x - x0) as f32 / dx;
-                                let y = (y0 as f32 + t * (y1 as f32 - y0 as f32)) as usize;
-                                for py_fill in y..(py + ph) {
-                                    if py_fill < height && x < width {
-                                        buffer[py_fill * width + x] =
-                                            blend_pixel_fast(buffer[py_fill * width + x], col, 65);
-                                    }
+                            let base_y = py + ph;
+                            for x in x0..=x1.min(width.saturating_sub(1)) {
+                                let frac = if x1 > x0 {
+                                    (x - x0) as f32 / (x1 - x0) as f32
+                                } else {
+                                    0.0
+                                };
+                                let top_y = y0 as f32 + frac * (y1 as f32 - y0 as f32);
+                                for y in (top_y as usize)..=base_y.min(height.saturating_sub(1)) {
+                                    buffer[y * width + x] =
+                                        blend_pixel_fast(buffer[y * width + x], col, 70);
                                 }
                             }
                         }
@@ -2719,14 +3427,16 @@ pub fn draw_chart_visualizer(
                     // Line segments
                     if chart_type != ChartType::Scatter {
                         for window in pts.windows(2) {
+                            let (x0, y0) = window[0];
+                            let (x1, y1) = window[1];
                             draw_thick_line(
                                 buffer,
                                 width,
                                 height,
-                                window[0].0 as isize,
-                                window[0].1 as isize,
-                                window[1].0 as isize,
-                                window[1].1 as isize,
+                                x0 as isize,
+                                y0 as isize,
+                                x1 as isize,
+                                y1 as isize,
                                 1,
                                 col,
                             );
@@ -2754,10 +3464,26 @@ pub fn draw_chart_visualizer(
                 && cat_idx < chart_data.categories.len()
             {
                 let cat_name = &chart_data.categories[cat_idx];
-                let card_w = 160usize;
-                let card_h = 24 + visible_series.len() * 16;
-                let card_x = px + 12;
-                let card_y = py + 12;
+                let mut max_chars = cat_name.chars().count();
+                for (_, s) in &visible_series {
+                    let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                    let val_str = chart_data.format_number(val);
+                    let line_len = s
+                        .name
+                        .chars()
+                        .count()
+                        .saturating_add(val_str.chars().count())
+                        .saturating_add(2);
+                    if line_len > max_chars {
+                        max_chars = line_len;
+                    }
+                }
+                let needed_w = max_chars.saturating_mul(7).saturating_add(32);
+                let max_card_w = rw.saturating_sub(24).min(640);
+                let card_w = needed_w.clamp(160, max_card_w);
+                let card_h = 24usize.saturating_add(visible_series.len().saturating_mul(16));
+                let card_x = px.saturating_add(12);
+                let card_y = py.saturating_add(12);
 
                 fill_rect_alpha(
                     buffer, width, height, card_x, card_y, card_w, card_h, 0xFF0d1117, 230,
@@ -2765,27 +3491,50 @@ pub fn draw_chart_visualizer(
                 draw_rect_outline(
                     buffer, width, height, card_x, card_y, card_w, card_h, 0xFF30363d,
                 );
-                draw_text(
+                let cat_display = truncate_text_to_width(cat_name, card_w.saturating_sub(16));
+                draw_text_clipped(
                     buffer,
                     width,
                     height,
-                    card_x + 8,
-                    card_y + 6,
-                    cat_name,
+                    card_x.saturating_add(8),
+                    card_y.saturating_add(6),
+                    &cat_display,
                     0xFF58a6ff,
+                    card_x.saturating_add(card_w).saturating_sub(6),
                 );
 
                 for (i, (s_idx, s)) in visible_series.iter().enumerate() {
-                    let sy = card_y + 22 + i * 16;
+                    let sy = card_y
+                        .saturating_add(22)
+                        .saturating_add(i.saturating_mul(16));
                     let col = parse_hex_color(
                         s.color
                             .as_deref()
                             .unwrap_or(DEFAULT_CHART_COLORS[s_idx % DEFAULT_CHART_COLORS.len()]),
                     );
-                    fill_rect(buffer, width, height, card_x + 8, sy + 3, 6, 6, col);
+                    fill_rect(
+                        buffer,
+                        width,
+                        height,
+                        card_x.saturating_add(8),
+                        sy.saturating_add(3),
+                        6,
+                        6,
+                        col,
+                    );
                     let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
-                    let line = format!("{}: {}", s.name, ChartData::format_value(val));
-                    draw_text(buffer, width, height, card_x + 18, sy, &line, 0xFFe6edf3);
+                    let line = format!("{}: {}", s.name, chart_data.format_number(val));
+                    let line_display = truncate_text_to_width(&line, card_w.saturating_sub(24));
+                    draw_text_clipped(
+                        buffer,
+                        width,
+                        height,
+                        card_x.saturating_add(18),
+                        sy,
+                        &line_display,
+                        0xFFe6edf3,
+                        card_x.saturating_add(card_w).saturating_sub(6),
+                    );
                 }
             }
         },
@@ -3014,11 +3763,15 @@ pub fn draw_chart_inspector(
         "SERIES:",
         0xFF8b949e,
     );
+    let mut hovered_chip_info = None;
     for (s_idx, chip_rect) in get_series_chip_rects(series_strip, &state.chart_data.series) {
         let s = &state.chart_data.series[s_idx];
         let chip_w = chip_rect.width;
         let is_hidden = state.hidden_series.contains(&s_idx);
         let is_hovered = chip_rect.contains(mouse_x, mouse_y);
+        if is_hovered {
+            hovered_chip_info = Some((s.name.clone(), is_hidden));
+        }
 
         let chip_bg = if is_hidden {
             0xFF161b22
@@ -3079,14 +3832,18 @@ pub fn draw_chart_inspector(
         } else {
             0xFFe6edf3
         };
-        draw_text(
+        let chip_max_x = (chip_rect.x + chip_rect.width - 4.0) as usize;
+        let chip_text =
+            truncate_text_to_width(&s.name, (chip_rect.width - 20.0).max(10.0) as usize);
+        draw_text_clipped(
             buffer,
             width,
             height,
             (chip_rect.x + 16.0) as usize,
             (chip_rect.y + 7.0) as usize,
-            &s.name,
+            &chip_text,
             text_col,
+            chip_max_x,
         );
     }
 
@@ -3137,65 +3894,140 @@ pub fn draw_chart_inspector(
         draw_text_centered(buffer, width, height, rect, label, text_col);
     }
 
-    // 5. KPI Stat Cards Strip
-    let stats = state.chart_data.summary_stats(&state.hidden_series);
-    let kpi_w = (kpi_strip.width - 24.0) / 4.0;
+    // 5. KPI Stat Cards Strip (dynamically computed on filtered records)
+    let filtered_indices = state.get_filtered_category_indices();
+    let stats = state
+        .chart_data
+        .summary_stats_filtered(&state.hidden_series, &filtered_indices);
+    let card_count = 6.0;
+    let gap = 6.0;
+    let kpi_w = (kpi_strip.width - (card_count - 1.0) * gap) / card_count;
     let kpis = [
         (
             "TOTAL SUM",
-            ChartData::format_value(stats.total_sum),
+            state.chart_data.format_number(stats.total_sum),
+            "All visible".to_string(),
             0xFF38bdf8,
+            "Total cumulative sum across active series and filtered rows",
         ),
-        ("AVERAGE", format!("{:.1}", stats.avg), 0xFF34d399),
+        (
+            "MEAN / AVG",
+            state.chart_data.format_number(stats.avg),
+            "Per record".to_string(),
+            0xFF34d399,
+            "Average mean across visible series values",
+        ),
+        (
+            "MEDIAN",
+            state.chart_data.format_number(stats.median),
+            "Middle 50%".to_string(),
+            0xFF60a5fa,
+            "Median midpoint of all visible values",
+        ),
+        (
+            "STD DEV",
+            state.chart_data.format_number(stats.std_dev),
+            "Dispersion".to_string(),
+            0xFFf472b6,
+            "Standard deviation measuring data variability",
+        ),
         (
             "PEAK / MAX",
+            state.chart_data.format_number(stats.max_val),
             if stats.max_cat.is_empty() {
-                ChartData::format_value(stats.max_val)
+                "Peak".to_string()
             } else {
-                format!(
-                    "{} ({})",
-                    ChartData::format_value(stats.max_val),
-                    stats.max_cat
-                )
+                stats.max_cat.clone()
             },
             0xFFf59e0b,
+            "Highest observed metric value and associated category",
         ),
         (
             "MIN / LOW",
+            state.chart_data.format_number(stats.min_val),
             if stats.min_cat.is_empty() {
-                ChartData::format_value(stats.min_val)
+                "Lowest".to_string()
             } else {
-                format!(
-                    "{} ({})",
-                    ChartData::format_value(stats.min_val),
-                    stats.min_cat
-                )
+                stats.min_cat.clone()
             },
             0xFFa855f7,
+            "Lowest observed metric value and associated category",
         ),
     ];
 
-    for (i, &(kpi_title, ref kpi_val, accent_col)) in kpis.iter().enumerate() {
-        let kx = (kpi_strip.x + i as f32 * (kpi_w + 8.0)) as usize;
+    let mut hovered_kpi = None;
+    for (i, &(kpi_title, ref kpi_val, ref kpi_sub, accent_col, detail_desc)) in
+        kpis.iter().enumerate()
+    {
+        let kx = (kpi_strip.x + i as f32 * (kpi_w + gap)) as usize;
         let ky = kpi_strip.y as usize;
         let kw = kpi_w as usize;
         let kh = kpi_strip.height as usize;
 
-        fill_rect(buffer, width, height, kx, ky, kw, kh, 0xFF161b22);
-        draw_rect_outline(buffer, width, height, kx, ky, kw, kh, 0xFF30363d);
+        let is_hovered = mouse_x >= kx as f32
+            && mouse_x < (kx.saturating_add(kw)) as f32
+            && mouse_y >= ky as f32
+            && mouse_y < (ky.saturating_add(kh)) as f32;
+
+        if is_hovered {
+            hovered_kpi = Some((
+                kpi_title,
+                kpi_val.clone(),
+                kpi_sub.clone(),
+                detail_desc,
+                accent_col,
+            ));
+        }
+
+        let bg_col = if is_hovered {
+            0xFF1c2333
+        } else {
+            0xFF161b22
+        };
+        let border_col = if is_hovered {
+            accent_col
+        } else {
+            0xFF30363d
+        };
+
+        fill_rect(buffer, width, height, kx, ky, kw, kh, bg_col);
+        draw_rect_outline(buffer, width, height, kx, ky, kw, kh, border_col);
         // Accent bar on top
         fill_rect(buffer, width, height, kx, ky, kw, 2, accent_col);
 
-        draw_text(
+        let kpi_title_display = truncate_text_to_width(kpi_title, kw.saturating_sub(12));
+        draw_text_clipped(
             buffer,
             width,
             height,
-            kx + 10,
-            ky + 8,
-            kpi_title,
+            kx.saturating_add(8),
+            ky.saturating_add(6),
+            &kpi_title_display,
             0xFF8b949e,
+            kx.saturating_add(kw).saturating_sub(4),
         );
-        draw_text(buffer, width, height, kx + 10, ky + 26, kpi_val, 0xFFFFFFFF);
+        let kpi_val_display = truncate_text_to_width(kpi_val, kw.saturating_sub(12));
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            kx.saturating_add(8),
+            ky.saturating_add(19),
+            &kpi_val_display,
+            0xFFFFFFFF,
+            kx.saturating_add(kw).saturating_sub(4),
+        );
+        let kpi_sub_display = truncate_text_to_width(kpi_sub, kw.saturating_sub(12));
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            kx.saturating_add(8),
+            ky.saturating_add(33),
+            &kpi_sub_display,
+            accent_col,
+            kx.saturating_add(kw).saturating_sub(4),
+        );
     }
 
     // 6. Left Pane: Standalone Fast Visualizer
@@ -3209,6 +4041,7 @@ pub fn draw_chart_inspector(
         &state.hidden_series,
         state.hovered_category,
         Some((mouse_x, mouse_y)),
+        state.marquee_range,
     );
 
     // 7. Right Pane: Interactive Synchronized Data Table
@@ -3220,8 +4053,140 @@ pub fn draw_chart_inspector(
     fill_rect(buffer, width, height, rx, ry, rw, rh, 0xFF161b22);
     draw_rect_outline(buffer, width, height, rx, ry, rw, rh, 0xFF30363d);
 
+    // Controls bar: Search Box, Clear Button, Format Button
+    let (search_box, clear_btn, format_btn) = get_table_control_rects(right_pane);
+
+    let search_border = if state.search_active {
+        0xFF58a6ff
+    } else if search_box.contains(mouse_x, mouse_y) {
+        0xFF8b949e
+    } else {
+        0xFF30363d
+    };
+    fill_rect(
+        buffer,
+        width,
+        height,
+        search_box.x as usize,
+        search_box.y as usize,
+        search_box.width as usize,
+        search_box.height as usize,
+        0xFF0d1117,
+    );
+    draw_rect_outline(
+        buffer,
+        width,
+        height,
+        search_box.x as usize,
+        search_box.y as usize,
+        search_box.width as usize,
+        search_box.height as usize,
+        search_border,
+    );
+
+    let search_display = if state.search_query.is_empty() {
+        if state.search_active {
+            "Type to filter (e.g. >50 or Q3)..."
+        } else {
+            "Search / Filter [Press /]..."
+        }
+    } else {
+        &state.search_query
+    };
+    let search_col = if state.search_query.is_empty() {
+        0xFF6e7681
+    } else {
+        0xFFe6edf3
+    };
+    draw_text(
+        buffer,
+        width,
+        height,
+        (search_box.x + 6.0) as usize,
+        (search_box.y + 6.0) as usize,
+        search_display,
+        search_col,
+    );
+    if state.search_active {
+        let cursor_x = (search_box.x + 6.0 + (state.search_query.len() as f32 * 7.0)) as usize;
+        let cursor_y = (search_box.y + 4.0) as usize;
+        if cursor_x + 2 < width {
+            fill_rect(buffer, width, height, cursor_x, cursor_y, 2, 14, 0xFF58a6ff);
+        }
+    }
+
+    let is_clear_hover = clear_btn.contains(mouse_x, mouse_y);
+    let has_filter = !state.search_query.is_empty() || state.marquee_range.is_some();
+    let clear_bg = if is_clear_hover {
+        0xFF21262d
+    } else {
+        0xFF161b22
+    };
+    let clear_text_col = if has_filter {
+        0xFFf85149
+    } else {
+        0xFF6e7681
+    };
+    fill_rect(
+        buffer,
+        width,
+        height,
+        clear_btn.x as usize,
+        clear_btn.y as usize,
+        clear_btn.width as usize,
+        clear_btn.height as usize,
+        clear_bg,
+    );
+    draw_rect_outline(
+        buffer,
+        width,
+        height,
+        clear_btn.x as usize,
+        clear_btn.y as usize,
+        clear_btn.width as usize,
+        clear_btn.height as usize,
+        0xFF30363d,
+    );
+    draw_text_centered(buffer, width, height, clear_btn, "CLEAR", clear_text_col);
+
+    let is_format_hover = format_btn.contains(mouse_x, mouse_y);
+    let format_bg = if is_format_hover {
+        0xFF21262d
+    } else {
+        0xFF161b22
+    };
+    fill_rect(
+        buffer,
+        width,
+        height,
+        format_btn.x as usize,
+        format_btn.y as usize,
+        format_btn.width as usize,
+        format_btn.height as usize,
+        format_bg,
+    );
+    draw_rect_outline(
+        buffer,
+        width,
+        height,
+        format_btn.x as usize,
+        format_btn.y as usize,
+        format_btn.width as usize,
+        format_btn.height as usize,
+        0xFF30363d,
+    );
+    let fmt_label = match state.chart_data.format {
+        | slide_core::chart::NumberFormat::Auto => "FMT:AUTO",
+        | slide_core::chart::NumberFormat::Currency => "FMT:$",
+        | slide_core::chart::NumberFormat::Percentage => "FMT:%",
+        | slide_core::chart::NumberFormat::Compact => "FMT:1K",
+        | slide_core::chart::NumberFormat::Scientific => "FMT:SCI",
+        | slide_core::chart::NumberFormat::Integer => "FMT:INT",
+        | slide_core::chart::NumberFormat::Standard => "FMT:STD",
+    };
+    draw_text_centered(buffer, width, height, format_btn, fmt_label, 0xFF58a6ff);
+
     // Table Header
-    let cat_col_w = ((rw as f32) * 0.35).max(75.0) as usize;
     let visible_series: Vec<(usize, &SeriesData)> = state
         .chart_data
         .series
@@ -3229,97 +4194,242 @@ pub fn draw_chart_inspector(
         .enumerate()
         .filter(|(idx, _)| !state.hidden_series.contains(idx))
         .collect();
-    let num_s = visible_series.len().max(1);
-    let s_col_w = (rw.saturating_sub(cat_col_w)) / num_s;
+    let (cat_col_w_f, s_col_w_f) =
+        get_table_column_widths(right_pane.width, &state.chart_data, visible_series.len());
+    let cat_col_w = cat_col_w_f as usize;
+    let s_col_w = s_col_w_f as usize;
 
-    fill_rect(buffer, width, height, rx, ry, rw, 26, 0xFF21262d);
-    fill_rect(buffer, width, height, rx, ry + 25, rw, 1, 0xFF30363d);
-    draw_text(
+    let header_y = ry.saturating_add(30);
+    fill_rect(buffer, width, height, rx, header_y, rw, 24, 0xFF21262d);
+    fill_rect(
         buffer,
         width,
         height,
-        rx + 10,
-        ry + 9,
-        "CATEGORY",
+        rx,
+        header_y.saturating_add(23),
+        rw,
+        1,
+        0xFF30363d,
+    );
+
+    let cat_sort_icon = if state.sort_column == Some(0) {
+        if state.sort_ascending {
+            " ^"
+        } else {
+            " v"
+        }
+    } else {
+        ""
+    };
+    let cat_header_label = format!("CATEGORY{}", cat_sort_icon);
+    let cat_header_display =
+        truncate_text_to_width(&cat_header_label, cat_col_w.saturating_sub(14));
+    draw_text_clipped(
+        buffer,
+        width,
+        height,
+        rx.saturating_add(10),
+        header_y.saturating_add(8),
+        &cat_header_display,
         0xFF8b949e,
+        rx.saturating_add(cat_col_w).saturating_sub(4),
     );
 
     for (i, (s_idx, s)) in visible_series.iter().enumerate() {
-        let col_x = rx + cat_col_w + i * s_col_w;
+        let col_x = rx
+            .saturating_add(cat_col_w)
+            .saturating_add(i.saturating_mul(s_col_w));
+        let next_col_x = (rx
+            .saturating_add(cat_col_w)
+            .saturating_add((i.saturating_add(1)).saturating_mul(s_col_w)))
+        .min(rx.saturating_add(rw));
+        let col_max_w = next_col_x.saturating_sub(col_x).saturating_sub(8);
         let col = parse_hex_color(
             s.color
                 .as_deref()
                 .unwrap_or(DEFAULT_CHART_COLORS[s_idx % DEFAULT_CHART_COLORS.len()]),
         );
-        draw_text(buffer, width, height, col_x + 6, ry + 9, &s.name, col);
+        let s_sort_icon = if state.sort_column == Some(s_idx.saturating_add(1)) {
+            if state.sort_ascending {
+                " ^"
+            } else {
+                " v"
+            }
+        } else {
+            ""
+        };
+        let s_header_label = format!("{}{}", s.name, s_sort_icon);
+        let s_header_display = truncate_text_to_width(&s_header_label, col_max_w);
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            col_x.saturating_add(6),
+            header_y.saturating_add(8),
+            &s_header_display,
+            col,
+            next_col_x.saturating_sub(2),
+        );
     }
 
     // Table Rows
+    let table_y = ry.saturating_add(56);
     let row_h = 24usize;
-    let visible_rows = (rh.saturating_sub(28)) / row_h;
-    for row_i in 0..visible_rows {
-        let cat_idx = state.table_scroll + row_i;
-        if cat_idx >= state.chart_data.categories.len() {
-            break;
-        }
-        let row_y = ry + 26 + row_i * row_h;
-        let is_hovered = state.hovered_category == Some(cat_idx);
-
-        let row_bg = if is_hovered {
-            0xFF1f385c // Electric blue highlight
-        } else if cat_idx.is_multiple_of(2) {
-            0xFF161b22
-        } else {
-            0xFF0d1117
-        };
-
-        fill_rect(
+    let visible_rows = (rh.saturating_sub(58)) / row_h;
+    if filtered_indices.is_empty() {
+        draw_text_at_center(
             buffer,
             width,
             height,
-            rx + 1,
-            row_y,
-            rw.saturating_sub(2),
-            row_h - 1,
-            row_bg,
+            rx.saturating_add(rw / 2),
+            table_y.saturating_add(30),
+            "No matching records",
+            0xFF8b949e,
         );
+    } else {
+        for row_i in 0..visible_rows {
+            let list_idx = state.table_scroll.saturating_add(row_i);
+            if list_idx >= filtered_indices.len() {
+                break;
+            }
+            let cat_idx = filtered_indices[list_idx];
+            let row_y = table_y.saturating_add(row_i.saturating_mul(row_h));
+            let is_hovered = state.hovered_category == Some(cat_idx);
 
-        // Category name
-        let cat_name = &state.chart_data.categories[cat_idx];
-        let text_col = if is_hovered {
-            0xFFFFFFFF
-        } else {
-            0xFFe6edf3
-        };
-        draw_text(
-            buffer,
-            width,
-            height,
-            rx + 10,
-            row_y + 8,
-            cat_name,
-            text_col,
-        );
+            let row_bg = if is_hovered {
+                0xFF1f385c // Electric blue highlight
+            } else if row_i.is_multiple_of(2) {
+                0xFF161b22
+            } else {
+                0xFF0d1117
+            };
 
-        // Series values
-        for (i, (_, s)) in visible_series.iter().enumerate() {
-            let col_x = rx + cat_col_w + i * s_col_w;
-            let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
-            let val_str = ChartData::format_value(val);
-            draw_text(
+            fill_rect(
                 buffer,
                 width,
                 height,
-                col_x + 6,
-                row_y + 8,
-                &val_str,
-                text_col,
+                rx.saturating_add(1),
+                row_y,
+                rw.saturating_sub(2),
+                row_h.saturating_sub(1),
+                row_bg,
             );
+
+            // Category name
+            let cat_name = state
+                .chart_data
+                .categories
+                .get(cat_idx)
+                .map(String::as_str)
+                .unwrap_or("");
+            let text_col = if is_hovered {
+                0xFFFFFFFF
+            } else {
+                0xFFe6edf3
+            };
+            let cat_display = truncate_text_to_width(cat_name, cat_col_w.saturating_sub(14));
+            draw_text_clipped(
+                buffer,
+                width,
+                height,
+                rx.saturating_add(10),
+                row_y.saturating_add(8),
+                &cat_display,
+                text_col,
+                rx.saturating_add(cat_col_w).saturating_sub(4),
+            );
+
+            // Series values
+            for (i, (_, s)) in visible_series.iter().enumerate() {
+                let col_x = rx
+                    .saturating_add(cat_col_w)
+                    .saturating_add(i.saturating_mul(s_col_w));
+                let next_col_x = (rx
+                    .saturating_add(cat_col_w)
+                    .saturating_add((i.saturating_add(1)).saturating_mul(s_col_w)))
+                .min(rx.saturating_add(rw));
+                let col_max_w = next_col_x.saturating_sub(col_x).saturating_sub(8);
+                let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                let val_str = state.chart_data.format_number(val);
+                let val_display = truncate_text_to_width(&val_str, col_max_w);
+                draw_text_clipped(
+                    buffer,
+                    width,
+                    height,
+                    col_x.saturating_add(6),
+                    row_y.saturating_add(8),
+                    &val_display,
+                    text_col,
+                    next_col_x.saturating_sub(2),
+                );
+            }
         }
     }
 
+    // 7.1 Floating hover detail tooltip for table rows
+    let is_table_hover = mouse_x >= rx as f32
+        && mouse_x < (rx.saturating_add(rw)) as f32
+        && mouse_y >= table_y as f32
+        && mouse_y < (ry.saturating_add(rh)) as f32;
+    if is_table_hover
+        && let Some(cat_idx) = state.hovered_category
+        && let Some(cat_name) = state.chart_data.categories.get(cat_idx)
+    {
+        let mut lines = Vec::with_capacity(visible_series.len());
+        for (_, s) in &visible_series {
+            let v = s.values.get(cat_idx).copied().unwrap_or(0.0);
+            lines.push(format!("{}: {}", s.name, state.chart_data.format_number(v)));
+        }
+        render_table_hover_card(
+            buffer,
+            width,
+            height,
+            mouse_x as usize,
+            mouse_y as usize,
+            cat_name,
+            &lines,
+            &visible_series,
+        );
+    }
+
+    // 7.2 Floating hover detail tooltip for KPI cards
+    if let Some((kpi_title, kpi_val, kpi_sub, detail_desc, accent_col)) = hovered_kpi {
+        render_kpi_hover_card(
+            buffer,
+            width,
+            height,
+            mouse_x as usize,
+            mouse_y as usize,
+            kpi_title,
+            &kpi_val,
+            &kpi_sub,
+            detail_desc,
+            accent_col,
+        );
+    }
+
+    // 7.3 Floating hover detail tooltip for series filter chips
+    if let Some((ref name, is_hidden)) = hovered_chip_info {
+        let status_str = if is_hidden {
+            "Status: Hidden (Click chip or press 1-9 to show)".to_string()
+        } else {
+            "Status: Active (Click chip or press 1-9 to hide)".to_string()
+        };
+        let tip_lines = vec![status_str];
+        let title_str = format!("Series: {}", name);
+        render_simple_tooltip(
+            buffer,
+            width,
+            height,
+            mouse_x as usize,
+            mouse_y as usize,
+            &title_str,
+            &tip_lines,
+        );
+    }
+
     // 8. Footer Keyboard Shortcuts
-    let footer_text = "[Esc] Close   [Tab] Switch Type   [1-9] Toggle Series   [C] Export CSV   [Wheel] Scroll Table";
+    let footer_text = "[Esc] Close   [/] Search   [F] Format   [Tab] Type   [1-9] Series   [C] CSV   [Wheel] Scroll";
     draw_text(
         buffer,
         width,
@@ -3404,6 +4514,34 @@ mod tests {
         inspector.toggle_series(1);
         assert!(!inspector.hidden_series.contains(&1));
 
+        // Format cycle
+        inspector.cycle_format();
+        assert_eq!(
+            inspector.chart_data.format,
+            slide_core::chart::NumberFormat::Currency
+        );
+
+        // Filter by numeric query "> 150"
+        inspector.search_query = "> 150".into();
+        let filtered = inspector.get_filtered_category_indices();
+        // Series Revenue has 120, 200, 150, 310. Q2 (200) and Q4 (310) match.
+        assert_eq!(filtered, vec![1, 3]);
+
+        // Filter by text query "Q1"
+        inspector.search_query = "q1".into();
+        assert_eq!(inspector.get_filtered_category_indices(), vec![0]);
+
+        // Sorting by category descending
+        inspector.search_query.clear();
+        inspector.sort_column = Some(0);
+        inspector.sort_ascending = false;
+        assert_eq!(inspector.get_filtered_category_indices(), vec![3, 2, 1, 0]);
+
+        // Clear filter
+        inspector.clear_filter();
+        assert!(inspector.search_query.is_empty());
+        assert_eq!(inspector.get_filtered_category_indices().len(), 4);
+
         // Toast
         inspector.show_toast("Testing Toast");
         assert!(inspector.toast_message.is_some());
@@ -3416,7 +4554,7 @@ mod tests {
         let width = 1280;
         let height = 720;
 
-        let (_modal_rect, _, close_btn, export_btn, _, _, _, _) =
+        let (_modal_rect, _, close_btn, export_btn, _, _, _, right_pane) =
             get_inspector_layout(width, height);
 
         // Click outside modal
@@ -3442,6 +4580,39 @@ mod tests {
             export_btn.y + export_btn.height * 0.5,
         );
         assert_eq!(export_action, Some(InspectorAction::ExportCsv));
+
+        // Table controls hit testing
+        let (search_box, clear_btn, format_btn) = get_table_control_rects(right_pane);
+        assert_eq!(
+            hit_test_chart_inspector(
+                &inspector,
+                width,
+                height,
+                search_box.x + 2.0,
+                search_box.y + 2.0
+            ),
+            Some(InspectorAction::FocusSearch)
+        );
+        assert_eq!(
+            hit_test_chart_inspector(
+                &inspector,
+                width,
+                height,
+                clear_btn.x + 2.0,
+                clear_btn.y + 2.0
+            ),
+            Some(InspectorAction::ClearFilter)
+        );
+        assert_eq!(
+            hit_test_chart_inspector(
+                &inspector,
+                width,
+                height,
+                format_btn.x + 2.0,
+                format_btn.y + 2.0
+            ),
+            Some(InspectorAction::CycleFormat)
+        );
     }
 
     #[test]
@@ -3470,6 +4641,7 @@ mod tests {
                 &empty_set,
                 Some(1),
                 Some((200.0, 200.0)),
+                Some((0, 1)),
             );
         }
     }
@@ -3485,5 +4657,87 @@ mod tests {
         let mut buffer = vec![0u32; width * height];
 
         draw_chart_inspector(&mut buffer, width, height, &inspector, 500.0, 400.0);
+    }
+
+    #[test]
+    fn test_truncate_text_to_width() {
+        assert_eq!(truncate_text_to_width("Short", 100), "Short");
+        assert_eq!(
+            truncate_text_to_width("A very long category name exceeding max width", 70),
+            "A very ..."
+        );
+        assert_eq!(truncate_text_to_width("Tiny", 14), "Ti");
+        assert_eq!(truncate_text_to_width("Zero", 0), "");
+        assert_eq!(truncate_text_to_width("ExactFit", 8 * 7), "ExactFit");
+    }
+
+    #[test]
+    fn test_volume_slider_geometry_and_hover_zone() {
+        let (popup_rect, track_rect) = get_volume_slider_rects(1280, 720, false);
+        assert!(popup_rect.width >= 30.0);
+        assert!(popup_rect.height >= 120.0);
+        assert!(popup_rect.contains(track_rect.x, track_rect.y));
+
+        let hover_rect = get_volume_slider_hover_rect(1280, 720, false);
+        // Hover rect must contain the popup
+        assert!(hover_rect.contains(popup_rect.x, popup_rect.y));
+        assert!(hover_rect.contains(
+            popup_rect.x + popup_rect.width,
+            popup_rect.y + popup_rect.height
+        ));
+
+        // Point right below popup (in former gap) must be inside hover rect
+        let gap_y = popup_rect.y + popup_rect.height + 2.0;
+        assert!(hover_rect.contains(popup_rect.x + popup_rect.width * 0.5, gap_y));
+
+        // Hit testing volume slider
+        let center_x = track_rect.x + track_rect.width * 0.5;
+        let top_vol = hit_test_volume_slider(1280, 720, false, center_x, track_rect.y);
+        assert_eq!(top_vol, Some(1.0));
+        let bottom_vol =
+            hit_test_volume_slider(1280, 720, false, center_x, track_rect.y + track_rect.height);
+        assert_eq!(bottom_vol, Some(0.0));
+    }
+
+    #[test]
+    fn test_dynamic_table_column_widths() {
+        let mut chart = make_sample_chart();
+        let (cat_w_short, s_w_short) = get_table_column_widths(400.0, &chart, 2);
+        assert!(cat_w_short >= 85.0);
+        assert!(s_w_short > 0.0);
+
+        chart.categories = vec![
+            "United States Eastern Seaboard Region".into(),
+            "Europe & Middle East Central Operations".into(),
+        ];
+        let (cat_w_long, s_w_long) = get_table_column_widths(400.0, &chart, 2);
+        assert!(cat_w_long > cat_w_short);
+        assert!(cat_w_long <= 400.0 - 68.0 * 2.0);
+        assert!(s_w_long >= 68.0);
+        assert!((cat_w_long + s_w_long * 2.0 - 400.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_series_chip_widths_expansion() {
+        let chart = make_sample_chart();
+        let series_strip = Rect::new(50.0, 48.0, 900.0, 28.0);
+        let chips = get_series_chip_rects(series_strip, &chart.series);
+        assert_eq!(chips.len(), chart.series.len());
+
+        for (s_idx, chip_rect) in &chips {
+            let s = &chart.series[*s_idx];
+            // Verify that chip width expands comfortably so text NEVER gets truncated with "..."
+            let max_px = (chip_rect.width - 20.0).max(10.0) as usize;
+            let chip_text = truncate_text_to_width(&s.name, max_px);
+            assert_eq!(
+                chip_text, s.name,
+                "Series chip label should not be truncated when space is available!"
+            );
+            // Verify that chip width has expanded into available space to the right
+            assert!(
+                chip_rect.width >= 100.0,
+                "Chip width should expand into available space"
+            );
+        }
     }
 }

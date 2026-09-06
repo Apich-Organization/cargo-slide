@@ -195,6 +195,9 @@ impl AudioEngine {
         vol: f32,
     ) {
         self.global_volume = vol.clamp(0.0, 1.0);
+        if self.is_muted && self.global_volume > 0.0 {
+            self.is_muted = false;
+        }
         if !self.is_muted
             && let Some(ref player) = self.player
         {

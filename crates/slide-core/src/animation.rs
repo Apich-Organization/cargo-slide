@@ -8,6 +8,7 @@ pub struct SlideSurface {
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u32>,
+    pub bg_color: u32,
 }
 
 impl SlideSurface {
@@ -16,11 +17,13 @@ impl SlideSurface {
         width: usize,
         height: usize,
         pixels: Vec<u32>,
+        bg_color: u32,
     ) -> Self {
         Self {
             width,
             height,
             pixels,
+            bg_color,
         }
     }
 
@@ -34,6 +37,7 @@ impl SlideSurface {
             width,
             height,
             pixels: vec![color; width * height],
+            bg_color: color,
         }
     }
 

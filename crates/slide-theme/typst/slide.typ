@@ -333,6 +333,10 @@
   source: none, // e.g. "data.csv", "metrics.json", or "data.db?query=SELECT ..."
   sql: none,    // e.g. "SELECT category, sales FROM data WHERE sales > 100"
   dsl: none,    // e.g. "filter sales > 100 | sort desc | limit 5 | smooth 3"
+  format: none, // "currency", "percentage", "compact", "scientific", "integer", "standard"
+  unit: none,   // e.g. "USD", "EUR", "k ops/s", "MB", "%"
+  prefix: none, // e.g. "$", "¥"
+  precision: none, // e.g. 0, 1, 2
   data: none,   // e.g. (categories: ("Q1", "Q2"), series: ((name: "Rev", values: (100, 200)), ...))
   width: 100%,
   height: 220pt,
@@ -422,6 +426,18 @@
       s-strings.push(clean-name + ":" + v-strs.join(","))
     }
     link-target += "&series=" + s-strings.join(";")
+  }
+  if format != none {
+    link-target += "&format=" + str(format).replace("&", "%26").replace(" ", "+")
+  }
+  if unit != none {
+    link-target += "&unit=" + str(unit).replace("&", "%26").replace(" ", "+")
+  }
+  if prefix != none {
+    link-target += "&prefix=" + str(prefix).replace("&", "%26").replace(" ", "+")
+  }
+  if precision != none {
+    link-target += "&precision=" + str(precision)
   }
 
   align(center)[

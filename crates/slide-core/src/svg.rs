@@ -412,6 +412,7 @@ pub fn parse_chart_href_with_root(
     use crate::chart::ChartData;
     use crate::chart::ChartType;
     use crate::chart::DEFAULT_CHART_COLORS;
+    use crate::chart::NumberFormat;
     use crate::chart::SeriesData;
 
     let chart_str_trimmed = chart_str.trim();
@@ -426,6 +427,10 @@ pub fn parse_chart_href_with_root(
     let mut source = None;
     let mut sql_query = None;
     let mut dsl_pipeline = None;
+    let mut chart_format = NumberFormat::Auto;
+    let mut chart_unit = None;
+    let mut chart_prefix = None;
+    let mut chart_precision = None;
     let mut categories = Vec::new();
     let mut series = Vec::new();
 
@@ -440,6 +445,18 @@ pub fn parse_chart_href_with_root(
                 },
                 | "title" => {
                     title = Some(decode_chart_param(val));
+                },
+                | "format" => {
+                    chart_format = val.parse().unwrap_or(NumberFormat::Auto);
+                },
+                | "unit" => {
+                    chart_unit = Some(decode_chart_param(val));
+                },
+                | "prefix" => {
+                    chart_prefix = Some(decode_chart_param(val));
+                },
+                | "precision" | "prec" => {
+                    chart_precision = val.parse::<usize>().ok();
                 },
                 | "source" => {
                     source = Some(val.replace("%26", "&"));
@@ -546,6 +563,10 @@ pub fn parse_chart_href_with_root(
             series,
             x_label: None,
             y_label: None,
+            format: chart_format,
+            unit: chart_unit.clone(),
+            prefix: chart_prefix.clone(),
+            precision: chart_precision,
         });
     }
 
@@ -561,8 +582,23 @@ pub fn parse_chart_href_with_root(
             }],
             x_label: None,
             y_label: None,
+            format: chart_format,
+            unit: chart_unit.clone(),
+            prefix: chart_prefix.clone(),
+            precision: chart_precision,
         }
     });
+
+    data.format = chart_format;
+    if chart_unit.is_some() {
+        data.unit = chart_unit;
+    }
+    if chart_prefix.is_some() {
+        data.prefix = chart_prefix;
+    }
+    if chart_precision.is_some() {
+        data.precision = chart_precision;
+    }
 
     if let Some(sql) = &sql_query
         && let Ok(res) = data.query_sql(sql)

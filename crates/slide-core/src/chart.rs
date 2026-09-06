@@ -42,6 +42,35 @@ pub struct SeriesData {
     pub color: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NumberFormat {
+    #[default]
+    Auto,
+    Standard,
+    Currency,
+    Percentage,
+    Compact,
+    Scientific,
+    Integer,
+}
+
+impl std::str::FromStr for NumberFormat {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().trim() {
+            | "currency" | "money" | "cash" => Self::Currency,
+            | "percentage" | "percent" | "pct" => Self::Percentage,
+            | "compact" | "short" | "kmb" => Self::Compact,
+            | "scientific" | "sci" | "exp" => Self::Scientific,
+            | "integer" | "int" => Self::Integer,
+            | "standard" | "std" | "decimal" => Self::Standard,
+            | _ => Self::Auto,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChartData {
     pub chart_type: ChartType,
@@ -52,6 +81,14 @@ pub struct ChartData {
     pub x_label: Option<String>,
     #[serde(default)]
     pub y_label: Option<String>,
+    #[serde(default)]
+    pub format: NumberFormat,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub prefix: Option<String>,
+    #[serde(default)]
+    pub precision: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,11 +105,12 @@ pub enum ChartTransform {
     MovingAvg(usize),
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChartStats {
     pub total_sum: f64,
     pub avg: f64,
+    pub median: f64,
+    pub std_dev: f64,
     pub max_val: f64,
     pub max_cat: String,
     pub max_series: String,
@@ -90,6 +128,10 @@ impl Default for ChartData {
             series: Vec::new(),
             x_label: None,
             y_label: None,
+            format: NumberFormat::Auto,
+            unit: None,
+            prefix: None,
+            precision: None,
         }
     }
 }
@@ -113,6 +155,10 @@ impl ChartData {
             series: Vec::new(),
             x_label: None,
             y_label: None,
+            format: NumberFormat::Auto,
+            unit: None,
+            prefix: None,
+            precision: None,
         }
     }
 
@@ -121,6 +167,38 @@ impl ChartData {
         title: impl Into<String>,
     ) -> Self {
         self.title = Some(title.into());
+        self
+    }
+
+    pub fn with_format(
+        mut self,
+        format: NumberFormat,
+    ) -> Self {
+        self.format = format;
+        self
+    }
+
+    pub fn with_unit(
+        mut self,
+        unit: impl Into<String>,
+    ) -> Self {
+        self.unit = Some(unit.into());
+        self
+    }
+
+    pub fn with_prefix(
+        mut self,
+        prefix: impl Into<String>,
+    ) -> Self {
+        self.prefix = Some(prefix.into());
+        self
+    }
+
+    pub const fn with_precision(
+        mut self,
+        precision: usize,
+    ) -> Self {
+        self.precision = Some(precision);
         self
     }
 
@@ -200,6 +278,10 @@ impl ChartData {
             series,
             x_label: None,
             y_label: None,
+            format: NumberFormat::Auto,
+            unit: None,
+            prefix: None,
+            precision: None,
         })
     }
 
@@ -303,6 +385,10 @@ impl ChartData {
             series,
             x_label: None,
             y_label: None,
+            format: NumberFormat::Auto,
+            unit: None,
+            prefix: None,
+            precision: None,
         })
     }
 
@@ -439,6 +525,10 @@ impl ChartData {
                     series,
                     x_label: None,
                     y_label: None,
+                    format: NumberFormat::Auto,
+                    unit: None,
+                    prefix: None,
+                    precision: None,
                 })
             },
             | serde_json::Value::Object(map) => {
@@ -468,6 +558,10 @@ impl ChartData {
                     series,
                     x_label: None,
                     y_label: None,
+                    format: NumberFormat::Auto,
+                    unit: None,
+                    prefix: None,
+                    precision: None,
                 })
             },
             | _ => {
@@ -654,6 +748,10 @@ impl ChartData {
             series: out_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         })
     }
 
@@ -884,6 +982,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         })
     }
 
@@ -968,6 +1070,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         })
     }
 
@@ -995,6 +1101,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         }
     }
 
@@ -1023,6 +1133,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         }
     }
 
@@ -1057,6 +1171,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         }
     }
 
@@ -1086,6 +1204,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: self.y_label.clone(),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         }
     }
 
@@ -1129,6 +1251,10 @@ impl ChartData {
             series: new_series,
             x_label: self.x_label.clone(),
             y_label: Some("% Share".to_string()),
+            format: self.format,
+            unit: self.unit.clone(),
+            prefix: self.prefix.clone(),
+            precision: self.precision,
         }
     }
 
@@ -1184,45 +1310,76 @@ impl ChartData {
         if max <= 0.0 { 1.0 } else { max }
     }
 
-    /// Calculate statistical summary for visible series
+    /// Calculate statistical summary for visible series across specified category indices
     #[must_use]
-    pub fn summary_stats(
+    pub fn summary_stats_filtered(
         &self,
         hidden_series: &std::collections::HashSet<usize>,
+        category_indices: &[usize],
     ) -> ChartStats {
         let mut total_sum = 0.0f64;
-        let mut count = 0usize;
         let mut max_val = f64::NEG_INFINITY;
         let mut min_val = f64::INFINITY;
         let mut max_cat = String::new();
         let mut max_series = String::new();
         let mut min_cat = String::new();
+        let mut all_vals = Vec::new();
 
         for (s_idx, s) in self.series.iter().enumerate() {
             if hidden_series.contains(&s_idx) {
                 continue;
             }
-            for (c_idx, &val) in s.values.iter().enumerate() {
-                total_sum += val;
-                count += 1;
-                let cat_name = self.categories.get(c_idx).cloned().unwrap_or_default();
-                if val > max_val {
-                    max_val = val;
-                    max_cat = cat_name.clone();
-                    max_series = s.name.clone();
-                }
-                if val < min_val {
-                    min_val = val;
-                    min_cat = cat_name;
+            for &c_idx in category_indices {
+                if let Some(&val) = s.values.get(c_idx) {
+                    all_vals.push(val);
+                    total_sum += val;
+                    let cat_name = self.categories.get(c_idx).cloned().unwrap_or_default();
+                    if val > max_val {
+                        max_val = val;
+                        max_cat = cat_name.clone();
+                        max_series = s.name.clone();
+                    }
+                    if val < min_val {
+                        min_val = val;
+                        min_cat = cat_name;
+                    }
                 }
             }
         }
 
+        let count = all_vals.len();
         let avg = if count > 0 {
             total_sum / count as f64
         } else {
             0.0
         };
+
+        all_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = if count == 0 {
+            0.0
+        } else if count % 2 == 0 {
+            let mid = count / 2;
+            let v1 = all_vals.get(mid.saturating_sub(1)).copied().unwrap_or(0.0);
+            let v2 = all_vals.get(mid).copied().unwrap_or(0.0);
+            (v1 + v2) / 2.0
+        } else {
+            all_vals.get(count / 2).copied().unwrap_or(0.0)
+        };
+
+        let variance = if count > 0 {
+            all_vals
+                .iter()
+                .map(|&v| {
+                    let diff = v - avg;
+                    diff * diff
+                })
+                .sum::<f64>()
+                / count as f64
+        } else {
+            0.0
+        };
+        let std_dev = variance.sqrt();
+
         if max_val == f64::NEG_INFINITY {
             max_val = 0.0;
         }
@@ -1233,6 +1390,8 @@ impl ChartData {
         ChartStats {
             total_sum,
             avg,
+            median,
+            std_dev,
             max_val,
             max_cat,
             max_series,
@@ -1240,6 +1399,16 @@ impl ChartData {
             min_cat,
             count,
         }
+    }
+
+    /// Calculate statistical summary for visible series across all categories
+    #[must_use]
+    pub fn summary_stats(
+        &self,
+        hidden_series: &std::collections::HashSet<usize>,
+    ) -> ChartStats {
+        let all_cats: Vec<usize> = (0..self.categories.len()).collect();
+        self.summary_stats_filtered(hidden_series, &all_cats)
     }
 
     /// Create a clone with hidden series excluded
@@ -1282,7 +1451,7 @@ impl ChartData {
         csv.push('\n');
 
         // Data rows
-        for (cat_idx, cat) in self.categories.iter().enumerate() {
+        for (c_idx, cat) in self.categories.iter().enumerate() {
             if cat.contains(',') || cat.contains('"') {
                 csv.push_str(&format!("\"{}\"", cat.replace('"', "\"\"")));
             } else {
@@ -1291,14 +1460,14 @@ impl ChartData {
             for (s_idx, s) in self.series.iter().enumerate() {
                 if !hidden_series.contains(&s_idx) {
                     csv.push(',');
-                    let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                    let val = s.values.get(c_idx).copied().unwrap_or(0.0);
                     csv.push_str(&Self::format_value(val));
                 }
             }
             csv.push('\n');
         }
 
-        // Summary row
+        // Summary Total row
         csv.push_str("TOTAL");
         for (s_idx, s) in self.series.iter().enumerate() {
             if !hidden_series.contains(&s_idx) {
@@ -1359,7 +1528,102 @@ impl ChartData {
         }
     }
 
-    /// Calculate plot area inside the bounding box
+    /// Format number according to configured NumberFormat, prefix, unit, and precision
+    #[must_use]
+    pub fn format_number(
+        &self,
+        val: f64,
+    ) -> String {
+        let prec = self.precision.unwrap_or(match self.format {
+            | NumberFormat::Currency => 2,
+            | NumberFormat::Percentage => 1,
+            | NumberFormat::Integer => 0,
+            | NumberFormat::Scientific => 2,
+            | NumberFormat::Standard => 2,
+            | NumberFormat::Compact | NumberFormat::Auto => 1,
+        });
+
+        let mut formatted = match self.format {
+            | NumberFormat::Auto => Self::format_value(val),
+            | NumberFormat::Compact => {
+                let abs = val.abs();
+                if abs >= 1_000_000_000.0 {
+                    format!("{:.prec$}B", val / 1_000_000_000.0)
+                } else if abs >= 1_000_000.0 {
+                    format!("{:.prec$}M", val / 1_000_000.0)
+                } else if abs >= 1_000.0 {
+                    format!("{:.prec$}K", val / 1_000.0)
+                } else {
+                    format_with_commas(val, prec)
+                }
+            },
+            | NumberFormat::Currency => {
+                let formatted_num = format_with_commas(val, prec);
+                let p = self.prefix.as_deref().unwrap_or("$");
+                format!("{p}{formatted_num}")
+            },
+            | NumberFormat::Percentage => {
+                format!("{val:.prec$}%")
+            },
+            | NumberFormat::Integer => format_with_commas(val.round(), 0),
+            | NumberFormat::Scientific => {
+                format!("{val:.prec$e}")
+            },
+            | NumberFormat::Standard => format_with_commas(val, prec),
+        };
+
+        if let Some(ref p) = self.prefix
+            && self.format != NumberFormat::Currency
+            && !formatted.starts_with(p.as_str())
+        {
+            formatted = format!("{p}{formatted}");
+        }
+
+        if let Some(ref u) = self.unit
+            && !formatted.ends_with(u.as_str())
+        {
+            if u.starts_with('%') || u.starts_with('°') {
+                formatted.push_str(u);
+            } else {
+                formatted.push(' ');
+                formatted.push_str(u);
+            }
+        }
+
+        formatted
+    }
+}
+
+/// Helper to insert commas into integer portion without arithmetic side-effects
+fn format_with_commas(
+    val: f64,
+    prec: usize,
+) -> String {
+    let raw = format!("{val:.prec$}");
+    let (int_part, fract_part) = raw.split_once('.').unwrap_or((&raw, ""));
+    let (sign, digits) = if let Some(stripped) = int_part.strip_prefix('-') {
+        ("-", stripped)
+    } else {
+        ("", int_part)
+    };
+
+    let mut rev_chars = Vec::with_capacity(digits.len().saturating_add(4));
+    for (i, ch) in digits.chars().rev().enumerate() {
+        if i > 0 && i.is_multiple_of(3) {
+            rev_chars.push(',');
+        }
+        rev_chars.push(ch);
+    }
+    let formatted_int: String = rev_chars.into_iter().rev().collect();
+
+    if fract_part.is_empty() {
+        format!("{sign}{formatted_int}")
+    } else {
+        format!("{sign}{formatted_int}.{fract_part}")
+    }
+}
+
+impl ChartData {
     #[must_use]
     pub fn plot_area(
         &self,
@@ -1981,5 +2245,41 @@ Q4 2025,\"$280,000\",$98000,31.4%
         });
         let res_ma = chart_ma.apply_transform(ChartTransform::MovingAvg(2));
         assert_eq!(res_ma.series[0].values, vec![10.0, 15.0, 25.0]);
+    }
+
+    #[test]
+    fn test_custom_formatting_and_statistics() {
+        let mut chart = ChartData::new(ChartType::Bar)
+            .with_format(NumberFormat::Currency)
+            .with_prefix("$")
+            .with_unit("USD")
+            .with_precision(2);
+
+        chart.categories = vec!["A".into(), "B".into(), "C".into(), "D".into(), "E".into()];
+        chart.series.push(SeriesData {
+            name: "Revenue".into(),
+            values: vec![1000.0, 2500.5, 500.0, 4000.0, 1500.0],
+            color: None,
+        });
+
+        assert_eq!(chart.format_number(1_234_567.89), "$1,234,567.89 USD");
+        assert_eq!(chart.format_number(2500.5), "$2,500.50 USD");
+
+        let stats = chart.summary_stats(&std::collections::HashSet::new());
+        assert_eq!(stats.count, 5);
+        assert_eq!(stats.total_sum, 9500.5);
+        assert_eq!(stats.avg, 1900.1);
+        assert_eq!(stats.median, 1500.0);
+        assert!(stats.std_dev > 0.0);
+        assert_eq!(stats.max_val, 4000.0);
+        assert_eq!(stats.min_val, 500.0);
+
+        // Filtered stats (only categories 0 and 2)
+        let filtered_stats =
+            chart.summary_stats_filtered(&std::collections::HashSet::new(), &[0, 2]);
+        assert_eq!(filtered_stats.count, 2);
+        assert_eq!(filtered_stats.total_sum, 1500.0);
+        assert_eq!(filtered_stats.avg, 750.0);
+        assert_eq!(filtered_stats.median, 750.0);
     }
 }
