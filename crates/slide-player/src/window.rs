@@ -265,33 +265,62 @@ pub fn normalize_windows_path(p: PathBuf) -> PathBuf {
 }
 
 /// Detached, non-blocking opener for URLs and external files across Linux, macOS, and Windows.
-/// Spawns a background thread so the main render/event loop never freezes.
+/// Spawns a background thread with standard streams detached so the main render loop never freezes.
 pub fn open_external_target_detached(target: &str) {
     let target_str = target.to_string();
     let _ = std::thread::spawn(move || {
-        // 1. Try open crate in detached mode
-        if open::that_detached(&target_str).is_ok() {
-            return;
-        }
-
-        // 2. Cross-platform fallback if open::that_detached fails
         #[cfg(target_os = "linux")]
         {
-            let _ = std::process::Command::new("xdg-open")
+            let child = std::process::Command::new("xdg-open")
                 .arg(&target_str)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .spawn();
+            if let Ok(mut c) = child {
+                let _ = c.wait();
+                return;
+            }
+            let child = std::process::Command::new("gio")
+                .args(["open", &target_str])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            if let Ok(mut c) = child {
+                let _ = c.wait();
+            }
         }
 
         #[cfg(target_os = "macos")]
         {
-            let _ = std::process::Command::new("open").arg(&target_str).spawn();
+            let child = std::process::Command::new("open")
+                .arg(&target_str)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            if let Ok(mut c) = child {
+                let _ = c.wait();
+            }
         }
 
-        #[cfg(target_os = "windows")]
+        #[cfg(windows)]
         {
-            let _ = std::process::Command::new("cmd")
+            let child = std::process::Command::new("cmd")
                 .args(["/C", "start", "", &target_str])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .spawn();
+            if let Ok(mut c) = child {
+                let _ = c.wait();
+            }
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+        {
+            let _ = target_str;
         }
     });
 }
@@ -563,7 +592,6 @@ fn set_x11_fullscreen(
                 0,
             );
             let atom_type = (xlib.XInternAtom)(display, b"ATOM\0".as_ptr() as *const _, 0);
-            let cardinal_type = (xlib.XInternAtom)(display, b"CARDINAL\0".as_ptr() as *const _, 0);
 
             // 1. Direct property setting on client window (required for unmapped state per EWMH spec)
             if fullscreen {
@@ -612,27 +640,7 @@ fn set_x11_fullscreen(
                 );
             }
 
-            // 3. Bypass compositor for direct unredirected fullscreen presentation
-            let bypass_atom = (xlib.XInternAtom)(
-                display,
-                b"_NET_WM_BYPASS_COMPOSITOR\0".as_ptr() as *const _,
-                0,
-            );
-            if bypass_atom != 0 {
-                let val: std::os::raw::c_ulong = if fullscreen { 1 } else { 0 };
-                (xlib.XChangeProperty)(
-                    display,
-                    xid,
-                    bypass_atom,
-                    cardinal_type,
-                    32,
-                    x11_dl::xlib::PropModeReplace,
-                    &val as *const _ as *const _,
-                    1,
-                );
-            }
-
-            // 4. Send ClientMessage to root window (for mapped state per EWMH spec)
+            // 3. Send ClientMessage to root window (for mapped state per EWMH spec)
             let mut data = x11_dl::xlib::ClientMessageData::new();
             data.set_long(0, if fullscreen { 1 } else { 0 }); // 1 = ADD, 0 = REMOVE
             data.set_long(1, net_wm_state_fullscreen as _);
@@ -662,7 +670,6 @@ fn set_x11_fullscreen(
                 (xlib.XSetWindowBorderWidth)(display, xid, 0);
                 (xlib.XMoveResizeWindow)(display, xid, 0, 0, width as u32, height as u32);
                 (xlib.XRaiseWindow)(display, xid);
-                (xlib.XSetInputFocus)(display, xid, x11_dl::xlib::RevertToParent, 0);
             }
 
             (xlib.XFlush)(display);
@@ -702,7 +709,7 @@ fn set_windows_fullscreen(
     const WS_POPUP: i32 = 0x8000_0000u32 as i32;
     const WS_OVERLAPPEDWINDOW: i32 = 0x00CF_0000;
     const WS_VISIBLE: i32 = 0x1000_0000;
-    const HWND_TOPMOST: *mut std::ffi::c_void = -1isize as *mut std::ffi::c_void;
+    const HWND_TOP: *mut std::ffi::c_void = 0isize as *mut std::ffi::c_void;
     const HWND_NOTOPMOST: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
     const SWP_FRAMECHANGED: u32 = 0x0020;
     const SWP_SHOWWINDOW: u32 = 0x0040;
@@ -712,7 +719,7 @@ fn set_windows_fullscreen(
             SetWindowLongW(window_handle, GWL_STYLE, WS_POPUP | WS_VISIBLE);
             SetWindowPos(
                 window_handle,
-                HWND_TOPMOST,
+                HWND_TOP,
                 0,
                 0,
                 width as i32,
@@ -789,6 +796,81 @@ fn set_macos_fullscreen(
     }
 }
 
+#[cfg(target_os = "linux")]
+#[allow(unsafe_code, clippy::single_call_fn)]
+fn is_mouse_left_physically_down() -> bool {
+    if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+        unsafe {
+            let display = (xlib.XOpenDisplay)(std::ptr::null());
+            if !display.is_null() {
+                let root = (xlib.XDefaultRootWindow)(display);
+                let mut root_return = 0;
+                let mut child_return = 0;
+                let mut root_x = 0;
+                let mut root_y = 0;
+                let mut win_x = 0;
+                let mut win_y = 0;
+                let mut mask_return = 0;
+                let res = (xlib.XQueryPointer)(
+                    display,
+                    root,
+                    &mut root_return,
+                    &mut child_return,
+                    &mut root_x,
+                    &mut root_y,
+                    &mut win_x,
+                    &mut win_y,
+                    &mut mask_return,
+                );
+                (xlib.XCloseDisplay)(display);
+                if res != 0 {
+                    return (mask_return & (1 << 8)) != 0; // Button1Mask = 1 << 8
+                }
+            }
+        }
+    }
+    false
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code, clippy::single_call_fn)]
+fn is_mouse_left_physically_down() -> bool {
+    unsafe extern "system" {
+        fn GetAsyncKeyState(vKey: i32) -> i16;
+    }
+    unsafe { (GetAsyncKeyState(0x01) as u16 & 0x8000) != 0 }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code, clippy::single_call_fn)]
+fn is_mouse_left_physically_down() -> bool {
+    unsafe {
+        #[link(name = "objc", kind = "dylib")]
+        extern "C" {
+            fn sel_registerName(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+            fn objc_getClass(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+            fn objc_msgSend(
+                receiver: *mut std::ffi::c_void,
+                selector: *mut std::ffi::c_void,
+                ...
+            ) -> *mut std::ffi::c_void;
+        }
+        let nsevent_class = objc_getClass(b"NSEvent\0".as_ptr() as *const _);
+        if !nsevent_class.is_null() {
+            let pressed_buttons_sel =
+                sel_registerName(b"pressedMouseButtons\0".as_ptr() as *const _);
+            let buttons = objc_msgSend(nsevent_class, pressed_buttons_sel) as usize;
+            return (buttons & 1) != 0;
+        }
+    }
+    false
+}
+
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+fn is_mouse_left_physically_down() -> bool {
+    false
+}
+
 fn apply_native_fullscreen(
     window_handle: *mut std::ffi::c_void,
     fullscreen: bool,
@@ -825,7 +907,7 @@ fn create_window(
             title: false,
             resize: true,
             scale: minifb::Scale::X1,
-            topmost: true,
+            topmost: false,
             ..WindowOptions::default()
         }
     } else {
@@ -975,6 +1057,8 @@ impl SlidePlayer {
         let mut prev_pressed_keys = Vec::new();
         let mut prev_mouse_down = false;
         let mut prev_mouse_right_down = false;
+        let mut was_window_active = true;
+        let mut mouse_stuck_suppressed = false;
         let mut prev_mouse_pos: Option<(f32, f32)> = None;
         let mut last_mouse_activity = Instant::now();
         let mut hovered_hotspot_key: Option<(usize, usize)> = None;
@@ -1021,6 +1105,19 @@ impl SlidePlayer {
         let mut first_frame = true;
 
         while window.is_open() && !exit_requested && !window.is_key_down(Key::Q) {
+            let is_window_active = window.is_active();
+            if !is_window_active {
+                was_window_active = false;
+                volume_dragging = false;
+                active_pen_stroke = None;
+                prev_pressed_keys.clear();
+            } else if !was_window_active {
+                was_window_active = true;
+                if window.get_mouse_down(MouseButton::Left) && !is_mouse_left_physically_down() {
+                    mouse_stuck_suppressed = true;
+                }
+            }
+
             let (new_w, new_h) = window.get_size();
             if (new_w != width || new_h != height) && new_w >= 100 && new_h >= 100 {
                 width = new_w;
@@ -1145,7 +1242,11 @@ impl SlidePlayer {
 
             // Mouse handling and cursor style
             let raw_mouse_pos = window.get_mouse_pos(MouseMode::Pass);
-            let mouse_pos = raw_mouse_pos;
+            let mouse_pos = if is_window_active {
+                raw_mouse_pos
+            } else {
+                None
+            };
             if mouse_pos != prev_mouse_pos {
                 last_mouse_activity = Instant::now();
                 if cursor_hidden && presenter_mode != PresenterMode::Laser {
@@ -1370,8 +1471,12 @@ impl SlidePlayer {
             }
 
             // Mouse click handling
-            let mouse_down = window.get_mouse_down(MouseButton::Left);
-            let mouse_right = window.get_mouse_down(MouseButton::Right);
+            let raw_mouse_down = window.get_mouse_down(MouseButton::Left);
+            if !raw_mouse_down {
+                mouse_stuck_suppressed = false;
+            }
+            let mouse_down = is_window_active && raw_mouse_down && !mouse_stuck_suppressed;
+            let mouse_right = is_window_active && window.get_mouse_down(MouseButton::Right);
             let left_clicked = mouse_down && !prev_mouse_down;
             let right_clicked = mouse_right && !prev_mouse_right_down;
 
@@ -1583,6 +1688,9 @@ impl SlidePlayer {
                                             && !target.starts_with("file://"))
                                     {
                                         open_external_target_detached(target);
+                                        volume_dragging = false;
+                                        active_pen_stroke = None;
+                                        mouse_stuck_suppressed = true;
                                     } else if let Some(page_str) = target
                                         .strip_prefix("#page=")
                                         .or_else(|| target.strip_prefix("#slide="))
@@ -1610,12 +1718,18 @@ impl SlidePlayer {
                                             let decoded = url_decode(clean);
                                             open_external_target_detached(&decoded);
                                         }
+                                        volume_dragging = false;
+                                        active_pen_stroke = None;
+                                        mouse_stuck_suppressed = true;
                                     }
                                 },
                                 | Hotspot::Video { source, .. } => {
                                     let resolved =
                                         resolve_media_path(source, self.source_file.as_deref());
                                     let _ = MediaPlayer::play_video(&resolved);
+                                    volume_dragging = false;
+                                    active_pen_stroke = None;
+                                    mouse_stuck_suppressed = true;
                                 },
                                 | Hotspot::Audio {
                                     source,
@@ -1728,7 +1842,11 @@ impl SlidePlayer {
             prev_mouse_right_down = mouse_right;
 
             // Keyboard navigation & tools
-            let keys = window.get_keys();
+            let keys = if is_window_active {
+                window.get_keys()
+            } else {
+                Vec::new()
+            };
             let mut reload_triggered = false;
 
             for key in &keys {

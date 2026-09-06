@@ -18,26 +18,26 @@
 
 ## Key Features
 
-- **No Rust Required for Presentation Authors**: Authors write slides entirely in Typst markup (`slides.typ`). Rust is only needed if implementing custom low-level transition or fragment animation traits.
-- **Minimal Project Footprint**: `cargo slide init` scaffolds a clean project consisting of just 5 files.
-- **Standalone Single-Binary Packaging**: `cargo slide build` compiles your presentation, slide vector assets, layout metadata, and the runtime player into a single portable binary (~12 MB). Target machines do not need Typst, Node.js, Python, or Rust installed.
-- **True Native Fullscreen & Seamless Background Extension**: Seamless toggle between true native fullscreen (`F11` / `F` / Dock `FULL`) and resizable windowed mode across Linux (EWMH), Windows (borderless topmost popup), and macOS (Cocoa auto-hiding menu bar and Dock). Letterbox margins automatically sample and extend the slide's background color to eliminate top/bottom seams on any display. Supports `16-9`, `16-10`, `3-2`, and `4-3` aspect ratios natively.
-- **13 Built-in Page Transitions**: `fade`, `cut`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `zoom`, `wipe-left`, `wipe-right`, `iris`, `glitch`, `cube`, and `particles`.
-- **In-Slide Component Steps**: Define sequential reveals using `#step(order, effect: "...")` with effects like `fade-in`, `slide-up`, `glitch`, or `typewriter`. Steps advance with `Space` / Left-Click and reverse with `Backspace` / Right-Click.
-- **Interactive Data Charts**:
-  - Read data from `.csv`, `.json`, or `.db` (SQLite) files.
-  - Query datasets at compile/presentation time using in-memory SQL (`SELECT ... FROM data WHERE ...`) or a pipeline DSL (`source -> filter() -> select()`).
-  - Hover crosshairs with multi-series halo indicators during presentation.
-  - Built-in HUD Data Inspector: switch chart visualization types on the fly (Bar, Line, Area, Scatter), view tabular data, or export to CSV.
-- **Presenter Studio Tools**:
-  - **Laser Pointer**: Realistic cursor with glowing plasma core and physics-based decay trail (`L` key or Dock `LSR`).
-  - **Whiteboard Pen & Palette**: Freehand slide annotation (`P` key) with a 7-color palette (`K` key, numbers `1`–`7`), smooth Bézier blending, and per-slide persistence (`C` / `X` to clear).
-  - **Audio Engine**: Multi-track background music playback with fade curves, seamless looping, and floating volume control (`+`, `-`, mouse wheel, `M` to mute). Volume is safely clamped between 0% and 100%.
-  - **Hardware Video Cards**: Video cards embed click hotspots that spawn system media players (`mpv`, `ffplay`, or default system player) for full-speed hardware-decoded playback.
-- **Slide Content Overflow Protection**: Automatically checks compiled SVG pages against declared `#slide(...)` blocks. If content exceeds the 16:9 vertical bounds (15.75 cm), compilation halts with exact slide title and source line number diagnostics.
-- **Vectorized Typography & Multilingual Support**: Typst resolves all text glyphs (including Latin, CJK Chinese/Japanese/Korean, math symbols, and Emojis) into vector Bézier `<path>` definitions. Presentations render identically across operating systems without requiring font installations.
-- **Accessibility (A11y)**: Complete keyboard-only navigation for all features; touch-friendly floating bottom dock for mouse/touch environments; tabular data inspection for visual clarity.
-- **Dual-Mode Logging**: Human-friendly formatted output with emoji icons by default, or machine-readable JSON (`--log-format json` or `CARGO_SLIDE_LOG_FORMAT=json`) for automated workflows.
+- **Typst-Based Authoring**: Presentations are authored entirely in Typst markup (`slides.typ`). Rust is only required when implementing custom low-level transition or fragment animation traits.
+- **Minimal Project Scaffolding**: `cargo slide init` creates a standard 5-file project structure without unnecessary boilerplate.
+- **Standalone Single-Binary Distribution**: `cargo slide build` packages presentation content, vectorized slide assets, layout metadata, and the runtime player into a single portable binary (~14–15 MB). Target machines run the binary directly without requiring Typst, Rust, Node.js, or browser engines.
+- **Cross-Platform Window & Fullscreen Modes**: Seamlessly toggle between native fullscreen (`F11` / `F` / Dock `FULL`) and resizable windowed mode across Linux (EWMH), Windows, and macOS. Outer letterbox margins automatically sample and extend the slide background color to prevent visual seams on non-standard displays. Native aspect ratio presets include `16-9`, `16-10`, `3-2`, and `4-3`.
+- **13 Built-in Slide Transitions**: `fade`, `cut`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `zoom`, `wipe-left`, `wipe-right`, `iris`, `glitch`, `cube`, and `particles`.
+- **In-Slide Fragment Steps**: Control sequential content reveals with `#step(order, effect: "...")` supporting `fade-in`, `slide-up`, `glitch`, and `typewriter`. Advance with `Space` / Left-Click and reverse with `Backspace` / Right-Click.
+- **Interactive Data Charts & HUD Data Inspector**:
+  - Read tabular data directly from `.csv`, `.json`, or `.db` (SQLite) files.
+  - Execute in-memory SQL (`SELECT ... FROM data WHERE ...`) or pipeline DSL queries (`source -> filter() -> select()`).
+  - Hover crosshairs with multi-series indicators during presentation.
+  - Interactive HUD Data Inspector: click any chart or table during presentation to switch chart types (Bar, Line, Area, Scatter), apply transform presets (`TOP 5`, `SORT ▼`, `SORT ▲`, `CUM`, `% SHARE`, `MA3`), filter rows by text or condition (`>50`, `<=100`), inspect tabular data, sort columns, or export to CSV.
+- **Presenter Tools**:
+  - **Laser Pointer**: Smooth on-screen pointer with a simulated decay trail (`L` key or Dock `LSR`).
+  - **Whiteboard Pen & Palette**: Freehand slide annotation (`P` key) with a 7-color palette (`K` key, numbers `1`–`7`), smooth Bézier interpolation, and per-slide persistence (`C` / `X` to clear).
+  - **Audio Engine**: Background music playback with looping, track mixing, on-screen toasts, and volume adjustments (`+`, `-`, mouse scroll wheel, interactive Dock slider, `M` to mute) safely clamped to [0%, 100%].
+  - **Video Playback**: Clickable video placeholders delegate playback to external media players (`ffplay`, `mpv`, or default system player) in an independent background window with auto-exit.
+- **Slide Overflow Protection**: Checks compiled vector pages against declared `#slide(...)` declarations during compilation. If content exceeds vertical canvas bounds, compilation reports the specific slide title and source line number.
+- **Vectorized Typography & Multilingual Support**: Typst resolves text (Latin, CJK Chinese/Japanese/Korean, math equations, and Unicode emojis) into vector Bézier `<path>` outlines. Presentations render identically across systems without requiring font installations. The HUD Data Inspector includes a built-in bitmap font with glyphs for currencies, arrows, sorting indicators, and presentation symbols.
+- **Accessibility & Touch Support**: Full keyboard navigation across all features; floating bottom dock for mouse or touch screen operation; high-contrast tabular data view in the inspector.
+- **Structured Output**: Human-readable terminal output by default, or single-line JSON (`--log-format json` or `CARGO_SLIDE_LOG_FORMAT=json`) for automated CI/CD scripts.
 
 ---
 
@@ -173,17 +173,17 @@ In standard mode, exactly 5 files are created:
 If `--rust` is supplied, `Cargo.toml` and `src/main.rs` are added for trait extensions.
 
 ### Q3: What assets are bundled into the binary vs carried in `assets/`?
-- **Embedded inside the binary (~12 MB executable)**:
+- **Embedded inside the binary (~14–15 MB standalone executable)**:
   - All slide vector paths, layout geometry, glyph curves, and LaTeX math formulas.
   - Interactive hotspot definitions, fragment steps, and transition metadata.
   - Processed CSV, JSON, and SQLite chart tables.
-  - The `tiny-skia` software rendering engine, transition shaders, laser pointer, whiteboard pen, and HUD inspector.
+  - The `tiny-skia` software rendering engine, transition routines, laser pointer, whiteboard pen, audio mixer, and HUD Data Inspector.
 - **Carried alongside in `assets/`**:
-  - High-definition video files (`.mp4`, `.webm`, `.mkv`) and external audio recordings.
-  - *Rationale*: Bundling 500 MB of video directly into a binary causes executable bloat and memory pressure. By referencing media via relative paths, `cargo-slide` keeps the binary lightweight (~12 MB) while leveraging hardware decoders via system media players.
+  - Video files (`.mp4`, `.webm`, `.mkv`) and external audio recordings.
+  - *Rationale*: Storing large video files directly inside the binary executable creates excessive binary bloat and unnecessary memory footprint. By referencing media via relative paths, `cargo-slide` keeps the binary compact while delegating video decoding to dedicated media players.
 
 ### Q4: How does video playback work?
-Typst generates a styled video placeholder card with an embedded hotspot bounding box. During presentation, clicking the video card dispatches the video path to an external hardware-accelerated player (`mpv`, `ffplay`, or default system handler) in a detached sub-process. This ensures smooth 4K 60FPS playback with zero GPU overhead on the presentation engine itself.
+Typst generates a styled video placeholder card with an embedded hotspot bounding box. During presentation, clicking the video card launches an external video player (`ffplay`, `mpv`, or the operating system's default media player) in a detached background thread. The video opens in an independent native window with standard controls and auto-exits on completion, ensuring smooth playback without blocking the slide presentation event loop.
 
 ### Q5: How do custom fonts and cross-platform font rendering work?
 - **Vectorized Glyph Output**: Typst vectorizes text glyphs into SVG `<path>` outlines during compilation. The presentation player rasterizes these mathematical Bézier curves directly through `tiny-skia`, ensuring that presentations look identical on all machines without requiring target systems to have fonts installed.
@@ -270,24 +270,29 @@ Export slides to a multi-page PDF document or individual SVG vector image files.
 
 | Key / Action | Function |
 | :--- | :--- |
-| **Space** / **Left Click** | Advance to next step (or next slide if steps completed) |
-| **Backspace** / **Right Click** | Step back to previous step (or previous slide) |
-| **F11** / **F** / Dock `FULL` | Toggle borderless fullscreen and windowed modes |
+| **Space** / **Enter** / **Right** / **Down** / **Left Click** | Advance to next step (or next slide if steps completed) |
+| **Backspace** / **Left** / **Up** / **Right Click** | Step back to previous step (or previous slide) |
+| **PageDown** / **PageUp** | Advance / reverse whole slide directly |
+| **Home** / **End** | Jump to first / last slide |
+| **Digit(s) + Enter** | Jump directly to specific slide number |
+| **F11** / **F** / Dock `FULL` | Toggle native fullscreen and windowed modes |
 | **L** / Dock `LSR` | Toggle laser pointer with decay trail |
 | **P** / Dock `PEN` | Toggle whiteboard annotation pen |
 | **K** / Dock `COL` | Toggle 7-color floating palette |
 | **Keys 1 .. 7** | Select pen & laser color (Cyan, Red, Green, Yellow, Purple, White, Orange) |
-| **C** / **X** / Dock `CLR` | Clear annotations on the current slide |
+| **C** / **X** / Dock `CLR` | Clear annotations on current slide |
 | **Mouse Wheel** / **`+` / `-`** | Adjust master audio volume (0% to 100%) |
+| **Dock Volume Slider** | Click or drag directly on the slider track to adjust volume |
 | **M** / Dock `VOL` | Mute / unmute audio |
-| **H** / **?** | Toggle shortcut help HUD |
-| **Home** / **End** | Jump to first / last slide |
-| **Digit(s) + Enter** | Jump directly to specific slide number |
-| **Esc** / **Q** | Exit presentation |
+| **H** / **?** / Dock `HELP` | Toggle shortcut help overlay |
+| **Click on Chart / Table** | Open interactive HUD Data Inspector modal |
+| **Click on Video Card** | Launch external video player in detached window |
+| **Click on Hyperlink** | Open external URL or local file in background |
+| **Esc** / **Q** | Close active modal / exit presentation |
 
 ---
 
-## Interactive Charts & SQL Guide
+## Interactive Charts & HUD Data Inspector
 
 ### 1. CSV Data Source
 ```typst
@@ -321,6 +326,18 @@ For quick transformations without full SQL syntax:
   title: "Frame Rate Comparison"
 )
 ```
+
+### 4. Interactive HUD Data Inspector
+Clicking any chart or data card during presentation opens the HUD Data Inspector modal:
+- **Type Switcher**: Dynamically switch visualizations between Bar, Line, Area, and Scatter representations.
+- **Transform Presets**: Apply instant calculations (`ORIG`, `TOP 5`, `SORT ▼` desc, `SORT ▲` asc, `CUM` cumulative, `% SHARE` 100% share, `MA3` 3-period moving average).
+- **Series Chips**: Toggle individual series on or off to isolate specific metrics.
+- **KPI Summary Cards**: Real-time stats strip showing Total Sum, Mean/Avg, Minimum, Maximum, Median, and Standard Deviation across visible data points.
+- **Tabular Data View**: Inspect raw data records; click table headers (`Category` or series names) to sort; scroll vertically via scroll wheel or drag.
+- **Search & Condition Filtering**: Filter rows by text query or numeric condition expressions (e.g. `>50`, `<=100`, `!=0`).
+- **Number Formatting**: Cycle display formats (`ORIG`, `INT`, `DEC1`, `DEC2`, `CURR`, `PCT`).
+- **CSV Export**: Click `EXPORT CSV` to save the active filtered data to a timestamped CSV file on disk.
+- **Dismiss**: Press `Esc` or click `CLOSE [X]` to return to the presentation.
 
 ---
 

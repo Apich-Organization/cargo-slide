@@ -1084,7 +1084,7 @@ pub fn draw_page_badge(
     let char_h = 8;
     let padding = 8;
 
-    let text_w = badge_str.len() * (char_w + 1);
+    let text_w = badge_str.chars().count() * (char_w + 1);
     let box_w = text_w + padding * 2;
     let box_h = char_h + padding * 2;
 
@@ -1264,7 +1264,7 @@ pub fn draw_text_centered(
 ) {
     let char_w = 6;
     let char_h = 7;
-    let text_w = text.len() * (char_w + 1);
+    let text_w = text.chars().count().saturating_mul(char_w + 1);
     let start_x = rect.x as usize + (rect.width as usize).saturating_sub(text_w) / 2;
     let start_y = rect.y as usize + (rect.height as usize).saturating_sub(char_h) / 2;
     draw_text(buffer, width, height, start_x, start_y, text, color);
@@ -1282,7 +1282,7 @@ pub fn draw_text_at_center(
 ) {
     let char_w = 6;
     let char_h = 7;
-    let text_w = text.len() * (char_w + 1);
+    let text_w = text.chars().count().saturating_mul(char_w + 1);
     let start_x = cx.saturating_sub(text_w / 2);
     let start_y = cy.saturating_sub(char_h / 2);
     draw_text(buffer, width, height, start_x, start_y, text, color);
@@ -1591,10 +1591,209 @@ fn draw_char(
             ]
         },
         | ' ' => [0; 7],
-        | _ => {
+        | '▼' | '▽' => {
             [
-                0b11111, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11111,
+                0b00000, 0b11111, 0b11111, 0b01110, 0b01110, 0b00100, 0b00000,
             ]
+        },
+        | '▲' | '△' => {
+            [
+                0b00000, 0b00100, 0b01110, 0b01110, 0b11111, 0b11111, 0b00000,
+            ]
+        },
+        | '▶' | '▷' => {
+            [
+                0b00000, 0b11000, 0b11110, 0b11111, 0b11110, 0b11000, 0b00000,
+            ]
+        },
+        | '◀' | '◁' => {
+            [
+                0b00000, 0b00011, 0b01111, 0b11111, 0b01111, 0b00011, 0b00000,
+            ]
+        },
+        | '↑' => {
+            [
+                0b00100, 0b01110, 0b10101, 0b00100, 0b00100, 0b00100, 0b00000,
+            ]
+        },
+        | '↓' => {
+            [
+                0b00000, 0b00100, 0b00100, 0b00100, 0b10101, 0b01110, 0b00100,
+            ]
+        },
+        | '←' => {
+            [
+                0b00000, 0b00100, 0b01000, 0b11111, 0b01000, 0b00100, 0b00000,
+            ]
+        },
+        | '→' => {
+            [
+                0b00000, 0b00100, 0b00010, 0b11111, 0b00010, 0b00100, 0b00000,
+            ]
+        },
+        | '•' | '·' => {
+            [
+                0b00000, 0b00000, 0b01110, 0b01110, 0b01110, 0b00000, 0b00000,
+            ]
+        },
+        | '✓' | '✔' => {
+            [
+                0b00000, 0b00001, 0b00011, 0b10010, 0b01100, 0b00100, 0b00000,
+            ]
+        },
+        | '✗' | '✕' | '✖' => {
+            [
+                0b10001, 0b11011, 0b01110, 0b00100, 0b01110, 0b11011, 0b10001,
+            ]
+        },
+        | '_' => {
+            [
+                0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111,
+            ]
+        },
+        | ';' => {
+            [
+                0b00000, 0b01100, 0b01100, 0b00000, 0b01100, 0b00100, 0b01000,
+            ]
+        },
+        | '~' => {
+            [
+                0b00000, 0b01001, 0b10110, 0b00000, 0b00000, 0b00000, 0b00000,
+            ]
+        },
+        | '&' => {
+            [
+                0b01100, 0b10010, 0b01100, 0b10010, 0b10101, 0b10010, 0b01101,
+            ]
+        },
+        | '@' => {
+            [
+                0b01110, 0b10001, 0b10111, 0b10101, 0b10110, 0b10000, 0b01111,
+            ]
+        },
+        | '"' | '“' | '”' => {
+            [
+                0b10100, 0b10100, 0b10100, 0b00000, 0b00000, 0b00000, 0b00000,
+            ]
+        },
+        | '\'' | '`' | '‘' | '’' => {
+            [
+                0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000,
+            ]
+        },
+        | '{' => {
+            [
+                0b00010, 0b00100, 0b00100, 0b01000, 0b00100, 0b00100, 0b00010,
+            ]
+        },
+        | '}' => {
+            [
+                0b01000, 0b00100, 0b00100, 0b00010, 0b00100, 0b00100, 0b01000,
+            ]
+        },
+        | '€' => {
+            [
+                0b01110, 0b10001, 0b11100, 0b10000, 0b11100, 0b10001, 0b01110,
+            ]
+        },
+        | '£' => {
+            [
+                0b00110, 0b01001, 0b01000, 0b11100, 0b01000, 0b01001, 0b11111,
+            ]
+        },
+        | '¥' => {
+            [
+                0b10001, 0b01010, 0b00100, 0b11111, 0b00100, 0b11111, 0b00100,
+            ]
+        },
+        | '°' => {
+            [
+                0b01100, 0b10010, 0b01100, 0b00000, 0b00000, 0b00000, 0b00000,
+            ]
+        },
+        | '📊' => {
+            [
+                0b00001, 0b00001, 0b00101, 0b00101, 0b10101, 0b10101, 0b11111,
+            ]
+        },
+        | '📈' => {
+            [
+                0b00011, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
+            ]
+        },
+        | '🔍' | '🔎' => {
+            [
+                0b01110, 0b10001, 0b10001, 0b01110, 0b00010, 0b00100, 0b01000,
+            ]
+        },
+        | '🚀' => {
+            [
+                0b00100, 0b01110, 0b01110, 0b11111, 0b10101, 0b01010, 0b00100,
+            ]
+        },
+        | '⚡' => {
+            [
+                0b00010, 0b00110, 0b01110, 0b11111, 0b00111, 0b00110, 0b00100,
+            ]
+        },
+        | '✨' => {
+            [
+                0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000, 0b00000,
+            ]
+        },
+        | '🗄' | '💾' => {
+            [
+                0b11111, 0b10001, 0b11111, 0b10001, 0b11111, 0b10001, 0b11111,
+            ]
+        },
+        | '📦' => {
+            [
+                0b01110, 0b10101, 0b11111, 0b10101, 0b10101, 0b10001, 0b11111,
+            ]
+        },
+        | '🎨' => {
+            [
+                0b01110, 0b10101, 0b11011, 0b10101, 0b10001, 0b01110, 0b00000,
+            ]
+        },
+        | '📄' => {
+            [
+                0b11100, 0b10010, 0b11110, 0b10010, 0b11110, 0b10000, 0b11111,
+            ]
+        },
+        | '💡' => {
+            [
+                0b01110, 0b10001, 0b10001, 0b01110, 0b01110, 0b00100, 0b01110,
+            ]
+        },
+        | '⏮' => {
+            [
+                0b10110, 0b10111, 0b10111, 0b10101, 0b10111, 0b10111, 0b10110,
+            ]
+        },
+        | '⏭' => {
+            [
+                0b01101, 0b11101, 0b11101, 0b10101, 0b11101, 0b11101, 0b01101,
+            ]
+        },
+        | '🎬' => {
+            [
+                0b10101, 0b01010, 0b11111, 0b10001, 0b10001, 0b10001, 0b11111,
+            ]
+        },
+        | '🎉' => {
+            [
+                0b00001, 0b00011, 0b00111, 0b01111, 0b11110, 0b11100, 0b11000,
+            ]
+        },
+        | _ => {
+            if ch.is_whitespace() || ch.is_control() {
+                [0; 7]
+            } else {
+                [
+                    0b00000, 0b00000, 0b00000, 0b00100, 0b00000, 0b00000, 0b00000,
+                ]
+            }
         },
     };
 
@@ -1659,7 +1858,7 @@ pub fn get_transform_preset_rects(series_strip: Rect) -> Vec<(Rect, &'static str
     let chip_h = 22.0;
 
     for &(label, t) in TRANSFORM_PRESETS.iter().rev() {
-        let chip_w = (label.len() * 6 + 16) as f32;
+        let chip_w = (label.chars().count() * 6 + 16) as f32;
         right_x -= chip_w;
         let r = Rect::new(right_x, series_strip.y + 2.0, chip_w, chip_h);
         result.push((r, label, t));
@@ -2038,7 +2237,7 @@ pub fn draw_chart_quick_button(
     }
 
     // Centered text
-    let text_w = label.len() * 6;
+    let text_w = label.chars().count() * 6;
     let tx = (rect.x + (rect.width - text_w as f32) * 0.5).max(rect.x + 2.0) as usize;
     let ty = (rect.y + (rect.height - 7.0) * 0.5) as usize;
     draw_text(
@@ -3117,7 +3316,7 @@ pub fn draw_chart_visualizer(
                 .as_deref()
                 .unwrap_or(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()]),
         );
-        let text_len = s.name.len() * 6 + 18;
+        let text_len = s.name.chars().count() * 6 + 18;
         if cur_legend_x < rx + text_len + 40 {
             break;
         }
@@ -3308,7 +3507,7 @@ pub fn draw_chart_visualizer(
                 let tick_y = (py + ph).saturating_sub(((step as f32 / 4.0) * ph as f32) as usize);
                 draw_dashed_hline(buffer, width, height, px, px + pw, tick_y, 0xFF21262d, 3, 3);
                 let tick_str = chart_data.format_number(tick_val);
-                let label_x = px.saturating_sub(tick_str.len() * 6 + 6);
+                let label_x = px.saturating_sub(tick_str.chars().count() * 6 + 6);
                 draw_text(
                     buffer,
                     width,
@@ -4524,7 +4723,7 @@ pub fn draw_chart_inspector(
     if let Some((ref msg, ref t)) = state.toast_message
         && t.elapsed() < std::time::Duration::from_millis(2500)
     {
-        let toast_w = (msg.len() * 6 + 32).max(180) as f32;
+        let toast_w = (msg.chars().count() * 6 + 32).max(180) as f32;
         let toast_x = modal_rect.x + (modal_rect.width - toast_w) * 0.5;
         let toast_y = modal_rect.y + 10.0;
         let toast_rect = Rect::new(toast_x, toast_y, toast_w, 24.0);
@@ -4822,5 +5021,46 @@ mod tests {
                 "Chip width should expand into available space"
             );
         }
+    }
+
+    #[test]
+    fn test_unicode_and_emoji_rendering_in_hud() {
+        let mut buffer = vec![0u32; 100 * 50];
+        let width = 100;
+        let height = 50;
+
+        // Test rendering SORT ▼ and SORT ▲
+        draw_text(&mut buffer, width, height, 0, 0, "SORT ▼", 0xFFFFFFFF);
+        let non_zero_count = buffer.iter().filter(|&&p| p != 0).count();
+        assert!(non_zero_count > 0, "SORT ▼ must render visible pixels");
+
+        // Verify draw_text_centered with UTF-8 non-ASCII characters
+        let rect = Rect::new(0.0, 0.0, 80.0, 20.0);
+        let mut centered_buf = vec![0u32; 80 * 20];
+        draw_text_centered(&mut centered_buf, 80, 20, rect, "SORT ▼", 0xFFFFFFFF);
+        let centered_pixels = centered_buf.iter().filter(|&&p| p != 0).count();
+        assert!(centered_pixels > 0);
+
+        // Test presentation emojis and symbols render properly
+        let mut emoji_buf = vec![0u32; 100 * 20];
+        draw_text(
+            &mut emoji_buf,
+            100,
+            20,
+            0,
+            0,
+            "📊 📈 🚀 ⚡ ✨ 🗄 💡",
+            0xFFFFFFFF,
+        );
+        assert!(emoji_buf.iter().filter(|&&p| p != 0).count() > 0);
+
+        // Test unmapped character fallback produces a single dot, not a hollow box
+        let mut single_char_buf = vec![0u32; 10 * 10];
+        draw_char(&mut single_char_buf, 10, 10, 0, 0, '龍', 0xFFFFFFFF);
+        let dot_count = single_char_buf.iter().filter(|&&p| p != 0).count();
+        assert_eq!(
+            dot_count, 1,
+            "Unmapped character fallback should be a single dot"
+        );
     }
 }
