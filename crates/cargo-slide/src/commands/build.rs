@@ -86,17 +86,30 @@ pub fn execute(
     let core_str = core_path.to_string_lossy().replace('\\', "/");
     let player_str = player_path.to_string_lossy().replace('\\', "/");
 
+    let pkg_version = env!("CARGO_PKG_VERSION");
+    let (core_dep, player_dep) = if core_path.exists() && player_path.exists() {
+        (
+            format!(r#"slide-core = {{ path = "{core_str}", version = "{pkg_version}" }}"#),
+            format!(r#"slide-player = {{ path = "{player_str}", version = "{pkg_version}" }}"#),
+        )
+    } else {
+        (
+            format!(r#"slide-core = "{pkg_version}""#),
+            format!(r#"slide-player = "{pkg_version}""#),
+        )
+    };
+
     let cargo_toml = format!(
         r#"[package]
 name = "slide-standalone-runner"
-version = "0.1.0"
+version = "{pkg_version}"
 edition = "2024"
 
 [workspace]
 
 [dependencies]
-slide-core = {{ path = "{core_str}", version = "0.1.0" }}
-slide-player = {{ path = "{player_str}", version = "0.1.0" }}
+{core_dep}
+{player_dep}
 serde_json = "1.0"
 "#
     );
@@ -190,7 +203,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
 }
 
 fn find_repo_root(exe: &Path) -> Option<PathBuf> {
-    // 1. Search upwards from current working directory
+    // 1. Explicit environment variable override
+    if let Ok(env_root) = std::env::var("CARGO_SLIDE_REPO_ROOT") {
+        let p = PathBuf::from(env_root);
+        if p.join("crates").join("slide-core").exists() {
+            return Some(p);
+        }
+    }
+
+    // 2. Search upwards from current working directory
     if let Ok(cwd) = std::env::current_dir() {
         let mut cur = Some(cwd.as_path());
         while let Some(dir) = cur {
@@ -201,7 +222,17 @@ fn find_repo_root(exe: &Path) -> Option<PathBuf> {
         }
     }
 
-    // 2. Search upwards from executable location
+    // 3. Search upwards from compile-time manifest dir (for local dev installs)
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut cur = Some(manifest_dir);
+    while let Some(dir) = cur {
+        if dir.join("crates").join("slide-core").exists() {
+            return Some(dir.to_path_buf());
+        }
+        cur = dir.parent();
+    }
+
+    // 4. Search upwards from executable location
     let mut cur = exe.parent();
     while let Some(dir) = cur {
         if dir.join("crates").join("slide-core").exists() {

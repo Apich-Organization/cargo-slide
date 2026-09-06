@@ -16,6 +16,14 @@ pub enum SlideError {
     Database(String),
     #[error("Typst slide overflow error: {0}")]
     Overflow(String),
+    #[error("Watcher error: {0}")]
+    Watcher(String),
+}
+
+impl From<notify::Error> for SlideError {
+    fn from(err: notify::Error) -> Self {
+        Self::Watcher(err.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, SlideError>;

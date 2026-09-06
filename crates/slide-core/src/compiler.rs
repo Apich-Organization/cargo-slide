@@ -598,11 +598,20 @@ fn preprocess_charts(
                     };
 
                     if let Ok(data) = chart_data_res {
+                        let new_csv = data.to_csv();
                         let cache_csv = format!("{}.cache.csv", file_path.display());
-                        let _ = std::fs::write(&cache_csv, data.to_csv());
+                        let should_write = std::fs::read_to_string(&cache_csv)
+                            .map_or(true, |existing| existing != new_csv);
+                        if should_write {
+                            let _ = std::fs::write(&cache_csv, &new_csv);
+                        }
                         if db_path_str.ends_with(".db") || db_path_str.ends_with(".sqlite") {
                             let alt_cache = file_path.with_extension("db.cache.csv");
-                            let _ = std::fs::write(&alt_cache, data.to_csv());
+                            let should_write_alt = std::fs::read_to_string(&alt_cache)
+                                .map_or(true, |existing| existing != new_csv);
+                            if should_write_alt {
+                                let _ = std::fs::write(&alt_cache, &new_csv);
+                            }
                         }
                     }
                 }

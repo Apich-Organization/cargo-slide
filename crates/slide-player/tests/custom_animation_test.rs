@@ -287,3 +287,12 @@ fn test_inspector_layout_clamping() {
     assert!(l1080.x >= m1080.x);
     assert!(r1080.x + r1080.width <= m1080.x + m1080.width);
 }
+
+#[test]
+fn test_slide_app_watch_configuration() {
+    let app = SlideApp::new("slides.typ")
+        .watch(true)
+        .fullscreen(false)
+        .default_animation("fade");
+    let _ = app;
+}

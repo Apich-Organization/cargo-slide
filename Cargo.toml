@@ -10,7 +10,7 @@ members = [
 default-members = ["crates/cargo-slide"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.89"
 authors = [
@@ -33,7 +33,6 @@ categories = [
 ]
 keywords = ["typst", "presentation", "slides", "cargo-subcommand", "cli"]
 exclude = [
-    "/tests",
     "/.github",
     "/.build_tmp",
     "/examples",
@@ -43,9 +42,9 @@ exclude = [
 ]
 
 [workspace.dependencies]
-slide-core = { path = "crates/slide-core", version = "0.1.0" }
-slide-player = { path = "crates/slide-player", version = "0.1.0" }
-slide-theme = { path = "crates/slide-theme", version = "0.1.0" }
+slide-core = { path = "crates/slide-core", version = "0.1.1" }
+slide-player = { path = "crates/slide-player", version = "0.1.1" }
+slide-theme = { path = "crates/slide-theme", version = "0.1.1" }
 
 resvg = "0.48.1"
 usvg = "0.48.1"

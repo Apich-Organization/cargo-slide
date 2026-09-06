@@ -7,7 +7,6 @@ use slide_core::chart::SeriesData;
 use slide_core::model::Rect;
 use slide_core::model::RenderMetrics;
 
-
 pub const PALETTE_COLORS: [(&str, u32); 7] = [
     ("Cyan", 0xFF00E5FF),   // Neon Cyan (default for pen)
     ("Red", 0xFFFF3366),    // Crimson Neon Red (default for laser)

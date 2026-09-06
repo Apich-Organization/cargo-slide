@@ -7,7 +7,7 @@ use std::path::Path;
 pub fn execute(
     file: &Path,
     animation: &str,
-    _watch: bool,
+    watch: bool,
     fullscreen: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     if !file.exists() {
@@ -42,6 +42,7 @@ pub fn execute(
         title: deck.title.clone(),
         default_animation: animation.to_string(),
         fullscreen,
+        watch,
         ..Default::default()
     };
 
@@ -52,11 +53,15 @@ pub fn execute(
             "stage": "player_launch",
             "fullscreen": fullscreen,
             "animation": animation,
+            "watch": watch,
         })),
     );
+    let canonical_file = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
+
     SlidePlayer::new(deck)
         .with_config(config)
-        .with_source_file(Some(file.to_path_buf()))
+        .with_source_file(Some(canonical_file))
+        .with_watch(watch)
         .run()?;
 
     Ok(())

@@ -97,7 +97,6 @@ impl RenderMetrics {
     }
 }
 
-
 /// Interactive hotspot on a slide
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]

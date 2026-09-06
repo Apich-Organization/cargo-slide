@@ -25,3 +25,4 @@ tempfile.workspace = true
 walkdir.workspace = true
 csv.workspace = true
 rusqlite.workspace = true
+notify.workspace = true

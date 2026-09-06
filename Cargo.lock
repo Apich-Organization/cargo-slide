@@ -279,7 +279,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cargo-slide"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "notify",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "geek-presentation"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "slide-core",
@@ -2249,9 +2249,10 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slide-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "csv",
+ "notify",
  "roxmltree 0.21.1",
  "rusqlite",
  "serde",
@@ -2265,7 +2266,7 @@ dependencies = [
 
 [[package]]
 name = "slide-player"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "image",
  "minifb",
@@ -2283,7 +2284,7 @@ dependencies = [
 
 [[package]]
 name = "slide-theme"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "slotmap"

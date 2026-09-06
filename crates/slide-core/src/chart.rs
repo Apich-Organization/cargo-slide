@@ -18,7 +18,6 @@ pub enum ChartType {
     Scatter,
 }
 
-
 impl std::str::FromStr for ChartType {
     type Err = std::convert::Infallible;
 

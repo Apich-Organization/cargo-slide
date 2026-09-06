@@ -49,6 +49,7 @@ use slide_core::error::Result;
 use slide_core::error::SlideError;
 use slide_core::model::Hotspot;
 use slide_core::model::SlideDeck;
+use slide_core::watcher::SlideWatcher;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::Path;
@@ -65,6 +66,7 @@ pub struct PlayerConfig {
     pub height: usize,
     pub fullscreen: bool,
     pub default_animation: String,
+    pub watch: bool,
 }
 
 impl Default for PlayerConfig {
@@ -75,6 +77,7 @@ impl Default for PlayerConfig {
             height: 720,
             fullscreen: false,
             default_animation: "fade".to_string(),
+            watch: false,
         }
     }
 }
@@ -145,6 +148,14 @@ impl SlideApp {
         animation: impl Into<String>,
     ) -> Self {
         self.config.default_animation = animation.into();
+        self
+    }
+
+    pub fn watch(
+        mut self,
+        watch: bool,
+    ) -> Self {
+        self.config.watch = watch;
         self
     }
 
@@ -973,6 +984,14 @@ impl SlidePlayer {
         self
     }
 
+    pub fn with_watch(
+        mut self,
+        watch: bool,
+    ) -> Self {
+        self.config.watch = watch;
+        self
+    }
+
     pub fn register_animation(
         mut self,
         anim: impl SlideAnimation + 'static,
@@ -1020,6 +1039,42 @@ impl SlidePlayer {
 
         let mut current_idx = 0;
         let mut total_slides = self.deck.total_slides();
+
+        // File watcher for hot reloading
+        let mut watcher = if self.config.watch {
+            if let Some(ref file) = self.source_file {
+                match SlideWatcher::new(file) {
+                    | Ok(w) => {
+                        let watch_dir = w.watch_dir();
+                        println!(
+                            "👀 Live hot reload active. Watching {} for changes...",
+                            watch_dir.display()
+                        );
+                        slide_core::logger::log_event(
+                            "info",
+                            &format!(
+                                "👀 Live hot reload active. Watching {} for changes...",
+                                watch_dir.display()
+                            ),
+                            Some(serde_json::json!({
+                                "stage": "hot_reload_active",
+                                "watch_dir": watch_dir.display().to_string(),
+                                "source_file": file.display().to_string(),
+                            })),
+                        );
+                        Some(w)
+                    },
+                    | Err(e) => {
+                        eprintln!("⚠️ Failed to initialize slide watcher: {}", e);
+                        None
+                    },
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // Audio engine
         let mut audio_engine = AudioEngine::new();
@@ -2264,23 +2319,62 @@ impl SlidePlayer {
                 first_frame = true;
             }
 
-            // Live reload (R key)
-            if reload_triggered {
+            // Hot reload check from file watcher
+            let mut hot_reload_detected = false;
+            if let Some(ref mut w) = watcher
+                && let Some(changed_path) = w.poll_change()
+            {
+                println!("📝 Detected change in: {}", changed_path.display());
+                hot_reload_detected = true;
+            }
+
+            // Live reload (watcher trigger or manual R key)
+            if reload_triggered || hot_reload_detected {
                 active_chart_inspector = None;
-                if let Some(ref file) = self.source_file
-                    && let Ok(compiler) = SlideCompiler::new()
-                    && let Ok(new_deck) = compiler.compile_file(file)
-                {
-                    self.deck = new_deck;
-                    total_slides = self.deck.total_slides();
-                    current_idx = current_idx.min(total_slides.saturating_sub(1));
-                    current_step = if get_max_step(&self.deck, current_idx) > 0 {
-                        1
-                    } else {
-                        0
-                    };
-                    cache.clear();
-                    println!("🔄 Slides live-reloaded! ({} slides)", total_slides);
+                if let Some(ref file) = self.source_file {
+                    match SlideCompiler::new().and_then(|c| c.compile_file(file)) {
+                        | Ok(new_deck) => {
+                            self.deck = new_deck;
+                            total_slides = self.deck.total_slides();
+                            current_idx = current_idx.min(total_slides.saturating_sub(1));
+                            let max_step = get_max_step(&self.deck, current_idx);
+                            current_step = current_step.min(max_step);
+                            if current_step == 0 && max_step > 0 {
+                                current_step = 1;
+                            }
+                            cache.clear();
+                            println!("🔥 Slides live-reloaded! ({} slides)", total_slides);
+                            slide_core::logger::log_event(
+                                "success",
+                                &format!("✨ Slides live-reloaded! ({} slides)", total_slides),
+                                Some(serde_json::json!({
+                                    "stage": "hot_reload_success",
+                                    "total_slides": total_slides,
+                                    "current_slide": current_idx + 1,
+                                })),
+                            );
+                            trigger_slide_audio(
+                                &self.deck,
+                                current_idx,
+                                &mut audio_engine,
+                                self.source_file.as_deref(),
+                            );
+                        },
+                        | Err(e) => {
+                            eprintln!("⚠️ [cargo-slide] Hot reload compilation error:\n{}", e);
+                            slide_core::logger::log_event(
+                                "error",
+                                &format!("Hot reload compilation error: {}", e),
+                                Some(serde_json::json!({
+                                    "stage": "hot_reload_error",
+                                    "error": e.to_string(),
+                                })),
+                            );
+                        },
+                    }
+                    if let Some(ref mut w) = watcher {
+                        w.drain();
+                    }
                 }
             }
 
