@@ -9,10 +9,10 @@
 
 ## 项目概述 (Overview)
 
-`cargo-slide` 是一个用于编写、放映与分发演示文稿的代码驱动命令行工具与运行时。它将两个互补的技术结合在一起：
+`cargo-slide` 是一个用于编写、放映与分发演示文稿的代码驱动命令行工具与运行时。作为 [Apich 工作区 (Apich Organization)](https://github.com/Apich-Organization) 的核心后端基础设施组件之一，它将两个互补的技术结合在一起：
 
-- **[Typst](https://typst.app/) 负责内容排版**：亚秒级极速编译、整洁的标记语法、一流的 LaTeX 级数学公式排版能力，并通过模块化宏直接编译为无损高精度矢量图形（SVG）。
-- **Rust 负责原生演示播放器**：基于 [`tiny-skia`](https://github.com/RazrFalcon/tiny-skia) 构建的独立运行时，在无需浏览器或 Electron 依赖的前提下以稳定 60 FPS 光栅化放映，内置演讲者工具箱、音频混音调度、可交互图表以及单二进制打包功能。
+- **[Typst](https://typst.app/) 负责内容排版**：亚秒级快速编译、整洁的标记语法、一流的数学公式排版能力，并通过模块化宏直接编译为高精度矢量图形（SVG）。
+- **Rust 负责原生演示播放器**：基于 [`tiny-skia`](https://github.com/RazrFalcon/tiny-skia) 构建的独立运行时，在无需浏览器或 Electron 依赖的前提下以稳定 60 FPS 渲染放映，内置演讲者工具箱、音频混音调度、可交互图表以及单二进制打包功能。
 
 ---
 
@@ -415,6 +415,17 @@ cargo-slide/
 
 ---
 
+## 维护者与联系方式 (Maintainers & Contact)
+
+`cargo-slide` 作为 [Apich 工作区 (Apich Organization)](https://github.com/Apich-Organization) 的核心后端基础设施组件之一进行开发与维护。
+
+- **维护者 (Maintainer)**：Xinyu Yang ([Xinyu.Yang@apich.org](mailto:Xinyu.Yang@apich.org))
+- **组织机构 (Organization)**：Apich Organization ([info@apich.org](mailto:info@apich.org))
+- **项目仓库**：[https://github.com/Apich-Organization/cargo-slide](https://github.com/Apich-Organization/cargo-slide)
+
+---
+
 ## 开源许可证 (License)
 
 本项目遵循 [GNU Affero 通用公共许可证 v3.0 或更高版本](LICENSE) (`AGPL-3.0-or-later`) 开源。
+

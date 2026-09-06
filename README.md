@@ -9,7 +9,7 @@
 
 ## Overview
 
-`cargo-slide` is a command-line tool and runtime for creating, presenting, and distributing presentations using code. It bridges two complementary technologies:
+`cargo-slide` is a command-line tool and runtime for creating, presenting, and distributing presentations using code. Developed as part of the backend infrastructure for the [Apich workspace](https://github.com/Apich-Organization), it bridges two complementary technologies:
 
 - **[Typst](https://typst.app/) for typesetting**: Fast compilation, clean markup syntax, first-class mathematical equation typesetting, and modular macros compiled directly to high-precision vector graphics (SVG).
 - **Rust for the native presentation viewer**: A standalone runtime built on [`tiny-skia`](https://github.com/RazrFalcon/tiny-skia) that renders slides at a steady 60 FPS without web browser or Electron dependencies, featuring presenter tools, audio DSP mixing, interactive charts, and single-binary packaging.
@@ -416,7 +416,18 @@ cargo-slide/
 
 ---
 
+## Maintainers & Contact
+
+`cargo-slide` is developed as part of the backend infrastructure for the [Apich workspace](https://github.com/Apich-Organization).
+
+- **Maintainer**: Xinyu Yang ([Xinyu.Yang@apich.org](mailto:Xinyu.Yang@apich.org))
+- **Organization**: Apich Organization ([info@apich.org](mailto:info@apich.org))
+- **Repository**: [https://github.com/Apich-Organization/cargo-slide](https://github.com/Apich-Organization/cargo-slide)
+
+---
+
 ## License
 
 This project is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
+
 

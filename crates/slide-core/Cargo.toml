@@ -2,8 +2,17 @@
 name = "slide-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "Core compiler bridge, SVG parser, and chart data engine for cargo-slide, developed as part of the Apich workspace backend."
+categories = ["rendering::engine", "visualization", "text-processing"]
+keywords = ["typst", "presentation", "slides", "svg", "chart"]
+exclude.workspace = true
 
 [dependencies]
 roxmltree.workspace = true
