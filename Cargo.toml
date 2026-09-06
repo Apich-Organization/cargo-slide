@@ -43,9 +43,9 @@ exclude = [
 ]
 
 [workspace.dependencies]
-slide-core = { path = "crates/slide-core" }
-slide-player = { path = "crates/slide-player" }
-slide-theme = { path = "crates/slide-theme" }
+slide-core = { path = "crates/slide-core", version = "0.1.0" }
+slide-player = { path = "crates/slide-player", version = "0.1.0" }
+slide-theme = { path = "crates/slide-theme", version = "0.1.0" }
 
 resvg = "0.48.1"
 usvg = "0.48.1"

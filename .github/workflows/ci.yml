@@ -84,5 +84,5 @@ jobs:
         run: |
           for crate in cargo-slide slide-core slide-player slide-theme; do
             echo "=== Validating package: $crate ==="
-            cargo package --list -p "$crate"
+            cargo package --list -p "$crate" --allow-dirty
           done

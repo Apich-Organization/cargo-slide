@@ -95,8 +95,8 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-slide-core = {{ path = "{core_str}" }}
-slide-player = {{ path = "{player_str}" }}
+slide-core = {{ path = "{core_str}", version = "0.1.0" }}
+slide-player = {{ path = "{player_str}", version = "0.1.0" }}
 serde_json = "1.0"
 "#
     );
