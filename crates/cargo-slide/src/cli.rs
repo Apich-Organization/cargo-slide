@@ -88,6 +88,13 @@ pub enum Commands {
         /// Default transition animation
         #[arg(short, long, default_value = "fade")]
         animation: String,
+
+        /// Cross-compile for a different Rust target triple (e.g.
+        /// `x86_64-pc-windows-msvc`, `aarch64-unknown-linux-musl`) instead of the host's own
+        /// platform. The target must already be installed (`rustup target add <triple>`) and,
+        /// for a non-host target, have a working linker configured (see `.cargo/config.toml`).
+        #[arg(long)]
+        target: Option<String>,
     },
     /// Export presentation to PDF or SVGs
     Export {

@@ -1,18 +1,30 @@
 use slide_core::compiler::SlideCompiler;
 use std::fs::create_dir_all;
 use std::fs::write;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Stdio;
 use tempfile::tempdir;
 
-/// Compile the presentation into a standalone release binary
+/// Compile the presentation into a standalone release binary. `target`, when given, cross-compiles
+/// for that Rust target triple (e.g. `x86_64-pc-windows-msvc`) instead of the host's own platform;
+/// the triple must already be installed via `rustup target add` and have a working linker
+/// configured for a non-host target.
 #[allow(clippy::too_many_lines)]
 pub fn execute(
     file: &Path,
     output: Option<PathBuf>,
     animation: &str,
+    target: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // The *target* platform decides the binary's extension, not the host `cargo-slide` itself
+    // runs on (`cfg!(windows)` reflects the host, which is always false when cross-compiling
+    // from this Linux sandbox to a Windows target) -- a real bug in the original upstream
+    // implementation, fixed here as part of adding cross-compilation support at all.
+    let targets_windows = target.is_some_and(|t| t.contains("windows"));
     if !file.exists() {
         return Err(format!("File does not exist: {}", file.display()).into());
     }
@@ -26,6 +38,7 @@ pub fn execute(
         Some(serde_json::json!({
             "stage": "package_start",
             "source_file": file.display().to_string(),
+            "percent": 1,
         })),
     );
     let compiler = SlideCompiler::new()?;
@@ -35,7 +48,7 @@ pub fn execute(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("presentation");
-    let default_name = if cfg!(windows) {
+    let default_name = if targets_windows {
         format!("{stem}-presentation.exe")
     } else {
         format!("{stem}-presentation")
@@ -51,6 +64,7 @@ pub fn execute(
         Some(serde_json::json!({
             "stage": "bundle_generate",
             "total_slides": deck.total_slides(),
+            "percent": 3,
         })),
     );
 
@@ -137,28 +151,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
         "🔨 Compiling release binary with Cargo...",
         Some(serde_json::json!({
             "stage": "cargo_build_release",
+            "percent": 5,
         })),
     );
-    let mut cargo_cmd = Command::new("cargo");
     let target_dir = repo_root.join("target/standalone_target");
-    cargo_cmd
-        .arg("build")
-        .arg("--release")
-        .arg("--target-dir")
-        .arg(&target_dir)
-        .current_dir(build_path);
+    run_cargo_build_with_progress(build_path, &target_dir, target)?;
 
-    let build_res = cargo_cmd.status()?;
-    if !build_res.success() {
-        return Err("Cargo compilation failed for single binary output".into());
-    }
-
-    let bin_filename = if cfg!(windows) {
+    let bin_filename = if targets_windows {
         "slide-standalone-runner.exe"
     } else {
         "slide-standalone-runner"
     };
-    let built_bin = target_dir.join("release").join(bin_filename);
+    // `cargo build --target <triple>` (even for the host's own triple) nests output under
+    // `<target-dir>/<triple>/release/`, not `<target-dir>/release/` -- only the no-`--target`
+    // invocation uses the flat layout.
+    let release_dir = target.map_or_else(
+        || target_dir.join("release"),
+        |triple| target_dir.join(triple).join("release"),
+    );
+    let built_bin = release_dir.join(bin_filename);
     if !built_bin.exists() {
         return Err(format!("Compiled binary not found at {}", built_bin.display()).into());
     }
@@ -196,6 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
             "output": target_binary.display().to_string(),
             "size_mb": size_mb,
             "total_slides": deck.total_slides(),
+            "percent": 100,
         })),
     );
 
@@ -242,4 +254,150 @@ fn find_repo_root(exe: &Path) -> Option<PathBuf> {
     }
 
     None
+}
+
+/// Resolved package-graph size for `build_path`'s generated standalone-runner project, used as a
+/// rough denominator for build progress (see `run_cargo_build_with_progress`) -- not an exact
+/// rustc-invocation count (a build-script or proc-macro crate can compile more than once), just
+/// close enough that a caller polling `--log-format json`'s progress events sees a percentage
+/// that moves at roughly the right pace instead of standing still for minutes then jumping to
+/// 100%. Returns 0 (caller then treats every artifact as 1% until 100 are seen) if `cargo
+/// metadata` itself fails for any reason, rather than aborting the whole build over a
+/// progress-estimate step that was never essential to begin with.
+fn estimate_total_units(
+    build_path: &Path,
+    target: Option<&str>,
+) -> usize {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .current_dir(build_path);
+    if let Some(triple) = target {
+        cmd.arg("--filter-platform").arg(triple);
+    }
+    let Ok(output) = cmd.output() else {
+        return 0;
+    };
+    if !output.status.success() {
+        return 0;
+    }
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        return 0;
+    };
+    json.get("resolve")
+        .and_then(|r| r.get("nodes"))
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len)
+}
+
+/// Runs the actual `cargo build --release` for the generated standalone-runner project, emitting
+/// a real (not simulated) progress percentage as compilation proceeds -- each unit of work cargo
+/// itself reports finishing (`--message-format=json`'s `"reason":"compiler-artifact"` events)
+/// advances the count, scaled against `estimate_total_units`'s rough total. Reserves 0-5% for
+/// work already done before this function is called (Typst compilation, bundle generation) and
+/// 95-100% for copying the finished binary out afterward, so a caller watching the percentage
+/// climb sees it start above 0 and top out just under 100 while this function itself is running.
+///
+/// Real compiler diagnostics (errors and warnings) are forwarded too, via `"reason":
+/// "compiler-message"` events -- `--message-format=json` alone would otherwise swallow them
+/// entirely compared to the plain (non-JSON) invocation this replaces, since cargo routes
+/// per-file diagnostics through the JSON message stream rather than stderr in that mode.
+fn run_cargo_build_with_progress(
+    build_path: &Path,
+    target_dir: &Path,
+    target: Option<&str>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let total = estimate_total_units(build_path, target);
+
+    let mut cargo_cmd = Command::new("cargo");
+    cargo_cmd
+        .arg("build")
+        .arg("--release")
+        .arg("--target-dir")
+        .arg(target_dir)
+        .arg("--message-format=json")
+        .current_dir(build_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if let Some(triple) = target {
+        cargo_cmd.arg("--target").arg(triple);
+    }
+
+    let mut child = cargo_cmd.spawn()?;
+    let Some(stdout) = child.stdout.take() else {
+        return Err("Failed to capture cargo build output".into());
+    };
+    let reader = BufReader::new(stdout);
+
+    let mut compiled: usize = 0;
+    let mut last_reported_percent: u8 = 0;
+    for line in reader.lines() {
+        let Ok(line) = line else { continue };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let Some(reason) = value.get("reason").and_then(|r| r.as_str()) else {
+            continue;
+        };
+        match reason {
+            | "compiler-artifact" => {
+                compiled = compiled.saturating_add(1);
+                let denom = if total == 0 {
+                    compiled.max(100)
+                } else {
+                    total
+                };
+                #[allow(clippy::cast_precision_loss)]
+                let fraction = (compiled as f64 / denom as f64).min(1.0);
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let percent = (5.0 + fraction * 90.0) as u8;
+                if percent != last_reported_percent {
+                    last_reported_percent = percent;
+                    let pkg_name = value
+                        .get("target")
+                        .and_then(|t| t.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("dependency");
+                    slide_core::logger::log_event(
+                        "info",
+                        &format!(
+                            "🔨 Compiling {pkg_name} ({compiled}/{}, cross-target: {})",
+                            if total == 0 {
+                                "?".to_string()
+                            } else {
+                                total.to_string()
+                            },
+                            target.unwrap_or("host")
+                        ),
+                        Some(serde_json::json!({
+                            "stage": "cargo_build_release",
+                            "compiled": compiled,
+                            "total": total,
+                            "percent": percent,
+                        })),
+                    );
+                }
+            },
+            | "compiler-message" => {
+                let Some(message) = value.get("message") else {
+                    continue;
+                };
+                let level = message.get("level").and_then(|l| l.as_str()).unwrap_or("");
+                let Some(rendered) = message.get("rendered").and_then(|r| r.as_str()) else {
+                    continue;
+                };
+                if level == "error" {
+                    slide_core::logger::log_event("error", rendered, None);
+                }
+            },
+            | _ => {},
+        }
+    }
+
+    let status = child.wait()?;
+    if !status.success() {
+        return Err("Cargo compilation failed for single binary output".into());
+    }
+    Ok(())
 }

@@ -101,8 +101,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             file,
             output,
             animation,
+            target,
         }) => {
-            commands::build::execute(&file, output, &animation)?;
+            commands::build::execute(&file, output, &animation, target.as_deref())?;
         },
         | Some(Commands::Export { file, format, output }) => {
             commands::export::execute(&file, &format, output)?;
