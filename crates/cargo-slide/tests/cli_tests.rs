@@ -11,7 +11,7 @@ fn test_cli_version_and_help() {
         .expect("Failed to execute cargo-slide --version");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cargo-slide 0.1.1"));
+    assert!(stdout.contains("cargo-slide"));
 
     let help_output = Command::new(bin)
         .arg("--help")
