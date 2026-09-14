@@ -21,3 +21,7 @@ presentation-bin
 *.swp
 *~
 plan.md
+prompt.md
+examples/dist-web/
+examples/slides.slide
+crates/slide-web/pkg/

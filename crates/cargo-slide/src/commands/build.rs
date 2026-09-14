@@ -9,12 +9,79 @@ use std::process::Command;
 use std::process::Stdio;
 use tempfile::tempdir;
 
+/// Dispatch presentation build by format: binary, slide, or wasm.
+pub fn execute(
+    file: &Path,
+    output: Option<PathBuf>,
+    format: &str,
+    animation: &str,
+    target: Option<&str>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    match format.to_lowercase().as_str() {
+        | "slide" | "package" => crate::commands::pack::execute(file, output, animation),
+        | "wasm" | "web" | "csr" => execute_wasm(file, output, animation),
+        | "binary" | "exe" | "elf" | "" => execute_binary(file, output, animation, target),
+        | other => {
+            Err(
+                format!("Unknown build format: '{other}'. Supported formats: binary, slide, wasm")
+                    .into(),
+            )
+        },
+    }
+}
+
+/// Build standalone Leptos CSR web presentation bundle.
+pub fn execute_wasm(
+    file: &Path,
+    output: Option<PathBuf>,
+    _animation: &str,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    if !file.exists() {
+        return Err(format!("File does not exist: {}", file.display()).into());
+    }
+
+    let stem = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("presentation");
+    let out_dir = output.unwrap_or_else(|| PathBuf::from(format!("{stem}-web")));
+
+    slide_core::logger::log_event(
+        "info",
+        &format!(
+            "🌐 Building Leptos CSR web presentation: {}",
+            out_dir.display()
+        ),
+        Some(serde_json::json!({
+            "stage": "wasm_build_start",
+            "source_file": file.display().to_string(),
+            "output_dir": out_dir.display().to_string(),
+        })),
+    );
+
+    crate::commands::serve::prepare_csr_bundle(file, &out_dir)?;
+
+    slide_core::logger::log_event(
+        "success",
+        &format!(
+            "✅ Leptos CSR web bundle created successfully at: {}",
+            out_dir.display()
+        ),
+        Some(serde_json::json!({
+            "stage": "wasm_build_success",
+            "output_dir": out_dir.display().to_string(),
+        })),
+    );
+
+    Ok(())
+}
+
 /// Compile the presentation into a standalone release binary. `target`, when given, cross-compiles
 /// for that Rust target triple (e.g. `x86_64-pc-windows-msvc`) instead of the host's own platform;
 /// the triple must already be installed via `rustup target add` and have a working linker
 /// configured for a non-host target.
 #[allow(clippy::too_many_lines)]
-pub fn execute(
+pub fn execute_binary(
     file: &Path,
     output: Option<PathBuf>,
     animation: &str,
