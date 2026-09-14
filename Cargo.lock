@@ -426,7 +426,7 @@ checksum = "bb1307f12aa967b5a58416e87b3653360e0fd614a016b6e970db08fecbb1b80d"
 
 [[package]]
 name = "cargo-slide"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "clap",
  "notify",
@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "geek-presentation"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "slide-core",
@@ -3631,7 +3631,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slide-core"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "csv",
  "lzma-rs",
@@ -3652,7 +3652,7 @@ dependencies = [
 
 [[package]]
 name = "slide-player"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "image",
  "minifb",
@@ -3670,11 +3670,11 @@ dependencies = [
 
 [[package]]
 name = "slide-theme"
-version = "0.1.3"
+version = "0.2.0"
 
 [[package]]
 name = "slide-viewer"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "clap",
  "minifb",
@@ -3692,7 +3692,7 @@ dependencies = [
 
 [[package]]
 name = "slide-web"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "console_error_panic_hook",
  "gloo-net 0.7.0",
