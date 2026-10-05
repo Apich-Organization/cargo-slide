@@ -107,6 +107,7 @@ pub mod compiler;
     clippy::expect_used
 )]
 pub mod error;
+pub mod font;
 #[allow(
     missing_docs,
     clippy::pedantic,

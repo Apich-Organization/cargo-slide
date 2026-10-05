@@ -97,21 +97,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }) => {
             commands::run::execute(&file, &animation, true, fullscreen)?;
         },
+        | Some(Commands::Edit { file, dark }) => {
+            commands::edit::execute(file.as_deref(), dark)?;
+        },
         | Some(Commands::Build {
             file,
             output,
             format,
             animation,
             target,
+            source,
         }) => {
-            commands::build::execute(&file, output, &format, &animation, target.as_deref())?;
+            commands::build::execute(
+                &file,
+                output,
+                &format,
+                &animation,
+                target.as_deref(),
+                source,
+            )?;
         },
         | Some(Commands::Pack {
             file,
             output,
             animation,
+            source,
         }) => {
-            commands::pack::execute(&file, output, &animation)?;
+            commands::pack::execute(&file, output, &animation, source)?;
+        },
+        | Some(Commands::Unpack { file, output }) => {
+            commands::unpack::execute(&file, output)?;
         },
         | Some(Commands::Serve {
             file,

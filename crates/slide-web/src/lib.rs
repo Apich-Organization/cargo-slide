@@ -268,6 +268,7 @@ pub fn App() -> impl IntoView {
     let active_video_modal = RwSignal::new(None::<(String, Option<String>)>);
     let active_chart_inspector = RwSignal::new(None::<ChartData>);
     let active_text_modal = RwSignal::new(None::<(String, String, bool)>); // (file_path, content, is_loading)
+    let is_dark_theme = RwSignal::new(true);
 
     // Presenter Tools: Laser & Pen
     let laser_active = RwSignal::new(false);
@@ -545,9 +546,19 @@ pub fn App() -> impl IntoView {
             },
             | "t" | "T" => {
                 ev.prevent_default();
-                pen_brush_type.update(|b| *b = b.cycle());
-                let b = pen_brush_type.get();
-                trigger_toast(format!("Brush: {}", b.name()));
+                if ev.shift_key() || pen_active.get() {
+                    pen_brush_type.update(|b| *b = b.cycle());
+                    let b = pen_brush_type.get();
+                    trigger_toast(format!("Brush: {}", b.name()));
+                } else {
+                    is_dark_theme.update(|v| *v = !*v);
+                    let mode = if is_dark_theme.get() {
+                        "Dark HUD"
+                    } else {
+                        "Light HUD"
+                    };
+                    trigger_toast(format!("Theme: {}", mode));
+                }
             },
             | "[" => {
                 ev.prevent_default();
@@ -769,7 +780,8 @@ pub fn App() -> impl IntoView {
     view! {
         <div
             id="presentation-root"
-            class="slide-app"
+            class=move || if is_dark_theme.get() { "slide-app dark-theme" } else { "slide-app light-theme" }
+            attr:data-theme=move || if is_dark_theme.get() { "dark" } else { "light" }
             on:mousemove=on_mousemove
             on:mousedown=on_mousedown
             on:mouseup=on_mouseup
@@ -1249,6 +1261,15 @@ pub fn App() -> impl IntoView {
                         on:click=move |_| toggle_mute()
                     >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
                     <div class="hud-divider"/>
+                    <button
+                        class="hud-btn"
+                        title="Toggle Light / Dark HUD Theme (T)"
+                        on:click=move |_| {
+                            is_dark_theme.update(|v| *v = !*v);
+                            let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
+                            trigger_toast(format!("Theme: {}", mode));
+                        }
+                    >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
                     <button class="hud-btn" title="Slide Overview Grid (O)" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
                     <button class="hud-btn" title="Toggle Fullscreen (F)" on:click=move |_| toggle_fullscreen()>"⛶"</button>
                     <button class="hud-btn" title="Help & Shortcuts (?)" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
@@ -1398,7 +1419,8 @@ pub fn App() -> impl IntoView {
                                             <tr><td><kbd>"F"</kbd></td><td>Toggle True Fullscreen</td></tr>
                                             <tr><td><kbd>"L"</kbd></td><td>Toggle Laser Pointer trail</td></tr>
                                             <tr><td><kbd>"P"</kbd></td><td>Toggle Whiteboard Drawing Pen</td></tr>
-                                            <tr><td><kbd>"T"</kbd></td><td>Cycle Brush (Pen / Highlighter / Neon / Arrow)</td></tr>
+                                            <tr><td><kbd>"T"</kbd></td><td>Toggle Light / Dark HUD Theme</td></tr>
+                                            <tr><td><kbd>"Shift+T"</kbd></td><td>Cycle Brush (Pen / Highlighter / Neon / Arrow)</td></tr>
                                             <tr><td><kbd>"["</kbd> / <kbd>"]"</kbd></td><td>Decrease / Increase brush width</td></tr>
                                             <tr><td><kbd>"1 - 0"</kbd></td><td>Select pen palette color</td></tr>
                                             <tr><td><kbd>"U"</kbd> / <kbd>"Ctrl+Z"</kbd></td><td>Undo last pen stroke</td></tr>

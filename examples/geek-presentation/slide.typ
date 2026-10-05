@@ -58,13 +58,40 @@
 }
 
 /// Standard slide layout
-#let slide(title: none, header: none, footer: none, transition: none, body) = {
+#let slide(title: none, header: auto, footer: auto, transition: none, body) = {
   pagebreak(weak: true)
   
   link("slide-meta:" + if title != none { title } else { "slide" })[#box(width: 0pt, height: 0pt)[]]
 
   if transition != none {
     link("transition:" + transition)[#box(width: 0pt, height: 0pt)[]]
+  }
+
+  if header != auto {
+    if header == none or header == "" {
+      set page(header: none)
+    } else {
+      set page(header: context [
+        #set text(size: 8.5pt, fill: rgb("8b949e"))
+        #header
+      ])
+    }
+  }
+
+  if footer != auto {
+    if footer == none or footer == "" {
+      set page(footer: none)
+    } else {
+      set page(footer: context [
+        #set text(size: 9pt, fill: rgb("8b949e"))
+        #grid(
+          columns: (1fr, 1fr),
+          align: (left, right),
+          [#footer],
+          [#counter(page).display("1 / 1", both: true)]
+        )
+      ])
+    }
   }
 
   if title != none [
@@ -597,13 +624,24 @@
   ]
 }
 
-/// Two-column layout helper
-#let cols(left, right, ratio: (1fr, 1fr)) = {
+/// Multi-column layout helper (supports 2, 3, 4 or more columns)
+#let cols(..args) = {
+  let named = args.named()
+  let ratio = named.at("ratio", default: auto)
+  let gutter = named.at("gutter", default: 1.2cm)
+  let pos = args.pos()
+  let col_count = calc.max(pos.len(), 1)
+  let columns = if ratio != auto {
+    ratio
+  } else if "columns" in named {
+    named.columns
+  } else {
+    (1fr,) * col_count
+  }
   grid(
-    columns: ratio,
-    gutter: 1.2cm,
-    left,
-    right
+    columns: columns,
+    gutter: gutter,
+    ..pos
   )
 }
 

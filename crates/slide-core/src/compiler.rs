@@ -2,10 +2,52 @@ use crate::error::Result;
 use crate::error::SlideError;
 use crate::model::Slide;
 use crate::model::SlideDeck;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use tempfile::tempdir;
+
+/// Compute a 64-bit deterministic hash of a byte slice
+#[must_use]
+pub fn compute_source_hash(bytes: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Metadata stored in the persistent rendering cache for a compiled deck
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RenderCacheManifest {
+    pub source_hash: u64,
+    pub source_path: String,
+    pub deck: SlideDeck,
+    pub slide_hashes: Vec<u64>,
+}
+
+/// Determine deterministic rendering cache directory for a given typst file
+#[must_use]
+pub fn get_render_cache_dir(typ_file: &Path) -> PathBuf {
+    let root = typ_file.parent().unwrap_or_else(|| Path::new("."));
+    let mut cur = root;
+    while let Some(parent) = cur.parent() {
+        if cur.join("target").is_dir() || cur.join("Cargo.toml").is_file() {
+            let p = cur.join("target/.slide_cache");
+            let _ = std::fs::create_dir_all(&p);
+            return p;
+        }
+        cur = parent;
+    }
+    let local = root.join(".slide_cache");
+    if std::fs::create_dir_all(&local).is_ok() {
+        return local;
+    }
+    let temp = std::env::temp_dir().join("cargo_slide_cache");
+    let _ = std::fs::create_dir_all(&temp);
+    temp
+}
 
 /// Compiler for Typst presentation files
 pub struct SlideCompiler {
@@ -122,10 +164,19 @@ impl SlideCompiler {
         None
     }
 
-    /// Compile a Typst presentation file into a complete `SlideDeck`
+    /// Compile a Typst presentation file into a complete `SlideDeck` using the incremental rendering cache.
     pub fn compile_file(
         &self,
         typ_file: &Path,
+    ) -> Result<SlideDeck> {
+        self.compile_file_with_options(typ_file, true)
+    }
+
+    /// Compile a Typst presentation file with explicit control over incremental rendering caching.
+    pub fn compile_file_with_options(
+        &self,
+        typ_file: &Path,
+        use_cache: bool,
     ) -> Result<SlideDeck> {
         if !typ_file.exists() {
             return Err(SlideError::Compilation(format!(
@@ -133,13 +184,6 @@ impl SlideCompiler {
                 typ_file.display()
             )));
         }
-
-        let temp_dir = tempdir()?;
-        let output_template = temp_dir.path().join("slide-{p}.svg");
-        let output_str = output_template.to_string_lossy().to_string();
-
-        let mut cmd = Command::new(&self.typst_path);
-        cmd.arg("compile").arg(typ_file).arg(&output_str);
 
         // Safe root directory determination: handle "slides.typ" vs "path/to/slides.typ"
         let root_dir = typ_file
@@ -150,8 +194,69 @@ impl SlideCompiler {
                 std::path::Path::to_path_buf,
             );
 
+        // Ensure slide.typ exists in root_dir so `#import "slide.typ": *` always resolves
+        let macro_path = root_dir.join("slide.typ");
+        if !macro_path.exists() {
+            let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
+        }
+
         // Preprocess any SQLite database and JSON chart queries so Typst can load cached CSV
         preprocess_charts(typ_file, &root_dir);
+
+        let source_bytes = std::fs::read(typ_file).map_err(|e| {
+            SlideError::Compilation(format!("Failed to read {}: {e}", typ_file.display()))
+        })?;
+        let current_source_hash = compute_source_hash(&source_bytes);
+
+        let cache_dir = get_render_cache_dir(typ_file);
+        let canonical_path_str = typ_file
+            .canonicalize()
+            .unwrap_or_else(|_| typ_file.to_path_buf())
+            .to_string_lossy()
+            .to_string();
+        let file_key = format!(
+            "{:016x}",
+            compute_source_hash(canonical_path_str.as_bytes())
+        );
+        let manifest_path = cache_dir.join(format!("manifest_{file_key}.json"));
+
+        let previous_manifest: Option<RenderCacheManifest> = if use_cache && manifest_path.is_file()
+        {
+            std::fs::read_to_string(&manifest_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+        } else {
+            None
+        };
+
+        // Level 1 Cache Hit: If source hash is completely identical and use_cache is enabled
+        if let Some(ref m) = previous_manifest
+            && m.source_hash == current_source_hash
+            && !m.deck.slides.is_empty()
+        {
+            crate::logger::log_event(
+                "info",
+                &format!(
+                    "⚡ Incremental rendering cache hit for {}: loaded {} slides in <1ms",
+                    typ_file.display(),
+                    m.deck.total_slides()
+                ),
+                Some(serde_json::json!({
+                    "stage": "render_cache_hit",
+                    "file": typ_file.display().to_string(),
+                    "total_slides": m.deck.total_slides(),
+                })),
+            );
+            return Ok(m.deck.clone());
+        }
+
+        // Cache Miss / Partial Miss: Execute Typst compile
+        let temp_dir = tempdir()?;
+        let output_template = temp_dir.path().join("slide-{p}.svg");
+        let output_str = output_template.to_string_lossy().to_string();
+
+        let mut cmd = Command::new(&self.typst_path);
+        cmd.arg("compile").arg(typ_file).arg(&output_str);
 
         // Auto-detect project font directories and TYPST_FONT_PATHS for cross-platform deterministic rendering
         let fonts_dir = root_dir.join("fonts");
@@ -215,9 +320,13 @@ impl SlideCompiler {
             );
         }
 
-        // Collect all generated SVGs in numerical page order
+        // Collect all generated SVGs in numerical page order with Level 2 per-slide incremental caching
         let mut slides = Vec::new();
-        let mut page_num = 1;
+        let mut slide_hashes = Vec::new();
+        let mut page_num: usize = 1;
+        let mut reused_slide_count = 0;
+        let mut parsed_slide_count = 0;
+
         loop {
             let svg_file = temp_dir.path().join(format!("slide-{page_num}.svg"));
             if !svg_file.exists() {
@@ -225,17 +334,37 @@ impl SlideCompiler {
             }
 
             let raw_svg = std::fs::read_to_string(&svg_file)?;
-            let svg_content = crate::svg::sanitize_svg(&raw_svg);
-            let svg_info = crate::svg::parse_svg_slide_with_root(&svg_content, Some(&root_dir))?;
+            let raw_svg_hash = compute_source_hash(raw_svg.as_bytes());
+            slide_hashes.push(raw_svg_hash);
 
-            slides.push(Slide {
-                page_number: page_num,
-                svg_data: svg_content,
-                view_box: svg_info.view_box,
-                hotspots: svg_info.hotspots,
-                animation: svg_info.transition,
-                steps: svg_info.steps,
+            // Level 2 Per-Slide Cache: Check if this slide's SVG matches previously parsed slide
+            let cached_slide = previous_manifest.as_ref().and_then(|prev| {
+                if prev.slide_hashes.get(page_num.saturating_sub(1)) == Some(&raw_svg_hash) {
+                    prev.deck.slides.get(page_num.saturating_sub(1)).cloned()
+                } else {
+                    None
+                }
             });
+
+            if let Some(mut s) = cached_slide {
+                s.page_number = page_num;
+                slides.push(s);
+                reused_slide_count += 1;
+            } else {
+                let svg_content = crate::svg::sanitize_svg(&raw_svg);
+                let svg_info =
+                    crate::svg::parse_svg_slide_with_root(&svg_content, Some(&root_dir))?;
+
+                slides.push(Slide {
+                    page_number: page_num,
+                    svg_data: svg_content,
+                    view_box: svg_info.view_box,
+                    hotspots: svg_info.hotspots,
+                    animation: svg_info.transition,
+                    steps: svg_info.steps,
+                });
+                parsed_slide_count += 1;
+            }
 
             page_num += 1;
         }
@@ -244,6 +373,21 @@ impl SlideCompiler {
             return Err(SlideError::Compilation(
                 "No slides were generated from the Typst document.".to_string(),
             ));
+        }
+
+        if reused_slide_count > 0 {
+            crate::logger::log_event(
+                "info",
+                &format!(
+                    "⚡ Incremental slide render: {reused_slide_count} slides reused from cache, {parsed_slide_count} slides updated",
+                ),
+                Some(serde_json::json!({
+                    "stage": "incremental_slide_reuse",
+                    "reused": reused_slide_count,
+                    "updated": parsed_slide_count,
+                    "total": slides.len(),
+                })),
+            );
         }
 
         // Check for Typst slide content overflow
@@ -258,7 +402,36 @@ impl SlideCompiler {
         let mut deck = SlideDeck::new(title);
         deck.slides = slides;
 
+        // Persist to incremental rendering cache
+        if use_cache {
+            let manifest = RenderCacheManifest {
+                source_hash: current_source_hash,
+                source_path: canonical_path_str,
+                deck: deck.clone(),
+                slide_hashes,
+            };
+            if let Ok(manifest_json) = serde_json::to_string(&manifest) {
+                let _ = std::fs::write(&manifest_path, manifest_json);
+            }
+        }
+
         Ok(deck)
+    }
+
+    /// Clear the persistent rendering cache for a given typst file
+    pub fn clear_render_cache(typ_file: &Path) {
+        let cache_dir = get_render_cache_dir(typ_file);
+        let canonical_path_str = typ_file
+            .canonicalize()
+            .unwrap_or_else(|_| typ_file.to_path_buf())
+            .to_string_lossy()
+            .to_string();
+        let file_key = format!(
+            "{:016x}",
+            compute_source_hash(canonical_path_str.as_bytes())
+        );
+        let manifest_path = cache_dir.join(format!("manifest_{file_key}.json"));
+        let _ = std::fs::remove_file(manifest_path);
     }
 
     /// Compile a Typst presentation directly to PDF

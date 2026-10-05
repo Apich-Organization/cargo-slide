@@ -26,3 +26,6 @@ examples/dist-web/
 examples/slides.slide
 examples/geek-presentation/target/
 examples/target/
+
+.pkgconfig/
+.local_lib/

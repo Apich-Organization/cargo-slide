@@ -75,6 +75,15 @@ pub enum Commands {
         #[arg(long)]
         fullscreen: bool,
     },
+    /// Launch the Typora-style WYSIWYG desktop editor for presentations and documents
+    Edit {
+        /// Path to .typ slide file or .slide package (optional)
+        file: Option<PathBuf>,
+
+        /// Start directly in dark mode
+        #[arg(long)]
+        dark: bool,
+    },
     /// Build presentation into a standalone executable, a .slide package, or a WASM CSR web bundle
     Build {
         /// Path to .typ slide file (default: slides.typ)
@@ -99,6 +108,10 @@ pub enum Commands {
         /// for a non-host target, have a working linker configured (see `.cargo/config.toml`).
         #[arg(long)]
         target: Option<String>,
+
+        /// Include original editable Typst source files and templates in the package
+        #[arg(long, alias = "origin")]
+        source: bool,
     },
     /// Pack presentation into a standalone compressed .slide package (LZMA2)
     Pack {
@@ -113,6 +126,19 @@ pub enum Commands {
         /// Default transition animation
         #[arg(short, long, default_value = "fade")]
         animation: String,
+
+        /// Include original editable Typst source files and templates in the package
+        #[arg(long, alias = "origin")]
+        source: bool,
+    },
+    /// Unpack a .slide package into an editable project directory
+    Unpack {
+        /// Path to .slide package file
+        file: PathBuf,
+
+        /// Output directory to unpack the presentation files (default: directory named after package)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
     /// Serve presentation via built-in static web server
     Serve {

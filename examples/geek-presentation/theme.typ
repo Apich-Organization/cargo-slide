@@ -6,6 +6,10 @@
   theme: "dark",
   font: none,
   code-font: none,
+  header: none,
+  header-right: none,
+  footer: none,
+  footer-right: auto,
   body
 ) = {
   let page-width = 28cm
@@ -25,24 +29,62 @@
   let bg-color = if theme == "light" { rgb("f6f8fa") } else { rgb("0f111a") }
   let fg-color = if theme == "light" { rgb("1f2328") } else { rgb("e6edf3") }
 
-  set page(
-    width: page-width,
-    height: page-height,
-    margin: (x: 1.6cm, top: 0.9cm, bottom: 0.8cm),
-    fill: bg-color,
-    footer: context [
+  let footer-left-content = if footer != none and footer != auto and footer != "" {
+    [#text(weight: "bold")[#footer]]
+  } else {
+    none
+  }
+
+  let has-footer = footer-left-content != none or (footer-right != none and footer-right != "")
+  let footer-content = if has-footer {
+    context [
       #set text(size: 9pt, fill: rgb("8b949e"))
       #grid(
         columns: (1fr, 1fr),
         align: (left, right),
         [
-          #text(weight: "bold")[cargo-slide]
+          #if footer-left-content != none { footer-left-content }
         ],
         [
-          #counter(page).display("1 / 1", both: true)
+          #if footer-right == auto {
+            counter(page).display("1 / 1", both: true)
+          } else if footer-right != none and footer-right != "" {
+            footer-right
+          }
         ]
       )
     ]
+  } else {
+    none
+  }
+
+  let has-header = (header != none and header != "") or (header-right != none and header-right != "")
+  let header-content = if has-header {
+    context [
+      #set text(size: 8.5pt, fill: rgb("8b949e"))
+      #grid(
+        columns: (1fr, 1fr),
+        align: (left, right),
+        [
+          #if header != none and header != "" { header }
+        ],
+        [
+          #if header-right != none and header-right != "" { header-right }
+        ]
+      )
+      #v(0.15cm)
+    ]
+  } else {
+    none
+  }
+
+  set page(
+    width: page-width,
+    height: page-height,
+    margin: (x: 1.6cm, top: if has-header { 1.3cm } else { 0.9cm }, bottom: if has-footer { 0.9cm } else { 0.6cm }),
+    fill: bg-color,
+    header: header-content,
+    footer: footer-content,
   )
 
   let default-fonts = (

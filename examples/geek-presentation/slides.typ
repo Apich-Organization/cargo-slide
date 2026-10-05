@@ -1,11 +1,9 @@
 #import "theme.typ": *
 
-#show: slide-theme.with(
-  aspect-ratio: "16-9",
-  theme: "dark"
-)
+#show: slide-theme.with(aspect-ratio: "16-9", theme: "dark")
 
 // Slide 1: Title Slide with Autoplay Ambient Track
+
 #title-slide(
   title: "Building Modern Slides with Rust & Typst",
   subtitle: "Native Binary • LZMA2 Standalone Packages • Zero-JS Leptos CSR • Advanced Brushes",
@@ -14,7 +12,6 @@
 )
 #audio("assets/ambient.wav", autoplay: true, loop: true, volume: 0.5)
 
-// Slide 2: Architecture & Vector Graphics Pipeline (Transition: Slide-Left)
 #slide(title: "Architecture: Typst Functional Markup to Native Engine", transition: "slide-left")[
   #align(center)[#image("assets/architecture.svg", height: 4.4cm)]
   
@@ -34,7 +31,6 @@
   )
 ]
 
-// Slide 3: In-Slide Component Animations & Fragment Builds (Transition: Iris)
 #slide(title: "In-Slide Component Animations & Fragment Builds", transition: "iris")[
   Press *Space* / *Left-Click* to reveal each component sequentially (or *Backspace* / *Right-Click* to step back):
 
@@ -60,7 +56,6 @@
   ]
 ]
 
-// Slide 4: Rich Typography & LaTeX Mathematics (Transition: Zoom)
 #slide(title: "Mathematical Typography & Code Syntax Highlighting", transition: "zoom")[
   #cols(
     [
@@ -98,7 +93,6 @@
   ]
 ]
 
-// Slide 5: 13 Built-in Page Transitions & Transition Gallery (Transition: Glitch)
 #slide(title: "13 Built-in Page Transitions & Visual Effects", transition: "glitch")[
   Every slide can define its own transition via `#slide(transition: "...")`:
 
@@ -118,7 +112,6 @@
   ]
 ]
 
-// Slide 6: Extensible SlideTransition & ComponentAnimation Traits (Transition: Cube)
 #slide(title: "Extensible Transition & Component Animation Traits", transition: "cube")[
   Implement custom transitions and fragment reveals with Rust traits:
 
@@ -154,7 +147,6 @@
   ]
 ]
 
-// Slide 7: Interactive Hyperlinks & Multi-target Navigation (Transition: Wipe-Left)
 #slide(title: "Interactive Hyperlinks & Multi-Target Document Jumps", transition: "wipe-left")[
   Click any link below to test real-time coordinate mapping and external resolvers:
 
@@ -191,7 +183,6 @@
   ]
 ]
 
-// Slide 8: Animated Interactive Hotspots & Glowing Feedback (Transition: Fade)
 #slide(title: "Smooth Animated Hotspots & Interactive Feedback", transition: "fade")[
   Hotspot hovering features smooth 60 FPS interpolation and zero premature pops:
 
@@ -221,7 +212,6 @@
   ]
 ]
 
-// Slide 9: Interactive Audio Engine & Realtime Volume (Transition: Slide-Right)
 #slide(title: "Multi-Channel Audio Engine & Dynamic Volume Controls", transition: "slide-right")[
   Cargo Slide features a synchronous audio engine with multi-channel mixing:
 
@@ -251,7 +241,6 @@
   ]
 ]
 
-// Slide 10: Video Placeholders (Transition: Slide-Down)
 #slide(title: "Hardware Video Cards (Glassmorphism & Cinematic)", transition: "slide-down")[
   #cols(
     [
@@ -282,7 +271,6 @@
   ]
 ]
 
-// Slide 11: Presenter Tools: Laser Trail, Color Palette & Dock (Transition: Glitch)
 #slide(title: "Presenter Interaction Tools: Laser Trail, Palette & Whiteboard", transition: "glitch")[
   #cols(
     [
@@ -309,7 +297,6 @@
   )
 ]
 
-// Slide 12: Dual Window Modes & Presenter Controls (Transition: Wipe-Right)
 #slide(title: "Dual Window Modes & Comprehensive Presenter Controls", transition: "wipe-right")[
   #cols(
     [
@@ -342,7 +329,6 @@
   )
 ]
 
-// Slide 13: Interactive Charts: CSV Benchmarks & Interactive Crosshairs (Transition: Slide-Left)
 #slide(title: "Interactive Charts: CSV Benchmarks & Inspector", transition: "slide-left")[
   Native chart rendering directly from standard CSV files with interactive crosshairs:
 
@@ -364,7 +350,6 @@
   )
 ]
 
-// Slide 14: Interactive Charts: JSON Datasets & Concise Pipeline DSL (Transition: Fade)
 #slide(title: "Interactive Charts: JSON Datasets & Concise Pipeline DSL", transition: "fade")[
   Ingest JSON/JSONL with concise pipeline transformations: `#chart(source: "...", dsl: "filter ... | sort desc | limit 5")`:
 
@@ -387,7 +372,6 @@
   )
 ]
 
-// Slide 15: Interactive Charts: Native SQLite & In-Memory SQL Queries (Transition: Cube)
 #slide(title: "Interactive Charts: Native SQLite & Programmable In-Memory SQL", transition: "cube")[
   Execute SQL queries directly on local databases or in-memory tables: `sql: "SELECT ... FROM data WHERE ..."`:
 
@@ -410,7 +394,6 @@
   )
 ]
 
-// Slide 16: Interactive Charts: Custom Formats, Live Search & Statistical KPIs (Transition: Slide-Left)
 #slide(title: "Interactive Charts: Custom Formats, Live Search & Statistical KPIs", transition: "slide-left")[
   Live presentation interactivity with dynamic filtering, statistical summaries, and formatting:
 
@@ -449,7 +432,6 @@
   )
 ]
 
-// Slide 17: Automatic Slide Overflow Protection & Layout Safety (Transition: Slide-Up)
 #slide(title: "Automatic Slide Overflow Protection & Layout Safety", transition: "slide-up")[
   #cols(
     callout(title: "The Slide Overflow Problem", stroke-color: slide-colors.accent-red)[
@@ -472,7 +454,6 @@
   ]
 ]
 
-// Slide 18: Standalone .slide Packaging & Universal Viewer (Transition: Zoom)
 #slide(title: "Standalone .slide Packaging & Universal Viewer", transition: "zoom")[
   #cols(
     [
@@ -511,7 +492,6 @@
   )
 ]
 
-// Slide 19: Pure Rust Leptos WASM Web Player (Transition: Slide-Left)
 #slide(title: "Pure Rust Leptos WASM Web Player (Zero-JS Full CSR)", transition: "slide-left")[
   #cols(
     [
@@ -548,7 +528,6 @@
   )
 ]
 
-// Slide 20: Multi-Brush Presenter System (Transition: Slide-Up)
 #slide(title: "Multi-Brush Presenter System: 4 Modes & 14-Color Palette", transition: "slide-up")[
   #grid(
     columns: (1fr, 1fr),
@@ -586,7 +565,6 @@
   )
 ]
 
-// Slide 21: Three Delivery Paradigms (Transition: Iris)
 #slide(title: "Three Delivery Paradigms: Architecture & Feature Matrix", transition: "iris")[
   #table(
     columns: (1.5fr, 2fr, 2fr, 2fr),
@@ -605,7 +583,6 @@
   )
 ]
 
-// Slide 22: Summary & Getting Started (Transition: Fade)
 #slide(title: "Ready for Your Next Presentation", transition: "fade")[
   #align(center + horizon)[
     #text(size: 24pt, weight: "bold", fill: slide-colors.accent)[One Toolchain • Three Modern Delivery Paradigms]
@@ -632,4 +609,3 @@
     #badge("Cross-Platform", fill: slide-colors.accent-dark)
   ]
 ]
-

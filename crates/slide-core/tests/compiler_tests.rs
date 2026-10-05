@@ -203,3 +203,73 @@ fn test_typst_warning_formatting() {
     assert!(formatted.contains("segoe ui, sf pro display"));
     assert!(formatted.contains("Typst automatically falls back to available system fonts"));
 }
+
+#[test]
+fn test_incremental_rendering_cache() {
+    let compiler = match SlideCompiler::new() {
+        | Ok(c) => c,
+        | Err(_) => {
+            eprintln!("Typst not available, skipping test");
+            return;
+        },
+    };
+
+    let dir = tempdir().expect("tempdir");
+    let typst_file = dir.path().join("cache_test.typ");
+    let content = r#"
+#set page(width: 16cm, height: 9cm)
+= First Slide
+This is slide 1.
+
+#pagebreak()
+
+= Second Slide
+This is slide 2.
+"#;
+    write(&typst_file, content).expect("write typst file");
+
+    // Pass 1: Cold compilation (creates cache)
+    let start_cold = std::time::Instant::now();
+    let deck1 = compiler
+        .compile_file(&typst_file)
+        .expect("Cold compile failed");
+    let cold_dur = start_cold.elapsed();
+    assert_eq!(deck1.total_slides(), 2);
+
+    // Pass 2: Hot compilation (hits Level 1 cache, <10ms)
+    let start_hot = std::time::Instant::now();
+    let deck2 = compiler
+        .compile_file(&typst_file)
+        .expect("Hot compile failed");
+    let hot_dur = start_hot.elapsed();
+    assert_eq!(deck2.total_slides(), 2);
+    assert_eq!(deck1.slides[0].svg_data, deck2.slides[0].svg_data);
+    assert_eq!(deck1.slides[1].svg_data, deck2.slides[1].svg_data);
+    // Cache hit should be significantly faster than cold compile
+    println!("Cold duration: {cold_dur:?}, Hot cache hit duration: {hot_dur:?}");
+    assert!(hot_dur < std::time::Duration::from_millis(50));
+
+    // Pass 3: Modify only slide 2 (hits Level 2 per-slide reuse for slide 1)
+    let content2 = r#"
+#set page(width: 16cm, height: 9cm)
+= First Slide
+This is slide 1.
+
+#pagebreak()
+
+= Second Slide Modified!
+This is updated slide 2.
+"#;
+    write(&typst_file, content2).expect("update typst file");
+    let deck3 = compiler
+        .compile_file(&typst_file)
+        .expect("Incremental recompile failed");
+    assert_eq!(deck3.total_slides(), 2);
+    // Slide 1 was reused
+    assert_eq!(deck1.slides[0].svg_data, deck3.slides[0].svg_data);
+    // Slide 2 was updated
+    assert_ne!(deck1.slides[1].svg_data, deck3.slides[1].svg_data);
+
+    // Test clear_render_cache
+    SlideCompiler::clear_render_cache(&typst_file);
+}

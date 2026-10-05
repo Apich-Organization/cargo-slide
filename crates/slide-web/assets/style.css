@@ -1,5 +1,5 @@
 /* Cargo Slide Web Presentation Styles */
-:root {
+:root, [data-theme="dark"], .dark-theme {
     --bg-primary: #0b0f19;
     --bg-secondary: #161f30;
     --bg-tertiary: #1e293b;
@@ -9,6 +9,18 @@
     --accent-glow: rgba(56, 189, 248, 0.35);
     --border-subtle: rgba(255, 255, 255, 0.08);
     --hud-bg: rgba(11, 15, 25, 0.88);
+}
+
+[data-theme="light"], .light-theme {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f5f9;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --accent-blue: #0284c7;
+    --accent-glow: rgba(2, 132, 199, 0.25);
+    --border-subtle: rgba(15, 23, 42, 0.12);
+    --hud-bg: rgba(255, 255, 255, 0.94);
 }
 
 * {
@@ -399,6 +411,101 @@ html, body {
     height: 20px;
     background: var(--border-subtle);
     margin: 0 4px;
+}
+
+/* Light Theme Overrides for HUD & Toast */
+[data-theme="light"] .hud-card,
+.light-theme .hud-card {
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .hud-btn,
+.light-theme .hud-btn {
+    color: #475569;
+}
+
+[data-theme="light"] .hud-btn:hover,
+.light-theme .hud-btn:hover {
+    background: rgba(15, 23, 42, 0.08);
+    color: #0f172a;
+}
+
+[data-theme="light"] .hud-btn.active,
+.light-theme .hud-btn.active {
+    background: rgba(2, 132, 199, 0.14);
+    color: #0284c7;
+    border: 1px solid #0284c7;
+}
+
+[data-theme="light"] .hud-counter,
+.light-theme .hud-counter {
+    color: #0f172a;
+}
+
+[data-theme="light"] .hud-divider,
+.light-theme .hud-divider {
+    background: rgba(15, 23, 42, 0.12);
+}
+
+[data-theme="light"] .hud-toast,
+.light-theme .hud-toast {
+    background: rgba(255, 255, 255, 0.96);
+    color: #0284c7;
+    border: 1px solid #0284c7;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .overview-modal,
+[data-theme="light"] .help-modal,
+[data-theme="light"] .video-modal,
+[data-theme="light"] .inspector-modal,
+[data-theme="light"] .text-preview-modal,
+.light-theme .overview-modal,
+.light-theme .help-modal,
+.light-theme .video-modal,
+.light-theme .inspector-modal,
+.light-theme .text-preview-modal {
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.20);
+    color: #0f172a;
+}
+
+[data-theme="light"] .modal-header,
+.light-theme .modal-header {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.10);
+}
+
+[data-theme="light"] .modal-header h2,
+.light-theme .modal-header h2 {
+    color: #0f172a;
+}
+
+[data-theme="light"] .close-btn,
+.light-theme .close-btn {
+    color: #64748b;
+}
+
+[data-theme="light"] .close-btn:hover,
+.light-theme .close-btn:hover {
+    background: rgba(15, 23, 42, 0.08);
+    color: #0f172a;
+}
+
+[data-theme="light"] .shortcuts-table td,
+.light-theme .shortcuts-table td {
+    color: #334155;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="light"] .shortcuts-table kbd,
+.light-theme .shortcuts-table kbd {
+    background: #f1f5f9;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* Modals */

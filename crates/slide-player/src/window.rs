@@ -4,6 +4,7 @@ use crate::audio::AudioEngine;
 use crate::hud::BrushType;
 use crate::hud::ChartInspectorState;
 use crate::hud::DockAction;
+use crate::hud::HudTheme;
 use crate::hud::InkStroke;
 use crate::hud::InspectorAction;
 use crate::hud::PALETTE_COLORS;
@@ -69,6 +70,7 @@ pub struct PlayerConfig {
     pub fullscreen: bool,
     pub default_animation: String,
     pub watch: bool,
+    pub hud_theme: HudTheme,
 }
 
 impl Default for PlayerConfig {
@@ -80,6 +82,7 @@ impl Default for PlayerConfig {
             fullscreen: false,
             default_animation: "fade".to_string(),
             watch: false,
+            hud_theme: HudTheme::Dark,
         }
     }
 }
@@ -166,6 +169,26 @@ impl SlideApp {
         watch: bool,
     ) -> Self {
         self.config.watch = watch;
+        self
+    }
+
+    pub fn hud_theme(
+        mut self,
+        theme: HudTheme,
+    ) -> Self {
+        self.config.hud_theme = theme;
+        self
+    }
+
+    pub fn light_theme(
+        mut self,
+        light: bool,
+    ) -> Self {
+        self.config.hud_theme = if light {
+            HudTheme::Light
+        } else {
+            HudTheme::Dark
+        };
         self
     }
 
@@ -1124,6 +1147,7 @@ impl SlidePlayer {
 
         // Presenter interactive tools state
         let mut presenter_mode = PresenterMode::Normal;
+        let mut hud_theme = self.config.hud_theme;
         let mut active_color_idx = 0usize; // Cyan by default (index 0)
         let mut active_brush_type = BrushType::Pen;
         let mut active_brush_width = 4usize;
@@ -1417,19 +1441,21 @@ impl SlidePlayer {
                 }
             }
 
-            let (dock_rect, _) = get_dock_rects(width, height, is_fullscreen);
+            let (dock_rect, _) = get_dock_rects(width, height, is_fullscreen, hud_theme);
             let mouse_in_dock = mouse_pos
                 .map(|(mx, my)| dock_rect.contains(mx, my))
                 .unwrap_or(false);
             let mouse_near_dock = mouse_pos
                 .map(|(_, my)| my >= (height as f32 - 70.0))
                 .unwrap_or(false);
-            let hovered_dock_action =
-                mouse_pos.and_then(|(mx, my)| hit_test_dock(width, height, is_fullscreen, mx, my));
+            let hovered_dock_action = mouse_pos.and_then(|(mx, my)| {
+                hit_test_dock(width, height, is_fullscreen, hud_theme, mx, my)
+            });
 
             let (slider_popup_rect, track_rect) =
-                get_volume_slider_rects(width, height, is_fullscreen);
-            let vol_hover_rect = get_volume_slider_hover_rect(width, height, is_fullscreen);
+                get_volume_slider_rects(width, height, is_fullscreen, hud_theme);
+            let vol_hover_rect =
+                get_volume_slider_hover_rect(width, height, is_fullscreen, hud_theme);
             let is_vol_btn_hovered = hovered_dock_action == Some(DockAction::ToggleMute);
             let is_vol_zone_hovered = mouse_pos
                 .map(|(mx, my)| vol_hover_rect.contains(mx, my))
@@ -1449,8 +1475,9 @@ impl SlidePlayer {
                     .map(|(mx, my)| slider_popup_rect.contains(mx, my))
                     .unwrap_or(false);
 
-            let hovered_palette_action = mouse_pos
-                .and_then(|(mx, my)| hit_test_palette(width, height, is_fullscreen, mx, my));
+            let hovered_palette_action = mouse_pos.and_then(|(mx, my)| {
+                hit_test_palette(width, height, is_fullscreen, hud_theme, mx, my)
+            });
 
             let mut hovered_hotspot_idx: Option<usize> = None;
             if active_chart_inspector.is_none()
@@ -1603,7 +1630,8 @@ impl SlidePlayer {
                     }
                 } else if show_volume_slider
                     && let Some((mx, my)) = mouse_pos
-                    && let Some(vol) = hit_test_volume_slider(width, height, is_fullscreen, mx, my)
+                    && let Some(vol) =
+                        hit_test_volume_slider(width, height, is_fullscreen, hud_theme, mx, my)
                 {
                     volume_dragging = true;
                     audio_engine.set_volume(vol);
@@ -1753,13 +1781,14 @@ impl SlidePlayer {
                                 last_volume_change = Some(Instant::now());
                             }
                         },
+                        | DockAction::ToggleTheme => hud_theme = hud_theme.toggle(),
                         | DockAction::ToggleFullscreen => toggle_fullscreen_requested = true,
                         | DockAction::ToggleHelp => show_help = !show_help,
                     }
                 } else if mouse_in_slider {
                     if let Some((mx, my)) = mouse_pos
                         && let Some(vol) =
-                            hit_test_volume_slider(width, height, is_fullscreen, mx, my)
+                            hit_test_volume_slider(width, height, is_fullscreen, hud_theme, mx, my)
                     {
                         volume_dragging = true;
                         audio_engine.set_volume(vol);
@@ -2326,6 +2355,9 @@ impl SlidePlayer {
                                 }
                             },
                             | Key::T => {
+                                hud_theme = hud_theme.toggle();
+                            },
+                            | Key::B => {
                                 active_brush_type = active_brush_type.cycle();
                             },
                             | Key::LeftBracket => {
@@ -2629,6 +2661,7 @@ impl SlidePlayer {
                 is_fullscreen,
                 active_color,
                 palette_open,
+                hud_theme,
             );
 
             // Draw Color Palette popup if open
@@ -2642,6 +2675,7 @@ impl SlidePlayer {
                     active_brush_type,
                     active_brush_width,
                     hovered_palette_action,
+                    hud_theme,
                 );
             }
 
@@ -2654,6 +2688,7 @@ impl SlidePlayer {
                     is_fullscreen,
                     audio_engine.volume(),
                     audio_engine.is_muted(),
+                    hud_theme,
                 );
             }
 
@@ -2673,6 +2708,7 @@ impl SlidePlayer {
                         audio_engine.volume_percent(),
                         audio_engine.is_muted(),
                         toast_alpha,
+                        hud_theme,
                     );
                 }
             }
@@ -2686,10 +2722,11 @@ impl SlidePlayer {
                 total_slides,
                 current_step,
                 max_substep,
+                hud_theme,
             );
 
             if show_help {
-                draw_help_overlay(&mut buffer, width, height);
+                draw_help_overlay(&mut buffer, width, height, hud_theme);
             }
 
             // Render active Chart Data Inspector modal

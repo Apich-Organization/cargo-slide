@@ -1,0 +1,239 @@
+//! Bottom status bar with slide counter, compiler diagnostics, and document stats.
+
+use crate::app::CompilationStatus;
+use crate::app::EditorMode;
+use crate::app::Message;
+use crate::document::DocumentFormat;
+use crate::ui::theme::AppTheme;
+use crate::ui::theme::RADIUS_FULL;
+use crate::ui::theme::RADIUS_XS;
+use crate::ui::theme::{
+    self,
+};
+use iced::Alignment;
+use iced::Background;
+use iced::Border;
+use iced::Element;
+use iced::Length;
+use iced::Shadow;
+use iced::Vector;
+use iced::border;
+use iced::widget::Space;
+use iced::widget::button;
+use iced::widget::container;
+use iced::widget::row;
+use iced::widget::text;
+
+/// Render the bottom status bar
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn view_statusbar<'a>(
+    theme: AppTheme,
+    current_slide: usize,
+    total_slides: usize,
+    format: DocumentFormat,
+    mode: EditorMode,
+    status: &'a CompilationStatus,
+    char_count: usize,
+    word_count: usize,
+    zoom_percent: u32,
+) -> Element<'a, Message> {
+    // Left: Slide Counter and Word/Char count
+    let slide_info = text(format!(
+        "Slide {} of {}",
+        current_slide.saturating_add(1),
+        total_slides.max(1)
+    ))
+    .size(12)
+    .color(theme.text_secondary());
+
+    let stats_info = text(format!("{word_count} words, {char_count} chars"))
+        .size(11)
+        .color(theme.text_muted());
+
+    let left_info = row![
+        slide_info,
+        container(
+            Space::new()
+                .width(Length::Fixed(1.0))
+                .height(Length::Fixed(10.0))
+        )
+        .style(move |_| {
+            container::Style {
+                background: Some(Background::Color(theme.border_color())),
+                ..container::Style::default()
+            }
+        }),
+        stats_info,
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+
+    // Center: Compiler Diagnostic status indicator
+    let compiler_indicator: Element<'a, Message> = match status {
+        | CompilationStatus::Ready => {
+            let dot = container(Space::new())
+                .width(Length::Fixed(7.0))
+                .height(Length::Fixed(7.0))
+                .style(move |_| {
+                    container::Style {
+                        background: Some(Background::Color(theme.success())),
+                        border: Border {
+                            radius: border::Radius::from(RADIUS_FULL),
+                            ..Border::default()
+                        },
+                        shadow: Shadow {
+                            color: theme.success().scale_alpha(0.55),
+                            offset: Vector::ZERO,
+                            blur_radius: 5.0,
+                        },
+                        ..container::Style::default()
+                    }
+                });
+            row![
+                dot,
+                text("Typst Ready").size(11).color(theme.text_secondary())
+            ]
+            .spacing(7)
+            .align_y(Alignment::Center)
+            .into()
+        },
+        | CompilationStatus::Compiling => {
+            let dot = container(Space::new())
+                .width(Length::Fixed(7.0))
+                .height(Length::Fixed(7.0))
+                .style(move |_| {
+                    container::Style {
+                        background: Some(Background::Color(theme.accent())),
+                        border: Border {
+                            radius: border::Radius::from(RADIUS_FULL),
+                            ..Border::default()
+                        },
+                        shadow: Shadow {
+                            color: theme.accent().scale_alpha(0.60),
+                            offset: Vector::ZERO,
+                            blur_radius: 6.0,
+                        },
+                        ..container::Style::default()
+                    }
+                });
+            row![dot, text("Compiling...").size(11).color(theme.accent())]
+                .spacing(7)
+                .align_y(Alignment::Center)
+                .into()
+        },
+        | CompilationStatus::Error(diag) => {
+            let err_summary = diag.line.map_or_else(
+                || "Typst Error (Click to view)".to_string(),
+                |l| format!("Typst Error at Line {l}"),
+            );
+
+            button(
+                row![
+                    text("!").size(11).color(theme.danger()),
+                    text(err_summary).size(11).color(theme.danger())
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            )
+            .padding([2, 8])
+            .style(move |_theme, _status| theme::danger_button_style(theme))
+            .on_press(Message::OpenErrorDetailsDialog)
+            .into()
+        },
+    };
+
+    // Right: Zoom controls and Format & Mode info
+    let mode_str = match mode {
+        | EditorMode::LivePreview => "Live Preview",
+        | EditorMode::FocusMode => "Focus Mode",
+        | EditorMode::SourceMode => "Source Code",
+    };
+
+    let mode_badge = container(text(mode_str).size(10).color(theme.text_secondary()))
+        .padding([2, 6])
+        .style(move |_| {
+            container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(RADIUS_XS),
+                ..container::Style::default()
+            }
+        });
+
+    let format_badge = container(text(format.label()).size(10).color(theme.text_muted()))
+        .padding([2, 6])
+        .style(move |_| {
+            container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(RADIUS_XS),
+                ..container::Style::default()
+            }
+        });
+
+    let zoom_out = button(text("-").size(11))
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .padding([2, 7])
+        .on_press(Message::ZoomOut);
+
+    let zoom_val = container(
+        text(format!("{zoom_percent}%"))
+            .size(11)
+            .color(theme.text_secondary()),
+    )
+    .padding([2, 6])
+    .style(move |_| {
+        container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(RADIUS_XS),
+            ..container::Style::default()
+        }
+    });
+
+    let zoom_in = button(text("+").size(11))
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .padding([2, 7])
+        .on_press(Message::ZoomIn);
+
+    let zoom_controls = row![zoom_out, zoom_val, zoom_in]
+        .spacing(4)
+        .align_y(Alignment::Center);
+
+    let divider = || {
+        container(
+            Space::new()
+                .width(Length::Fixed(1.0))
+                .height(Length::Fixed(10.0)),
+        )
+        .style(move |_| {
+            container::Style {
+                background: Some(Background::Color(theme.border_color())),
+                ..container::Style::default()
+            }
+        })
+    };
+
+    let right_info = row![
+        mode_badge,
+        divider(),
+        format_badge,
+        divider(),
+        zoom_controls
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let main_row = row![
+        left_info,
+        Space::new().width(Length::Fill),
+        compiler_indicator,
+        Space::new().width(Length::Fill),
+        right_info
+    ]
+    .align_y(Alignment::Center)
+    .padding([5, 16]);
+
+    container(main_row)
+        .width(Length::Fill)
+        .style(move |_| theme::statusbar_container_style(theme))
+        .into()
+}

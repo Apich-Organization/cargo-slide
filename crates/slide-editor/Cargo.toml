@@ -1,0 +1,33 @@
+[package]
+name = "slide-editor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "Typora-style live preview WYSIWYG editor for Typst presentations and documents"
+
+[[bin]]
+name = "slide-editor"
+path = "src/main.rs"
+
+[dependencies]
+slide-core.workspace = true
+slide-theme.workspace = true
+iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "x11", "wayland", "image", "svg", "thread-pool", "advanced"] }
+clap.workspace = true
+tempfile.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tiny-skia.workspace = true
+resvg.workspace = true
+usvg.workspace = true
+image.workspace = true
+rfd = "0.17"
+typst-syntax = "0.15"
+regex = "1.13"
+

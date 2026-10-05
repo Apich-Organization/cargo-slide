@@ -73,7 +73,7 @@ pub fn execute(
             );
         },
         | "slide" | "package" => {
-            crate::commands::pack::execute(file, output, "fade")?;
+            crate::commands::pack::execute(file, output, "fade", false)?;
         },
         | "wasm" | "web" | "csr" => {
             crate::commands::build::execute_wasm(file, output, "fade")?;

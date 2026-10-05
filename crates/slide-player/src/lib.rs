@@ -75,6 +75,7 @@ pub mod transition;
 pub mod window;
 
 pub use audio::AudioEngine;
+pub use hud::HudTheme;
 pub use media::MediaPlayer;
 pub use renderer::RenderMetrics;
 pub use renderer::SvgRenderer;
@@ -85,6 +86,7 @@ pub use window::SlidePlayer;
 
 pub mod prelude {
     pub use crate::AudioEngine;
+    pub use crate::HudTheme;
     pub use crate::PlayerConfig;
     pub use crate::SlideApp;
     pub use crate::SlidePlayer;

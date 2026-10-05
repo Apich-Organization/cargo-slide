@@ -197,8 +197,9 @@ pub fn parse_svg_slide_with_root(
 fn parse_view_box(root: &Node<'_, '_>) -> Result<Rect> {
     if let Some(vb) = root.attribute("viewBox") {
         let parts: Vec<f32> = vb
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
+            .split([',', ' ', '\t', '\n', '\r'])
+            .filter(|s| !s.trim().is_empty())
+            .filter_map(|s| s.trim().parse().ok())
             .collect();
         if parts.len() == 4 {
             return Ok(Rect::new(parts[0], parts[1], parts[2], parts[3]));
@@ -245,7 +246,7 @@ fn collect_descendant_bounds(
         let full_transform = multiply_transform(current_transform, &child_transform);
 
         let tag = child.tag_name().name();
-        if tag == "rect" {
+        if tag == "rect" || tag == "image" {
             let x: f64 = child
                 .attribute("x")
                 .and_then(|s| s.parse().ok())
@@ -271,10 +272,229 @@ fn collect_descendant_bounds(
                 *max_y = max_y.max(f64::from(r.y + r.height));
                 *found = true;
             }
+        } else if tag == "use" {
+            let x: f64 = child
+                .attribute("x")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let y: f64 = child
+                .attribute("y")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let w: f64 = child
+                .attribute("width")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(12.0);
+            let h: f64 = child
+                .attribute("height")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(12.0);
+
+            let r = transform_rect(&full_transform, x, y, w, h);
+            *min_x = min_x.min(f64::from(r.x));
+            *min_y = min_y.min(f64::from(r.y));
+            *max_x = max_x.max(f64::from(r.x + r.width));
+            *max_y = max_y.max(f64::from(r.y + r.height));
+            *found = true;
+        } else if tag == "circle" {
+            let cx: f64 = child
+                .attribute("cx")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let cy: f64 = child
+                .attribute("cy")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let r_val: f64 = child
+                .attribute("r")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            if r_val > 0.0 {
+                let r = transform_rect(
+                    &full_transform,
+                    cx - r_val,
+                    cy - r_val,
+                    2.0 * r_val,
+                    2.0 * r_val,
+                );
+                *min_x = min_x.min(f64::from(r.x));
+                *min_y = min_y.min(f64::from(r.y));
+                *max_x = max_x.max(f64::from(r.x + r.width));
+                *max_y = max_y.max(f64::from(r.y + r.height));
+                *found = true;
+            }
+        } else if tag == "path" {
+            if let Some(d) = child.attribute("d") {
+                let mut path_min_x = f64::INFINITY;
+                let mut path_min_y = f64::INFINITY;
+                let mut path_max_x = f64::NEG_INFINITY;
+                let mut path_max_y = f64::NEG_INFINITY;
+                let mut path_found = false;
+
+                for seg in svgtypes::SimplifyingPathParser::from(d).flatten() {
+                    match seg {
+                        | svgtypes::SimplePathSegment::MoveTo { x, y }
+                        | svgtypes::SimplePathSegment::LineTo { x, y } => {
+                            path_min_x = path_min_x.min(x);
+                            path_max_x = path_max_x.max(x);
+                            path_min_y = path_min_y.min(y);
+                            path_max_y = path_max_y.max(y);
+                            path_found = true;
+                        },
+                        | svgtypes::SimplePathSegment::Quadratic { x1, y1, x, y } => {
+                            path_min_x = path_min_x.min(x).min(x1);
+                            path_max_x = path_max_x.max(x).max(x1);
+                            path_min_y = path_min_y.min(y).min(y1);
+                            path_max_y = path_max_y.max(y).max(y1);
+                            path_found = true;
+                        },
+                        | svgtypes::SimplePathSegment::CurveTo { x1, y1, x2, y2, x, y } => {
+                            path_min_x = path_min_x.min(x).min(x1).min(x2);
+                            path_max_x = path_max_x.max(x).max(x1).max(x2);
+                            path_min_y = path_min_y.min(y).min(y1).min(y2);
+                            path_max_y = path_max_y.max(y).max(y1).max(y2);
+                            path_found = true;
+                        },
+                        | svgtypes::SimplePathSegment::ClosePath => {},
+                    }
+                }
+
+                if path_found && path_max_x >= path_min_x && path_max_y >= path_min_y {
+                    let pw = path_max_x - path_min_x;
+                    let ph = path_max_y - path_min_y;
+                    let r = transform_rect(&full_transform, path_min_x, path_min_y, pw, ph);
+                    *min_x = min_x.min(f64::from(r.x));
+                    *min_y = min_y.min(f64::from(r.y));
+                    *max_x = max_x.max(f64::from(r.x + r.width));
+                    *max_y = max_y.max(f64::from(r.y + r.height));
+                    *found = true;
+                }
+            }
+        } else if tag == "text" || tag == "tspan" {
+            let x: f64 = child
+                .attribute("x")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let y: f64 = child
+                .attribute("y")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            let font_size: f64 = child
+                .attribute("font-size")
+                .and_then(parse_dimension)
+                .map(f64::from)
+                .unwrap_or(14.0);
+            let text_len = child.text().map(|t| t.chars().count()).unwrap_or(4) as f64;
+            let approx_w = text_len * (font_size * 0.55).max(4.0);
+            let r = transform_rect(&full_transform, x, y - font_size, approx_w, font_size * 1.2);
+            *min_x = min_x.min(f64::from(r.x));
+            *min_y = min_y.min(f64::from(r.y));
+            *max_x = max_x.max(f64::from(r.x + r.width));
+            *max_y = max_y.max(f64::from(r.y + r.height));
+            *found = true;
         } else if tag == "g" || tag == "a" {
             collect_descendant_bounds(&child, &full_transform, min_x, min_y, max_x, max_y, found);
         }
     }
+}
+
+/// Extract bounding boxes of all top-level visual content elements from a slide's SVG
+#[must_use]
+pub fn extract_slide_visual_element_bounds(svg_content: &str) -> Vec<Rect> {
+    let sanitized = sanitize_svg(svg_content);
+    let Ok(doc) = Document::parse(&sanitized) else {
+        return Vec::new();
+    };
+
+    let root = doc.root_element();
+    let Ok(view_box) = parse_view_box(&root) else {
+        return Vec::new();
+    };
+
+    let mut element_bounds = Vec::new();
+
+    for child in root.children().filter(roxmltree::Node::is_element) {
+        let tag = child.tag_name().name();
+        // Ignore defs, styles, and metadata
+        if tag == "defs" || tag == "style" || tag == "metadata" {
+            continue;
+        }
+
+        let child_transform = child
+            .attribute("transform")
+            .and_then(|t| Transform::from_str(t).ok())
+            .unwrap_or_default();
+
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        let mut found = false;
+
+        collect_descendant_bounds(
+            &child,
+            &child_transform,
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            &mut found,
+        );
+
+        if !found || max_x <= min_x || max_y <= min_y {
+            continue;
+        }
+
+        let w = (max_x - min_x) as f32;
+        let h = (max_y - min_y) as f32;
+
+        // Skip full-slide background rects/paths (e.g. covering > 90% of view_box)
+        if w >= view_box.width * 0.95 && h >= view_box.height * 0.95 {
+            continue;
+        }
+
+        // Skip tiny artifacts (e.g. 0-sized anchors or hidden markers)
+        if w < 1.0 || h < 1.0 {
+            continue;
+        }
+
+        element_bounds.push(Rect::new(min_x as f32, min_y as f32, w, h));
+    }
+
+    // Sort in visual reading order: primary key Y, secondary key X
+    element_bounds.sort_by(|a, b| {
+        let dy = a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal);
+        if dy == std::cmp::Ordering::Equal {
+            a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal)
+        } else {
+            dy
+        }
+    });
+
+    // Merge closely adjacent visual runs that belong to the same block (e.g. bullet symbol + text)
+    let mut merged: Vec<Rect> = Vec::new();
+    for r in element_bounds {
+        if let Some(last) = merged.last_mut() {
+            // If vertically overlapping or very close (within 8pt) and in the same row
+            let vertical_overlap =
+                (r.y <= (last.y + last.height + 8.0)) && (last.y <= (r.y + r.height + 8.0));
+            let same_row = vertical_overlap && ((r.y - last.y).abs() < 12.0);
+            if same_row {
+                let new_min_x = last.x.min(r.x);
+                let new_min_y = last.y.min(r.y);
+                let new_max_x = (last.x + last.width).max(r.x + r.width);
+                let new_max_y = (last.y + last.height).max(r.y + r.height);
+                last.x = new_min_x;
+                last.y = new_min_y;
+                last.width = new_max_x - new_min_x;
+                last.height = new_max_y - new_min_y;
+                continue;
+            }
+        }
+        merged.push(r);
+    }
+
+    merged
 }
 
 fn parse_a_element(

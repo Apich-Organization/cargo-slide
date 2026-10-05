@@ -70,6 +70,42 @@ pub struct InkStroke {
     pub brush_type: BrushType,
 }
 
+/// Color theme for Presenter HUD tools and overlays
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum HudTheme {
+    /// Sleek dark theme (optimal for dark slides)
+    #[default]
+    Dark,
+    /// High-contrast crisp light theme (optimal for white/light slides)
+    Light,
+}
+
+impl HudTheme {
+    /// Toggle between Dark and Light themes
+    #[must_use]
+    pub const fn toggle(self) -> Self {
+        match self {
+            | Self::Dark => Self::Light,
+            | Self::Light => Self::Dark,
+        }
+    }
+
+    /// Check if active theme is light
+    #[must_use]
+    pub const fn is_light(self) -> bool {
+        matches!(self, Self::Light)
+    }
+
+    /// Short label for dock button
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            | Self::Dark => "DRK",
+            | Self::Light => "LGT",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DockAction {
     Prev,
@@ -80,6 +116,7 @@ pub enum DockAction {
     TogglePalette,
     ClearInk,
     ToggleMute,
+    ToggleTheme,
     ToggleFullscreen,
     ToggleHelp,
 }
@@ -678,8 +715,9 @@ pub fn get_dock_rects(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
 ) -> (Rect, Vec<(DockAction, Rect, &'static str)>) {
-    let dock_w = 460.0f32;
+    let dock_w = 510.0f32;
     let dock_h = 36.0f32;
     let dock_x = ((screen_w as f32) - dock_w) / 2.0;
     let dock_y = (screen_h as f32) - 48.0;
@@ -701,6 +739,7 @@ pub fn get_dock_rects(
         (DockAction::TogglePalette, "COL"),
         (DockAction::ClearInk, "CLR"),
         (DockAction::ToggleMute, "VOL"),
+        (DockAction::ToggleTheme, theme.label()),
         (DockAction::ToggleFullscreen, full_label),
         (DockAction::ToggleHelp, "?"),
     ];
@@ -729,10 +768,11 @@ pub fn hit_test_dock(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
     mx: f32,
     my: f32,
 ) -> Option<DockAction> {
-    let (dock_rect, items) = get_dock_rects(screen_w, screen_h, is_fullscreen);
+    let (dock_rect, items) = get_dock_rects(screen_w, screen_h, is_fullscreen, theme);
     if !dock_rect.contains(mx, my) {
         return None;
     }
@@ -757,13 +797,14 @@ pub fn render_dock(
     is_fullscreen: bool,
     active_color: u32,
     palette_open: bool,
+    theme: HudTheme,
 ) {
-    let (dock_rect, items) = get_dock_rects(width, height, is_fullscreen);
+    let (dock_rect, items) = get_dock_rects(width, height, is_fullscreen, theme);
 
     let alpha = if mouse_near {
-        0.94f32
+        0.95f32
     } else {
-        0.45f32
+        0.50f32
     };
 
     let start_x = dock_rect.x as usize;
@@ -771,23 +812,37 @@ pub fn render_dock(
     let end_x = ((dock_rect.x + dock_rect.width) as usize).min(width.saturating_sub(1));
     let end_y = ((dock_rect.y + dock_rect.height) as usize).min(height.saturating_sub(1));
 
+    let (bg_r, bg_g, bg_b) = if theme.is_light() {
+        (0xf4, 0xf6, 0xf8)
+    } else {
+        (0x16, 0x1b, 0x22)
+    };
+
     // Draw dock background
     for y in start_y..=end_y {
         let row_offset = y * width;
         for x in start_x..=end_x {
             let bg = buffer[row_offset + x];
-            let r = (((bg >> 16) & 0xFF) as f32 * (1.0 - alpha) + 0x16 as f32 * alpha) as u32;
-            let g = (((bg >> 8) & 0xFF) as f32 * (1.0 - alpha) + 0x1b as f32 * alpha) as u32;
-            let b = ((bg & 0xFF) as f32 * (1.0 - alpha) + 0x22 as f32 * alpha) as u32;
+            let r = (((bg >> 16) & 0xFF) as f32 * (1.0 - alpha) + bg_r as f32 * alpha) as u32;
+            let g = (((bg >> 8) & 0xFF) as f32 * (1.0 - alpha) + bg_g as f32 * alpha) as u32;
+            let b = ((bg & 0xFF) as f32 * (1.0 - alpha) + bg_b as f32 * alpha) as u32;
             buffer[row_offset + x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         }
     }
 
     // Dock outline border
-    let border_color = if mouse_near {
-        0xFF388bfd
+    let border_color = if theme.is_light() {
+        if mouse_near {
+            0xFF0969da
+        } else {
+            0xFFd0d7de
+        }
     } else {
-        0xFF30363d
+        if mouse_near {
+            0xFF388bfd
+        } else {
+            0xFF30363d
+        }
     };
     for x in start_x..=end_x {
         buffer[start_y * width + x] = border_color;
@@ -805,6 +860,7 @@ pub fn render_dock(
             | DockAction::ModeLaser => mode == PresenterMode::Laser,
             | DockAction::ModePen => mode == PresenterMode::Pen,
             | DockAction::TogglePalette => palette_open,
+            | DockAction::ToggleTheme => theme.is_light(),
             | _ => false,
         };
         let is_hovered = hovered == Some(action);
@@ -816,17 +872,27 @@ pub fn render_dock(
 
         // Background color for button
         if is_active {
+            let active_bg = if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF1f6feb
+            };
             for y in by1..=by2 {
                 let row = y * width;
                 for x in bx1..=bx2 {
-                    buffer[row + x] = 0xFF1f6feb; // Vibrant blue for active
+                    buffer[row + x] = active_bg;
                 }
             }
         } else if is_hovered {
+            let hover_bg = if theme.is_light() {
+                0xFFe2e8f0
+            } else {
+                0xFF30363d
+            };
             for y in by1..=by2 {
                 let row = y * width;
                 for x in bx1..=bx2 {
-                    buffer[row + x] = 0xFF30363d; // Gray hover
+                    buffer[row + x] = hover_bg;
                 }
             }
         }
@@ -847,13 +913,25 @@ pub fn render_dock(
         let text_color = if is_active {
             0xFFffffff
         } else if action == DockAction::TogglePalette {
-            active_color // Show selected active palette color!
+            active_color
         } else if is_hovered {
-            0xFF58a6ff
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
         } else if action == DockAction::ToggleMute && is_muted {
-            0xFFf85149
+            if theme.is_light() {
+                0xFFcf222e
+            } else {
+                0xFFf85149
+            }
         } else {
-            0xFFc9d1d9
+            if theme.is_light() {
+                0xFF1f2328
+            } else {
+                0xFFc9d1d9
+            }
         };
 
         draw_text_centered(buffer, width, height, rect, label, text_color);
@@ -883,8 +961,9 @@ pub fn get_palette_layout(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
 ) -> PaletteLayout {
-    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen);
+    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen, theme);
     let col_btn = dock_items
         .iter()
         .find(|(a, _, _)| *a == DockAction::TogglePalette)
@@ -967,10 +1046,11 @@ pub fn hit_test_palette(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
     mx: f32,
     my: f32,
 ) -> Option<PaletteAction> {
-    let layout = get_palette_layout(screen_w, screen_h, is_fullscreen);
+    let layout = get_palette_layout(screen_w, screen_h, is_fullscreen, theme);
     if !layout.popup_rect.contains(mx, my) {
         return None;
     }
@@ -1029,8 +1109,9 @@ pub fn render_palette_popup(
     active_brush: BrushType,
     active_width: usize,
     hovered_action: Option<PaletteAction>,
+    theme: HudTheme,
 ) {
-    let layout = get_palette_layout(width, height, is_fullscreen);
+    let layout = get_palette_layout(width, height, is_fullscreen, theme);
 
     let x1 = layout.popup_rect.x as usize;
     let y1 = layout.popup_rect.y as usize;
@@ -1039,22 +1120,28 @@ pub fn render_palette_popup(
     let y2 =
         ((layout.popup_rect.y + layout.popup_rect.height) as usize).min(height.saturating_sub(1));
 
-    // Dark glassmorphic background
+    let (bg_color, border_color) = if theme.is_light() {
+        (0xF8f4f6f8, 0xFF0969da)
+    } else {
+        (0xF2161b22, 0xFF58a6ff)
+    };
+
+    // Glassmorphic background
     for y in y1..=y2 {
         let row = y * width;
         for x in x1..=x2 {
-            buffer[row + x] = 0xF2161b22;
+            buffer[row + x] = bg_color;
         }
     }
 
     // Border
     for x in x1..=x2 {
-        buffer[y1 * width + x] = 0xFF58a6ff;
-        buffer[y2 * width + x] = 0xFF58a6ff;
+        buffer[y1 * width + x] = border_color;
+        buffer[y2 * width + x] = border_color;
     }
     for y in y1..=y2 {
-        buffer[y * width + x1] = 0xFF58a6ff;
-        buffer[y * width + x2] = 0xFF58a6ff;
+        buffer[y * width + x1] = border_color;
+        buffer[y * width + x2] = border_color;
     }
 
     // Row 1 & 2: Draw color chips
@@ -1068,7 +1155,12 @@ pub fn render_palette_popup(
         draw_disk(buffer, width, height, cx, cy, r, color);
 
         if i == active_color_idx {
-            draw_circle_ring(buffer, width, height, cx, cy, 9, 0xFFFFFFFF);
+            let ring_col = if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFFFFFFFF
+            };
+            draw_circle_ring(buffer, width, height, cx, cy, 9, ring_col);
             draw_circle_ring(buffer, width, height, cx, cy, 10, color);
         }
     }
@@ -1078,25 +1170,57 @@ pub fn render_palette_popup(
         let is_active = b == active_brush;
         let is_hovered = hovered_action == Some(PaletteAction::Brush(b));
         let fill = if is_active {
-            0xFF1f6feb
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF1f6feb
+            }
         } else if is_hovered {
-            0xFF30363d
+            if theme.is_light() {
+                0xFFe2e8f0
+            } else {
+                0xFF30363d
+            }
         } else {
-            0xFF21262d
+            if theme.is_light() {
+                0xFFf1f5f9
+            } else {
+                0xFF21262d
+            }
         };
         let border = if is_active {
-            0xFF58a6ff
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
         } else if is_hovered {
-            0xFF8b949e
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF8b949e
+            }
         } else {
-            0xFF30363d
+            if theme.is_light() {
+                0xFFd0d7de
+            } else {
+                0xFF30363d
+            }
         };
         let text_color = if is_active {
             0xFFffffff
         } else if is_hovered {
-            0xFF58a6ff
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
         } else {
-            0xFFc9d1d9
+            if theme.is_light() {
+                0xFF1f2328
+            } else {
+                0xFFc9d1d9
+            }
         };
         draw_filled_rect_border(buffer, width, height, rect, fill, border);
         draw_text_centered(buffer, width, height, rect, b.name(), text_color);
@@ -1107,25 +1231,57 @@ pub fn render_palette_popup(
         let is_active = w == active_width;
         let is_hovered = hovered_action == Some(PaletteAction::Width(w));
         let fill = if is_active {
-            0xFF1f6feb
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF1f6feb
+            }
         } else if is_hovered {
-            0xFF30363d
+            if theme.is_light() {
+                0xFFe2e8f0
+            } else {
+                0xFF30363d
+            }
         } else {
-            0xFF21262d
+            if theme.is_light() {
+                0xFFf1f5f9
+            } else {
+                0xFF21262d
+            }
         };
         let border = if is_active {
-            0xFF58a6ff
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
         } else if is_hovered {
-            0xFF8b949e
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF8b949e
+            }
         } else {
-            0xFF30363d
+            if theme.is_light() {
+                0xFFd0d7de
+            } else {
+                0xFF30363d
+            }
         };
         let text_color = if is_active {
             0xFFffffff
         } else if is_hovered {
-            0xFF58a6ff
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
         } else {
-            0xFFc9d1d9
+            if theme.is_light() {
+                0xFF1f2328
+            } else {
+                0xFFc9d1d9
+            }
         };
         let label = format!("{w}p");
         draw_filled_rect_border(buffer, width, height, rect, fill, border);
@@ -1135,19 +1291,43 @@ pub fn render_palette_popup(
     // Undo button
     let is_undo_hovered = hovered_action == Some(PaletteAction::Undo);
     let undo_fill = if is_undo_hovered {
-        0xFF30363d
+        if theme.is_light() {
+            0xFFfee2e2
+        } else {
+            0xFF30363d
+        }
     } else {
-        0xFF21262d
+        if theme.is_light() {
+            0xFFf1f5f9
+        } else {
+            0xFF21262d
+        }
     };
     let undo_border = if is_undo_hovered {
-        0xFFf85149
+        if theme.is_light() {
+            0xFFcf222e
+        } else {
+            0xFFf85149
+        }
     } else {
-        0xFF30363d
+        if theme.is_light() {
+            0xFFd0d7de
+        } else {
+            0xFF30363d
+        }
     };
     let undo_text = if is_undo_hovered {
-        0xFFf85149
+        if theme.is_light() {
+            0xFFcf222e
+        } else {
+            0xFFf85149
+        }
     } else {
-        0xFFf87171
+        if theme.is_light() {
+            0xFFe11d48
+        } else {
+            0xFFf87171
+        }
     };
     draw_filled_rect_border(
         buffer,
@@ -1196,8 +1376,9 @@ pub fn get_volume_slider_rects(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
 ) -> (Rect, Rect) {
-    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen);
+    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen, theme);
     let vol_btn = dock_items
         .iter()
         .find(|(a, _, _)| *a == DockAction::ToggleMute)
@@ -1230,9 +1411,10 @@ pub fn get_volume_slider_hover_rect(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
 ) -> Rect {
-    let (popup_rect, _) = get_volume_slider_rects(screen_w, screen_h, is_fullscreen);
-    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen);
+    let (popup_rect, _) = get_volume_slider_rects(screen_w, screen_h, is_fullscreen, theme);
+    let (_, dock_items) = get_dock_rects(screen_w, screen_h, is_fullscreen, theme);
     let vol_btn = dock_items
         .iter()
         .find(|(a, _, _)| *a == DockAction::ToggleMute)
@@ -1262,10 +1444,12 @@ pub fn hit_test_volume_slider(
     screen_w: usize,
     screen_h: usize,
     is_fullscreen: bool,
+    theme: HudTheme,
     mx: f32,
     my: f32,
 ) -> Option<f32> {
-    let (popup_rect, track_rect) = get_volume_slider_rects(screen_w, screen_h, is_fullscreen);
+    let (popup_rect, track_rect) =
+        get_volume_slider_rects(screen_w, screen_h, is_fullscreen, theme);
     let test_x_min = popup_rect.x - 10.0;
     let test_x_max = popup_rect.x + popup_rect.width + 10.0;
     let test_y_min = popup_rect.y - 6.0;
@@ -1287,29 +1471,36 @@ pub fn render_volume_slider_popup(
     is_fullscreen: bool,
     volume: f32,
     is_muted: bool,
+    theme: HudTheme,
 ) {
-    let (popup_rect, track_rect) = get_volume_slider_rects(width, height, is_fullscreen);
+    let (popup_rect, track_rect) = get_volume_slider_rects(width, height, is_fullscreen, theme);
 
     let x1 = popup_rect.x as usize;
     let y1 = popup_rect.y as usize;
     let x2 = ((popup_rect.x + popup_rect.width) as usize).min(width.saturating_sub(1));
     let y2 = ((popup_rect.y + popup_rect.height) as usize).min(height.saturating_sub(1));
 
+    let (bg_color, border_color, active_text, track_bg) = if theme.is_light() {
+        (0xF6f4f6f8, 0xFF0969da, 0xFF0969da, 0xFFd0d7de)
+    } else {
+        (0xF0161b22, 0xFF58a6ff, 0xFF58a6ff, 0xFF30363d)
+    };
+
     // Background
     for y in y1..=y2 {
         let row = y.saturating_mul(width);
         for x in x1..=x2 {
-            buffer[row.saturating_add(x)] = 0xF0161b22;
+            buffer[row.saturating_add(x)] = bg_color;
         }
     }
     // Border
     for x in x1..=x2 {
-        buffer[y1.saturating_mul(width).saturating_add(x)] = 0xFF58a6ff;
-        buffer[y2.saturating_mul(width).saturating_add(x)] = 0xFF58a6ff;
+        buffer[y1.saturating_mul(width).saturating_add(x)] = border_color;
+        buffer[y2.saturating_mul(width).saturating_add(x)] = border_color;
     }
     for y in y1..=y2 {
-        buffer[y.saturating_mul(width).saturating_add(x1)] = 0xFF58a6ff;
-        buffer[y.saturating_mul(width).saturating_add(x2)] = 0xFF58a6ff;
+        buffer[y.saturating_mul(width).saturating_add(x1)] = border_color;
+        buffer[y.saturating_mul(width).saturating_add(x2)] = border_color;
     }
 
     // Top indicator text: "MUT" or "85%"
@@ -1319,9 +1510,9 @@ pub fn render_volume_slider_popup(
         format!("{}%", (volume.clamp(0.0, 1.0) * 100.0).round() as u32)
     };
     let text_col = if is_muted {
-        0xFFf85149
+        0xFFcf222e
     } else {
-        0xFF58a6ff
+        active_text
     };
     let text_x = (popup_rect.x + (popup_rect.width - pct_str.len() as f32 * 7.0) * 0.5) as usize;
     draw_text(
@@ -1351,9 +1542,9 @@ pub fn render_volume_slider_popup(
         let row = y.saturating_mul(width);
         for x in tx1..=tx2 {
             if y >= fill_start_y && !is_muted {
-                buffer[row.saturating_add(x)] = 0xFF39d353; // Green fill
+                buffer[row.saturating_add(x)] = 0xFF1f883d; // Green fill
             } else {
-                buffer[row.saturating_add(x)] = 0xFF30363d; // Inactive track
+                buffer[row.saturating_add(x)] = track_bg; // Inactive track
             }
         }
     }
@@ -1365,6 +1556,11 @@ pub fn render_volume_slider_popup(
         fill_start_y
     };
     let thumb_x = (track_rect.x + track_rect.width / 2.0) as isize;
+    let thumb_color = if theme.is_light() {
+        0xFF0969da
+    } else {
+        0xFFFFFFFF
+    };
     draw_disk(
         buffer,
         width,
@@ -1372,7 +1568,7 @@ pub fn render_volume_slider_popup(
         thumb_x,
         thumb_y as isize,
         6,
-        0xFFFFFFFF,
+        thumb_color,
     );
 }
 
@@ -1384,6 +1580,7 @@ pub fn draw_volume_toast(
     volume_pct: u32,
     is_muted: bool,
     alpha: f32,
+    theme: HudTheme,
 ) {
     if alpha <= 0.01 {
         return;
@@ -1397,23 +1594,37 @@ pub fn draw_volume_toast(
     let x2 = (card_x + card_w).min(width.saturating_sub(1));
     let y2 = (card_y + card_h).min(height.saturating_sub(1));
 
-    // Draw dark card background with alpha
+    let (bg_r, bg_g, bg_b, text_color, inactive_bar) = if theme.is_light() {
+        (0xf4, 0xf6, 0xf8, 0xFF1f2328, 0xFFd0d7de)
+    } else {
+        (0x16, 0x1b, 0x22, 0xFFFFFFFF, 0xFF30363d)
+    };
+
+    // Draw card background with alpha
     for y in card_y..=y2 {
         let row = y * width;
         for x in card_x..=x2 {
             let bg = buffer[row + x];
-            let r = (((bg >> 16) & 0xFF) as f32 * (1.0 - alpha) + 0x16 as f32 * alpha) as u32;
-            let g = (((bg >> 8) & 0xFF) as f32 * (1.0 - alpha) + 0x1b as f32 * alpha) as u32;
-            let b = ((bg & 0xFF) as f32 * (1.0 - alpha) + 0x22 as f32 * alpha) as u32;
+            let r = (((bg >> 16) & 0xFF) as f32 * (1.0 - alpha) + bg_r as f32 * alpha) as u32;
+            let g = (((bg >> 8) & 0xFF) as f32 * (1.0 - alpha) + bg_g as f32 * alpha) as u32;
+            let b = ((bg & 0xFF) as f32 * (1.0 - alpha) + bg_b as f32 * alpha) as u32;
             buffer[row + x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         }
     }
 
     // Border
     let border_col = if is_muted {
-        0xFFf85149
+        if theme.is_light() {
+            0xFFcf222e
+        } else {
+            0xFFf85149
+        }
     } else {
-        0xFF58a6ff
+        if theme.is_light() {
+            0xFF0969da
+        } else {
+            0xFF58a6ff
+        }
     };
     for x in card_x..=x2 {
         buffer[card_y * width + x] = border_col;
@@ -1437,7 +1648,7 @@ pub fn draw_volume_toast(
         card_x + 12,
         card_y + 8,
         &text,
-        0xFFFFFFFF,
+        text_color,
     );
 
     // Progress bar inside toast
@@ -1463,9 +1674,9 @@ pub fn draw_volume_toast(
                 break;
             }
             if dx <= fill_w && !is_muted {
-                buffer[row + x] = 0xFF39d353;
+                buffer[row + x] = 0xFF1f883d;
             } else {
-                buffer[row + x] = 0xFF30363d;
+                buffer[row + x] = inactive_bar;
             }
         }
     }
@@ -1480,6 +1691,7 @@ pub fn draw_page_badge(
     total_slides: usize,
     current_step: usize,
     total_steps: usize,
+    theme: HudTheme,
 ) {
     let badge_str = if total_steps > 0 {
         format!(
@@ -1501,23 +1713,41 @@ pub fn draw_page_badge(
     let start_x = width.saturating_sub(box_w + 16);
     let start_y = height.saturating_sub(box_h + 16);
 
+    let (bg_r, bg_g, bg_b, text_color, border_color) = if theme.is_light() {
+        (0xf4, 0xf6, 0xf8, 0xFF0969da, 0xFFd0d7de)
+    } else {
+        (0x16, 0x1b, 0x22, 0xFF58a6ff, 0xFF30363d)
+    };
+
     // Draw semi-transparent background box
     for y in start_y..(start_y + box_h).min(height) {
         let row_start = y * width;
         for x in start_x..(start_x + box_w).min(width) {
             let bg = buffer[row_start + x];
-            let r = (((bg >> 16) & 0xFF) * 20 + 0x16 * 80) / 100;
-            let g = (((bg >> 8) & 0xFF) * 20 + 0x1b * 80) / 100;
-            let b = ((bg & 0xFF) * 20 + 0x22 * 80) / 100;
+            let r = (((bg >> 16) & 0xFF) * 15 + bg_r * 85) / 100;
+            let g = (((bg >> 8) & 0xFF) * 15 + bg_g * 85) / 100;
+            let b = ((bg & 0xFF) * 15 + bg_b * 85) / 100;
             buffer[row_start + x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         }
+    }
+
+    // Border around badge
+    for x in start_x..(start_x + box_w).min(width) {
+        buffer[start_y * width + x] = border_color;
+        let bottom_y = (start_y + box_h - 1).min(height - 1);
+        buffer[bottom_y * width + x] = border_color;
+    }
+    for y in start_y..(start_y + box_h).min(height) {
+        buffer[y * width + start_x] = border_color;
+        let right_x = (start_x + box_w - 1).min(width - 1);
+        buffer[y * width + right_x] = border_color;
     }
 
     let mut cur_x = start_x + padding;
     let cur_y = start_y + padding;
 
     for ch in badge_str.chars() {
-        draw_char(buffer, width, height, cur_x, cur_y, ch, 0xFF58a6ff);
+        draw_char(buffer, width, height, cur_x, cur_y, ch, text_color);
         cur_x += char_w + 1;
     }
 }
@@ -1527,6 +1757,7 @@ pub fn draw_help_overlay(
     buffer: &mut [u32],
     width: usize,
     height: usize,
+    theme: HudTheme,
 ) {
     let lines = [
         "CARGO SLIDE PRESENTER SHORTCUTS",
@@ -1540,6 +1771,7 @@ pub fn draw_help_overlay(
         "P                    : Toggle Whiteboard Pen",
         "K / Dock [COL]       : Open Color Palette (1..7 keys)",
         "C / X                : Clear ink strokes",
+        "T / Dock [THM]       : Toggle Light / Dark HUD theme",
         "Mouse Wheel          : Adjust Volume (+/- 5%)",
         "+ / = / Up           : Volume +5%",
         "- / _ / Down         : Volume -5%",
@@ -1561,14 +1793,25 @@ pub fn draw_help_overlay(
     let start_x = (width.saturating_sub(box_w)) / 2;
     let start_y = (height.saturating_sub(box_h)) / 2;
 
-    // Dark modal background
+    let (bg_r, bg_g, bg_b, border_color, title_color, divider_color, body_color) =
+        if theme.is_light() {
+            (
+                0xf4, 0xf6, 0xf8, 0xFF0969da, 0xFF0969da, 0xFFd0d7de, 0xFF1f2328,
+            )
+        } else {
+            (
+                0x10, 0x14, 0x1d, 0xFF58a6ff, 0xFF58a6ff, 0xFF30363d, 0xFFc9d1d9,
+            )
+        };
+
+    // Modal background
     for y in start_y..(start_y + box_h).min(height) {
         let row_start = y * width;
         for x in start_x..(start_x + box_w).min(width) {
             let bg = buffer[row_start + x];
-            let r = (((bg >> 16) & 0xFF) * 8 + 0x10 * 92) / 100;
-            let g = (((bg >> 8) & 0xFF) * 8 + 0x14 * 92) / 100;
-            let b = ((bg & 0xFF) * 8 + 0x1d * 92) / 100;
+            let r = (((bg >> 16) & 0xFF) * 8 + bg_r * 92) / 100;
+            let g = (((bg >> 8) & 0xFF) * 8 + bg_g * 92) / 100;
+            let b = ((bg & 0xFF) * 8 + bg_b * 92) / 100;
             buffer[row_start + x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
         }
     }
@@ -1576,7 +1819,6 @@ pub fn draw_help_overlay(
     // Modal border
     let end_x = (start_x + box_w).min(width.saturating_sub(1));
     let end_y = (start_y + box_h).min(height.saturating_sub(1));
-    let border_color = 0xFF58a6ff;
     for x in start_x..=end_x {
         buffer[start_y * width + x] = border_color;
         buffer[end_y * width + x] = border_color;
@@ -1590,11 +1832,11 @@ pub fn draw_help_overlay(
     for (i, line) in lines.iter().enumerate() {
         let y = start_y + padding + i * line_height;
         let color = if i == 0 {
-            0xFF58a6ff // Accent title
+            title_color
         } else if i == 1 {
-            0xFF8b949e // Divider
+            divider_color
         } else {
-            0xFFe6edf3 // Body text
+            body_color
         };
 
         draw_text(buffer, width, height, start_x + padding, y, line, color);
@@ -5365,30 +5607,38 @@ mod tests {
 
     #[test]
     fn test_volume_slider_geometry_and_hover_zone() {
-        let (popup_rect, track_rect) = get_volume_slider_rects(1280, 720, false);
-        assert!(popup_rect.width >= 30.0);
-        assert!(popup_rect.height >= 120.0);
-        assert!(popup_rect.contains(track_rect.x, track_rect.y));
+        for theme in [HudTheme::Dark, HudTheme::Light] {
+            let (popup_rect, track_rect) = get_volume_slider_rects(1280, 720, false, theme);
+            assert!(popup_rect.width >= 30.0);
+            assert!(popup_rect.height >= 120.0);
+            assert!(popup_rect.contains(track_rect.x, track_rect.y));
 
-        let hover_rect = get_volume_slider_hover_rect(1280, 720, false);
-        // Hover rect must contain the popup
-        assert!(hover_rect.contains(popup_rect.x, popup_rect.y));
-        assert!(hover_rect.contains(
-            popup_rect.x + popup_rect.width,
-            popup_rect.y + popup_rect.height
-        ));
+            let hover_rect = get_volume_slider_hover_rect(1280, 720, false, theme);
+            // Hover rect must contain the popup
+            assert!(hover_rect.contains(popup_rect.x, popup_rect.y));
+            assert!(hover_rect.contains(
+                popup_rect.x + popup_rect.width,
+                popup_rect.y + popup_rect.height
+            ));
 
-        // Point right below popup (in former gap) must be inside hover rect
-        let gap_y = popup_rect.y + popup_rect.height + 2.0;
-        assert!(hover_rect.contains(popup_rect.x + popup_rect.width * 0.5, gap_y));
+            // Point right below popup (in former gap) must be inside hover rect
+            let gap_y = popup_rect.y + popup_rect.height + 2.0;
+            assert!(hover_rect.contains(popup_rect.x + popup_rect.width * 0.5, gap_y));
 
-        // Hit testing volume slider
-        let center_x = track_rect.x + track_rect.width * 0.5;
-        let top_vol = hit_test_volume_slider(1280, 720, false, center_x, track_rect.y);
-        assert_eq!(top_vol, Some(1.0));
-        let bottom_vol =
-            hit_test_volume_slider(1280, 720, false, center_x, track_rect.y + track_rect.height);
-        assert_eq!(bottom_vol, Some(0.0));
+            // Hit testing volume slider
+            let center_x = track_rect.x + track_rect.width * 0.5;
+            let top_vol = hit_test_volume_slider(1280, 720, false, theme, center_x, track_rect.y);
+            assert_eq!(top_vol, Some(1.0));
+            let bottom_vol = hit_test_volume_slider(
+                1280,
+                720,
+                false,
+                theme,
+                center_x,
+                track_rect.y + track_rect.height,
+            );
+            assert_eq!(bottom_vol, Some(0.0));
+        }
     }
 
     #[test]

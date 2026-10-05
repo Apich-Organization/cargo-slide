@@ -7,7 +7,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
-use tempfile::tempdir;
 
 /// Dispatch presentation build by format: binary, slide, or wasm.
 pub fn execute(
@@ -16,9 +15,10 @@ pub fn execute(
     format: &str,
     animation: &str,
     target: Option<&str>,
+    source: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     match format.to_lowercase().as_str() {
-        | "slide" | "package" => crate::commands::pack::execute(file, output, animation),
+        | "slide" | "package" => crate::commands::pack::execute(file, output, animation, source),
         | "wasm" | "web" | "csr" => execute_wasm(file, output, animation),
         | "binary" | "exe" | "elf" | "" => execute_binary(file, output, animation, target),
         | other => {
@@ -140,7 +140,7 @@ pub fn execute_binary(
     let repo_root = find_repo_root(&current_exe)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    // Create temporary build project in target/.build_tmp if possible to avoid tmpfs size exhaustion
+    // Create persistent build project in target/.build_tmp/slide_runner_project to enable Rust incremental compilation caching
     let build_dir_parent = if repo_root.join("target").exists() {
         let p = repo_root.join("target/.build_tmp");
         let _ = create_dir_all(&p);
@@ -148,17 +148,18 @@ pub fn execute_binary(
     } else {
         std::env::temp_dir()
     };
-    let build_dir = tempfile::Builder::new()
-        .prefix("slide_build_")
-        .tempdir_in(&build_dir_parent)
-        .or_else(|_| tempdir())?;
-    let build_path = build_dir.path();
+    let build_path = build_dir_parent.join("slide_runner_project");
     let src_dir = build_path.join("src");
     create_dir_all(&src_dir)?;
 
     // Serialize deck to JSON to be embedded via include_str!
     let deck_json = serde_json::to_string(&deck)?;
-    write(build_path.join("deck.json"), deck_json)?;
+    let deck_file = build_path.join("deck.json");
+    let should_write_deck =
+        std::fs::read_to_string(&deck_file).map_or(true, |existing| existing != deck_json);
+    if should_write_deck {
+        write(&deck_file, &deck_json)?;
+    }
 
     let core_path = repo_root.join("crates/slide-core");
     let player_path = repo_root.join("crates/slide-player");
@@ -192,9 +193,17 @@ edition = "2024"
 {core_dep}
 {player_dep}
 serde_json = "1.0"
+
+[profile.release]
+incremental = true
 "#
     );
-    write(build_path.join("Cargo.toml"), cargo_toml)?;
+    let cargo_toml_file = build_path.join("Cargo.toml");
+    let should_write_toml =
+        std::fs::read_to_string(&cargo_toml_file).map_or(true, |existing| existing != cargo_toml);
+    if should_write_toml {
+        write(&cargo_toml_file, &cargo_toml)?;
+    }
 
     let runner_main = format!(
         r#"use slide_player::prelude::*;
@@ -211,7 +220,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
 }}
 "#
     );
-    write(src_dir.join("main.rs"), runner_main)?;
+    let main_file = src_dir.join("main.rs");
+    let should_write_main =
+        std::fs::read_to_string(&main_file).map_or(true, |existing| existing != runner_main);
+    if should_write_main {
+        write(&main_file, &runner_main)?;
+    }
 
     slide_core::logger::log_event(
         "info",
@@ -222,7 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
         })),
     );
     let target_dir = repo_root.join("target/standalone_target");
-    run_cargo_build_with_progress(build_path, &target_dir, target)?;
+    run_cargo_build_with_progress(&build_path, &target_dir, target)?;
 
     let bin_filename = if targets_windows {
         "slide-standalone-runner.exe"
@@ -384,6 +398,7 @@ fn run_cargo_build_with_progress(
         .arg("--target-dir")
         .arg(target_dir)
         .arg("--message-format=json")
+        .env("CARGO_INCREMENTAL", "1")
         .current_dir(build_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
@@ -418,7 +433,7 @@ fn run_cargo_build_with_progress(
                 #[allow(clippy::cast_precision_loss)]
                 let fraction = (compiled as f64 / denom as f64).min(1.0);
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let percent = (5.0 + fraction * 90.0) as u8;
+                let percent = fraction.mul_add(90.0, 5.0) as u8;
                 if percent != last_reported_percent {
                     last_reported_percent = percent;
                     let pkg_name = value
