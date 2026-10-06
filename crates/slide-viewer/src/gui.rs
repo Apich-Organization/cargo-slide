@@ -184,15 +184,15 @@ impl ViewerLauncherApp {
                 Task::none()
             },
             | Message::SelectPresentation(idx) => {
-                if self.selected_index == Some(idx) {
-                    if let Some(entry) = self.filtered_presentations().get(idx) {
-                        return self.launch_path_with_options(
-                            entry.path.clone(),
-                            self.hud_theme,
-                            &self.selected_animation.clone(),
-                            self.is_fullscreen,
-                        );
-                    }
+                if self.selected_index == Some(idx)
+                    && let Some(entry) = self.filtered_presentations().get(idx)
+                {
+                    return self.launch_path_with_options(
+                        entry.path.clone(),
+                        self.hud_theme,
+                        &self.selected_animation.clone(),
+                        self.is_fullscreen,
+                    );
                 }
                 self.selected_index = Some(idx);
                 Task::none()

@@ -2160,7 +2160,7 @@ pub fn parse_chart_data<'a>(args: &'a str) -> ChartData<'a> {
                         })
                         .collect();
 
-                    for (c, v) in cats.into_iter().zip(vals.into_iter()) {
+                    for (c, v) in cats.into_iter().zip(vals) {
                         items.push((c, v));
                     }
                 }
@@ -4754,7 +4754,7 @@ fn render_video_block<'a>(
         let mut meta_right = row![q_pill].spacing(4).align_y(Alignment::Center);
         if let Some(dur) = data.duration {
             let dur_pill = container(
-                text(format!("{dur}"))
+                text(dur.to_string())
                     .size((9.0 * scale).max(8.0))
                     .color(theme.text_secondary()),
             )
@@ -4909,7 +4909,7 @@ fn render_video_block<'a>(
         let mut badges = row![q_badge].spacing(4).align_y(Alignment::Center);
         if let Some(dur) = data.duration {
             let dur_pill = container(
-                text(format!("{dur}"))
+                text(dur.to_string())
                     .size((9.0 * scale).max(8.0))
                     .color(theme.text_secondary()),
             )

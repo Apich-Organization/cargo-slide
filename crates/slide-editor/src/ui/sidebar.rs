@@ -26,6 +26,7 @@ use iced::widget::scrollable;
 use iced::widget::text;
 
 /// Render the outline sidebar with support for both Outline list and 16:9 Rendered Page Thumbnails preview
+#[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn view_sidebar<'a>(
     theme: AppTheme,

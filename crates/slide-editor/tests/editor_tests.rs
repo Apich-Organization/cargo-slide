@@ -4814,13 +4814,13 @@ fn test_comment_and_speaker_note_visualization_and_root_insertion() {
 
     // 4. Verify clean content extraction (prefixes like 'Comment:' stripped from display content)
     for b in &slide1_after.blocks {
-        if let WysiwygBlock::Comment { content, .. } = b {
-            if content.contains("presentation memo or draft remark") {
-                assert!(
-                    !content.starts_with("Comment:"),
-                    "Comment display content must not redundantly include 'Comment:' prefix"
-                );
-            }
+        if let WysiwygBlock::Comment { content, .. } = b
+            && content.contains("presentation memo or draft remark")
+        {
+            assert!(
+                !content.starts_with("Comment:"),
+                "Comment display content must not redundantly include 'Comment:' prefix"
+            );
         }
     }
 }

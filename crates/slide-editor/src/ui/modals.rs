@@ -811,6 +811,7 @@ pub fn view_slide_context_menu_modal<'a>(
 }
 
 /// Render right-click context menu modal for a WYSIWYG block
+#[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn view_block_context_menu_modal<'a>(
     theme: AppTheme,
