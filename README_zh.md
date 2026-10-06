@@ -32,6 +32,13 @@
 
 - **纯 Typst 语言编写**：文稿完全由 Typst 标记语言（`slides.typ`）书写，语法直观。仅在需要编写自定义底层转场算法或光栅着色器时才需要引入 Rust。
 - **轻量工作区脚手架**：`cargo slide init` 生成恰好 5 个必要文件，不产生多余配置文件。
+- **Typora 风格所见即所得桌面编辑器 (`slide-editor`)**：
+  - 实时矢量渲染画布，支持在自然画卷流中连续预览幻灯片。
+  - **行内就地编辑 (In-Place Edit)**：点击幻灯片内容即可就地修改 Typst 标记源码，内置防抖实时重编译更新。
+  - **分类插入栏**：快捷插入基础图文（段落、各级标题、列表、代码块、数学公式）、多媒体与数据（表格、SQL 图表、视频、音频、超链接）、演播标记（演讲备忘笔记、块注释、标注框、网格分栏）。
+  - **大纲与缩略图侧边栏**：提供 16:9 矢量缩略图预览卡片与紧凑层级列表，方便快速翻页定位。
+  - **演讲配速模型与备忘可视化**：明确区分演讲者备忘笔记（`SPEAKER NOTE`）与文档注释（`[COMMENT]`），支持中英双模字数统计（西文字词 + CJK 汉字）、预计用时与单页信息密度监控。
+  - **文稿健康度体检**：自动排查本地素材路径有效性、排版文字密度与编译器潜在告警。
 - **通用演示查看器 (`slide-viewer`)**：
   - 现代化自适应 GUI 启动引导界面，支持按 `F` / `F11` 进入真全屏模式。
   - 自动扫描当前目录中的演示文档，内置 22 页完整示例演讲文稿。
@@ -48,7 +55,9 @@
   - 支持执行内存 SQL（`SELECT ... WHERE ...`）或管道链式 DSL 计算。
   - 放映时点击任何图表或数据表即可唤起 HUD 检查器：动态切换图表形态（柱状图、折线图、面积图、散点图），应用快速分析预设（`TOP 5`、`SORT ▼` 降序、`SORT ▲` 升序、`CUM` 累积、`% SHARE` 占比、`MA3` 均线），数值条件筛选（如 `>50`），并支持将筛选后的明细一键导出为 CSV。
 - **页面内容垂直溢出防护**：编译时比对生成的矢量页面数与实际声明的 `#slide(...)` 数量。一旦内容高度超出纵向限制，编译器将准确定位溢出的幻灯片标题与源代码行号。
-- **完全矢量化与跨平台排版**：Typst 会将所有西文、中日韩汉字（CJK）、数学公式符号与 Emoji 转化为矢量贝塞尔 `<path>` 轮廓。在各操作系统上均具备一致的排版渲染，无需目标机器预装特定字体。
+- **通用渲染稳定性与全矢量排版**：
+  - 原生 GUI 界面（`slide-editor`、`slide-viewer`）与 CLI 终端日志统一采用标准通用 Unicode / ASCII 字符标识（如 `[OK]`、`[WARN]`、`[ERR]`、`[INFO]`、`+ Note` 等），避免在未安装彩色 Emoji 字体的 Linux 环境或极简容器中出现方块乱码（Tofu）；
+  - Typst 排版将文稿内容（西文、中日韩汉字、数学公式与特殊符号）编译解析为高精度贝塞尔 `<path>` 矢量轮廓，保障跨平台渲染一致。
 - **13 种内置转场与页内分步显现**：支持 `fade`、`cut`、`slide-left`、`slide-right`、`slide-up`、`slide-down`、`zoom`、`wipe-left`、`wipe-right`、`iris`、`glitch`、`cube` 与 `particles`。支持 `#step(order, effect: "...")` 页内元素逐步呈现。
 
 ---
@@ -99,11 +108,17 @@ my-talk/
 使用任何文本编辑器打开 `slides.typ`，随后运行：
 
 ```bash
+# 启动 Typora 风格所见即所得桌面编辑器实时预览与就地编辑
+cargo slide edit
+
 # 启动原生 60 FPS 播放器放映
 cargo slide run
 
 # 或启动带文件监控的实时热重载开发模式
 cargo slide dev
+
+# 全面体检文稿健康度（元素密度、素材路径有效性、演讲配速）
+cargo slide check
 ```
 
 ### 第 4 步：发布、打包与导出
@@ -216,10 +231,11 @@ cargo-slide/
 ├── crates/
 │   ├── slide-core/                 # Typst 编译桥接、SVG 解析、图表计算/SQL、LZMA2 压缩打包
 │   ├── slide-player/               # 原生播放引擎：tiny-skia 渲染、窗口事件、音频混音、演播工具、HUD
+│   ├── slide-editor/               # Typora 风格所见即所得桌面编辑器（实时矢量预览、就地编辑、大纲与导出）
 │   ├── slide-viewer/               # 通用桌面演示文稿播放器（带交互式 GUI 启动台与多平台安装器）
 │   ├── slide-web/                  # 纯 Rust Leptos 0.7 CSR Web 播放器（严格零内联 JavaScript）
 │   ├── slide-theme/                # 内置排版主题、模板与 Typst 组件宏（#slide, #step, #chart）
-│   └── cargo-slide/                # 命令行主入口（init, new, run, dev, build, pack, serve, export）
+│   └── cargo-slide/                # 命令行主入口（init, new, run, dev, edit, check, build, pack, serve, export）
 └── examples/
     ├── geek-presentation/          # 22 页官方示例演讲（全景展示所有新增特性）
     ├── dist-web/                   # 预生成的 Leptos CSR 静态网页包

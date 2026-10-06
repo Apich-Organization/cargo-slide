@@ -16,7 +16,7 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("  ┌────────────────────────────────────────────────────────┐");
-    println!("  │  🔍 Cargo Slide Presentation Inspector                 │");
+    println!("  │  [INSPECTOR] Cargo Slide Presentation Inspector        │");
     println!("  └────────────────────────────────────────────────────────┘");
     println!();
 
@@ -24,27 +24,27 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let meta = read_package_metadata(file)?;
         let file_size = std::fs::metadata(file).map_or(0, |m| m.len());
 
-        println!("  📄 Package:       {}", file.display());
-        println!("  🏷️  Title:         {}", meta.title);
+        println!("  Package:          {}", file.display());
+        println!("  Title:            {}", meta.title);
         println!(
-            "  📦 Format:        cargo-slide (v{}, {})",
+            "  Format:           cargo-slide (v{}, {})",
             meta.format_version, meta.compression
         );
-        println!("  🔢 Slide Count:   {} slides", meta.total_slides);
+        println!("  Slide Count:      {} slides", meta.total_slides);
         println!(
-            "  📐 Aspect Ratio:  {}",
+            "  Aspect Ratio:     {}",
             meta.aspect_ratio.as_deref().unwrap_or("16:9")
         );
         println!(
-            "  👤 Author:        {}",
+            "  Author:           {}",
             meta.author.as_deref().unwrap_or("Unknown")
         );
         println!(
-            "  📅 Created At:    {}",
+            "  Created At:       {}",
             meta.created_at.as_deref().unwrap_or("Not specified")
         );
         println!(
-            "  📝 Speaker Notes: {}",
+            "  Speaker Notes:    {}",
             if meta.has_notes {
                 "Included"
             } else {
@@ -52,10 +52,10 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         );
         if !meta.tags.is_empty() {
-            println!("  🏷️  Tags:          {}", meta.tags.join(", "));
+            println!("  Tags:             {}", meta.tags.join(", "));
         }
         println!(
-            "  💾 File Size:     {:.2} KB ({} bytes)",
+            "  File Size:        {:.2} KB ({} bytes)",
             file_size as f64 / 1024.0,
             file_size
         );
@@ -64,31 +64,31 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!("  Running deep integrity verification...");
         match verify_package_integrity(file) {
             | Ok(report) => {
-                println!("  ✓ Integrity:      PASSED (Structural LZMA2 TAR is valid)");
-                println!("  ✓ Verified Slides: {} slides", report.slide_count);
-                println!("  ✓ Embedded Assets: {} files", report.asset_count);
+                println!("  [OK] Integrity:      PASSED (Structural LZMA2 TAR is valid)");
+                println!("  [OK] Verified Slides: {} slides", report.slide_count);
+                println!("  [OK] Embedded Assets: {} files", report.asset_count);
                 if !report.warnings.is_empty() {
-                    println!("  ⚠️  Warnings:");
+                    println!("  [WARN] Warnings:");
                     for w in &report.warnings {
                         println!("     - {w}");
                     }
                 }
             },
             | Err(e) => {
-                println!("  ✕ Integrity:      FAILED ({e})");
+                println!("  [ERR] Integrity:      FAILED ({e})");
                 return Err(format!("Package integrity check failed: {e}").into());
             },
         }
     } else {
-        println!("  📄 Typst Source:  {}", file.display());
+        println!("  Typst Source:     {}", file.display());
         let compiler = SlideCompiler::new()?;
         let deck = compiler.compile_file(file)?;
 
-        println!("  🏷️  Title:         {}", deck.title);
-        println!("  🔢 Slide Count:   {} slides", deck.total_slides());
-        println!("  🎬 Animation:     {}", deck.default_animation);
+        println!("  Title:            {}", deck.title);
+        println!("  Slide Count:      {} slides", deck.total_slides());
+        println!("  Animation:        {}", deck.default_animation);
         println!(
-            "  📝 Has Notes:     {}",
+            "  Has Notes:        {}",
             if deck.has_any_notes() {
                 "Yes"
             } else {
@@ -97,7 +97,7 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
         let total_sec = deck.total_speaking_seconds();
         println!(
-            "  ⏱️  Est. Talk:     ~{:.1} minutes ({:.0}s)",
+            "  Est. Talk:        ~{:.1} minutes ({:.0}s)",
             total_sec as f64 / 60.0,
             total_sec
         );
@@ -107,7 +107,7 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(slide_core::model::Slide::notes_word_count)
             .sum();
-        println!("  💬 Notes Words:   {total_words} words total");
+        println!("  Notes Words:      {total_words} words total");
     }
     println!();
     Ok(())

@@ -57,7 +57,7 @@ pub fn execute(
     slide_core::logger::log_event(
         "success",
         &format!(
-            "✅ Packaged {} slides into {} ({:.1} KB, LZMA2 extreme)",
+            "[OK] Packaged {} slides into {} ({:.1} KB, LZMA2 extreme)",
             deck.total_slides(),
             out_file.display(),
             size_kb

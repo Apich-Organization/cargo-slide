@@ -14,7 +14,7 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("  ┌────────────────────────────────────────────────────────┐");
-    println!("  │  🩺 Cargo Slide Presentation Health Audit              │");
+    println!("  │  [AUDIT] Cargo Slide Presentation Health Audit         │");
     println!("  └────────────────────────────────────────────────────────┘");
     println!();
 
@@ -25,7 +25,7 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let deck = match compiler.compile_file(file) {
         | Ok(d) => d,
         | Err(e) => {
-            eprintln!("  ✕ Compilation Error: {e}");
+            eprintln!("  [ERR] Compilation Error: {e}");
             return Err(e.into());
         },
     };
@@ -47,8 +47,8 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     if issues.is_empty() {
-        println!("  ✓ Excellent! No presentation health issues detected.");
-        println!("  ✓ Media paths, slide titles, imports, and element density look clean.");
+        println!("  [OK] Excellent! No presentation health issues detected.");
+        println!("  [OK] Media paths, slide titles, imports, and element density look clean.");
         println!();
         return Ok(());
     }
@@ -64,19 +64,19 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             },
         }
 
-        let (icon, prefix) = match issue.severity {
-            | HealthSeverity::Error => ("✕", "ERROR"),
-            | HealthSeverity::Warning => ("⚠️", "WARN "),
-            | HealthSeverity::Info => ("ℹ️", "INFO "),
+        let prefix = match issue.severity {
+            | HealthSeverity::Error => "[ERROR]",
+            | HealthSeverity::Warning => "[WARN]",
+            | HealthSeverity::Info => "[INFO]",
         };
 
         let slide_label = issue.slide_index.map_or_else(String::new, |idx| {
             format!(" [Slide {}]", idx.saturating_add(1))
         });
 
-        println!("  {} {} {}{}", icon, prefix, issue.message, slide_label);
+        println!("  {} {}{}", prefix, issue.message, slide_label);
         if let Some(ref sug) = issue.suggestion {
-            println!("     👉 Suggestion: {sug}");
+            println!("     Suggestion: {sug}");
         }
         println!();
     }

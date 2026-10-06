@@ -239,7 +239,7 @@ impl SlideCompiler {
             crate::logger::log_event(
                 "info",
                 &format!(
-                    "⚡ Incremental rendering cache hit for {}: loaded {} slides in <1ms",
+                    "[CACHE] Incremental rendering cache hit for {}: loaded {} slides in <1ms",
                     typ_file.display(),
                     m.deck.total_slides()
                 ),
@@ -393,7 +393,7 @@ impl SlideCompiler {
             crate::logger::log_event(
                 "info",
                 &format!(
-                    "⚡ Incremental slide render: {reused_slide_count} slides reused from cache, {parsed_slide_count} slides updated",
+                    "[CACHE] Incremental slide render: {reused_slide_count} slides reused from cache, {parsed_slide_count} slides updated",
                 ),
                 Some(serde_json::json!({
                     "stage": "incremental_slide_reuse",
@@ -555,7 +555,7 @@ pub fn format_typst_warnings(stderr: &str) -> (String, bool, Vec<String>) {
     let mut output = String::new();
     if !other_blocks.is_empty() {
         output.push_str(&format!(
-            "⚠️ Typst compiler warning:\n{}\n",
+            "[WARN] Typst compiler warning:\n{}\n",
             other_blocks.join("\n\n")
         ));
     }
@@ -566,7 +566,7 @@ pub fn format_typst_warnings(stderr: &str) -> (String, bool, Vec<String>) {
             output.push('\n');
         }
         output.push_str(&format!(
-            "ℹ️ Typst font fallback notice:\n   The following font families were not found: {}\n   Typst automatically falls back to available system fonts.\n💡 Tip: Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.",
+            "[INFO] Typst font fallback notice:\n   The following font families were not found: {}\n   Typst automatically falls back to available system fonts.\n[TIP] Missing fonts will fall back to system defaults. You can bundle custom fonts by placing .ttf or .otf files into the 'fonts/' or 'assets/fonts/' directory of your project.",
             missing_fonts.join(", ")
         ));
     }
@@ -617,7 +617,14 @@ pub fn parse_declared_slides(
                 line_number: idx + 1,
                 title,
             });
-        } else if trimmed.starts_with("#slide") && !trimmed.starts_with("#let slide") {
+        } else if (trimmed.starts_with("#slide")
+            || trimmed.starts_with("#centered-slide")
+            || trimmed.starts_with("#focus-slide")
+            || (trimmed.starts_with('#')
+                && trimmed[1..].contains("-slide")
+                && !trimmed.contains("title-slide")))
+            && !trimmed.starts_with("#let ")
+        {
             let mut title = format!("Slide {}", declared.len() + 1);
             for l in &lines[idx..lines.len().min(idx + 10)] {
                 if let Some(t_idx) = l.find("title:") {
@@ -702,7 +709,7 @@ pub fn check_slide_overflow(
         {
             crate::logger::log_event(
                 "warn",
-                &format!("\n⚠️  WARNING: {msg}\n"),
+                &format!("\n[WARN] {msg}\n"),
                 Some(serde_json::json!({
                     "event": "slide_overflow_warning",
                     "declared_slides": declared_count,
@@ -817,8 +824,10 @@ pub fn extract_speaker_notes_by_slide(source: &str) -> Vec<Option<String>> {
     for line in source.lines() {
         let trimmed = line.trim();
         let is_pagebreak = trimmed.starts_with("#pagebreak()");
-        let is_slide_macro = (trimmed.starts_with("#slide(")
-            || trimmed.starts_with("#title-slide("))
+        let is_slide_macro = (trimmed.starts_with("#slide")
+            || trimmed.starts_with("#title-slide")
+            || trimmed.starts_with("#centered-slide")
+            || trimmed.starts_with("#focus-slide"))
             && !trimmed.starts_with("#let ");
 
         if is_pagebreak {
@@ -843,20 +852,58 @@ pub fn extract_speaker_notes_by_slide(source: &str) -> Vec<Option<String>> {
             has_slide_started = true;
         }
 
-        // Check for note patterns
+        // Check for note patterns (strictly distinct from general code comments)
         if let Some(rest) = trimmed
             .strip_prefix("// [note]:")
             .or_else(|| trimmed.strip_prefix("// [notes]:"))
+            .or_else(|| trimmed.strip_prefix("// [note]"))
+            .or_else(|| trimmed.strip_prefix("// [notes]"))
             .or_else(|| trimmed.strip_prefix("// Note:"))
+            .or_else(|| trimmed.strip_prefix("// note:"))
+            .or_else(|| trimmed.strip_prefix("// Notes:"))
+            .or_else(|| trimmed.strip_prefix("// notes:"))
             .or_else(|| trimmed.strip_prefix("// Speaker:"))
+            .or_else(|| trimmed.strip_prefix("// speaker:"))
+            .or_else(|| trimmed.strip_prefix("// [speaker]:"))
+            .or_else(|| trimmed.strip_prefix("// [speaker]"))
         {
             let n = rest.trim();
             if !n.is_empty() {
                 current_notes.push(n.to_string());
             }
-        } else if trimmed.starts_with("#note[") && trimmed.ends_with(']') {
+        } else if trimmed.starts_with("/* [note]:") && trimmed.ends_with("*/") {
             let inner = trimmed
-                .get(6..trimmed.len().saturating_sub(1))
+                .trim_start_matches("/* [note]:")
+                .trim_end_matches("*/")
+                .trim();
+            if !inner.is_empty() {
+                current_notes.push(inner.to_string());
+            }
+        } else if (trimmed.starts_with("#note[") && trimmed.ends_with(']'))
+            || (trimmed.starts_with("#speaker-note[") && trimmed.ends_with(']'))
+        {
+            let prefix_len = if trimmed.starts_with("#speaker-note[") {
+                14
+            } else {
+                6
+            };
+            let inner = trimmed
+                .get(prefix_len..trimmed.len().saturating_sub(1))
+                .unwrap_or("")
+                .trim();
+            if !inner.is_empty() {
+                current_notes.push(inner.to_string());
+            }
+        } else if (trimmed.starts_with("#speaker-note(\"") && trimmed.ends_with("\")"))
+            || (trimmed.starts_with("#note(\"") && trimmed.ends_with("\")"))
+        {
+            let prefix_len = if trimmed.starts_with("#speaker-note(\"") {
+                15
+            } else {
+                7
+            };
+            let inner = trimmed
+                .get(prefix_len..trimmed.len().saturating_sub(2))
                 .unwrap_or("")
                 .trim();
             if !inner.is_empty() {

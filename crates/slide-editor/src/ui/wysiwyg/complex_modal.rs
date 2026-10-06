@@ -717,16 +717,24 @@ impl ComplexElementModal {
                     };
                     out.push_str(&format!("  height: {h},\n"));
                     if source.trim().is_empty() && sql.trim().is_empty() && !items.is_empty() {
-                        let cat_strs = items
-                            .iter()
-                            .map(|(l, _)| format!("\"{l}\""))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        let val_strs = items
-                            .iter()
-                            .map(|(_, v)| format!("{v:.0}"))
-                            .collect::<Vec<_>>()
-                            .join(", ");
+                        let cat_strs = if items.len() == 1 {
+                            format!("\"{}\",", items[0].0)
+                        } else {
+                            items
+                                .iter()
+                                .map(|(l, _)| format!("\"{l}\""))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
+                        let val_strs = if items.len() == 1 {
+                            format!("{:.0},", items[0].1)
+                        } else {
+                            items
+                                .iter()
+                                .map(|(_, v)| format!("{v:.0}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
                         out.push_str(&format!(
                             "  data: (\n    categories: ({cat_strs}),\n    series: ((name: \"Data\", values: ({val_strs})),),\n  ),\n"
                         ));
@@ -2876,7 +2884,7 @@ fn render_modal_video_editor<'a>(
         let mut right_meta = row![quality_badge].spacing(6).align_y(Alignment::Center);
         if !duration.trim().is_empty() {
             let dur_badge = container(
-                text(format!("⏱ {}", duration.trim()))
+                text(format!("Duration: {}", duration.trim()))
                     .size(10)
                     .color(theme.text_secondary()),
             )
@@ -3035,7 +3043,7 @@ fn render_modal_video_editor<'a>(
         let mut badges_row = row![quality_pill].spacing(6).align_y(Alignment::Center);
         if !duration.trim().is_empty() {
             let dur_pill = container(
-                text(format!("⏱ {}", duration.trim()))
+                text(format!("Duration: {}", duration.trim()))
                     .size(10)
                     .color(theme.text_secondary()),
             )
@@ -3254,22 +3262,26 @@ fn render_modal_audio_editor<'a>(
     let vol_pct = (volume * 100.0).round() as usize;
 
     let preview_card: Element<'a, Message> = if is_player {
-        let note_circle = container(text("♫").size(14).color(Color::from_rgb(0.02, 0.71, 0.83)))
-            .width(Length::Fixed(34.0))
-            .height(Length::Fixed(34.0))
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .style(|_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.2))),
-                    border: Border {
-                        color: Color::from_rgb(0.02, 0.71, 0.83),
-                        width: 1.0,
-                        radius: border::Radius::from(17.0),
-                    },
-                    ..container::Style::default()
-                }
-            });
+        let note_circle = container(
+            text("BGM")
+                .size(10)
+                .color(Color::from_rgb(0.02, 0.71, 0.83)),
+        )
+        .width(Length::Fixed(34.0))
+        .height(Length::Fixed(34.0))
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(|_| {
+            container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.2))),
+                border: Border {
+                    color: Color::from_rgb(0.02, 0.71, 0.83),
+                    width: 1.0,
+                    radius: border::Radius::from(17.0),
+                },
+                ..container::Style::default()
+            }
+        });
 
         // 5 simulated equalizer bars
         let bar = |h: f32| {
@@ -3290,7 +3302,7 @@ fn render_modal_audio_editor<'a>(
             .align_y(Alignment::End);
 
         let vol_pill = container(
-            text(format!("🔊 {}%", vol_pct))
+            text(format!("Vol: {}%", vol_pct))
                 .size(10)
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
         )
@@ -3304,13 +3316,9 @@ fn render_modal_audio_editor<'a>(
         });
 
         let auto_pill = container(
-            text(if autoplay {
-                "⚡ Auto"
-            } else {
-                "Manual"
-            })
-            .size(9)
-            .color(theme.text_secondary()),
+            text(if autoplay { "Auto" } else { "Manual" })
+                .size(9)
+                .color(theme.text_secondary()),
         )
         .padding([2, 5])
         .style(move |_| {
@@ -3323,7 +3331,7 @@ fn render_modal_audio_editor<'a>(
 
         let loop_pill = container(
             text(if loop_playback {
-                "🔁 Loop"
+                "Loop"
             } else {
                 "Once"
             })
@@ -3374,7 +3382,7 @@ fn render_modal_audio_editor<'a>(
     } else {
         // Compact background trigger
         let trigger_content = row![
-            text("🔊").size(14),
+            text("Vol").size(11),
             text(format!(
                 "Background Audio Trigger: {}",
                 if source.is_empty() {
@@ -3390,14 +3398,14 @@ fn render_modal_audio_editor<'a>(
                 .size(10)
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
             text(if autoplay {
-                "⚡ Autoplay"
+                "Autoplay"
             } else {
                 "Manual"
             })
             .size(10)
             .color(theme.text_secondary()),
             text(if loop_playback {
-                "🔁 Loop"
+                "Loop"
             } else {
                 "Once"
             })
@@ -3523,9 +3531,9 @@ fn render_modal_audio_editor<'a>(
 
     let auto_btn = button(
         text(if autoplay {
-            "⚡ Autoplay: ON"
+            "Autoplay: ON"
         } else {
-            "⚡ Autoplay: OFF"
+            "Autoplay: OFF"
         })
         .size(11),
     )
@@ -3535,9 +3543,9 @@ fn render_modal_audio_editor<'a>(
 
     let loop_btn = button(
         text(if loop_playback {
-            "🔁 Loop: ON"
+            "Loop: ON"
         } else {
-            "🔁 Loop: OFF"
+            "Loop: OFF"
         })
         .size(11),
     )

@@ -132,6 +132,21 @@ pub enum WysiwygBlock {
         range: Range<usize>,
         raw: String,
     },
+    /// Dedicated speaker note for presenter display (#speaker-note[...] or // [note]: ...)
+    SpeakerNote {
+        id: String,
+        range: Range<usize>,
+        raw: String,
+        content: String,
+    },
+    /// General code comment (// comment or /* comment */)
+    Comment {
+        id: String,
+        range: Range<usize>,
+        raw: String,
+        content: String,
+        is_block: bool,
+    },
 }
 
 impl WysiwygBlock {
@@ -154,7 +169,9 @@ impl WysiwygBlock {
             | Self::PureCode { id, .. }
             | Self::ContentBlock { id, .. }
             | Self::ControlFlow { id, .. }
-            | Self::Expression { id, .. } => id,
+            | Self::Expression { id, .. }
+            | Self::SpeakerNote { id, .. }
+            | Self::Comment { id, .. } => id,
         }
     }
 
@@ -177,7 +194,9 @@ impl WysiwygBlock {
             | Self::PureCode { range, .. }
             | Self::ContentBlock { range, .. }
             | Self::ControlFlow { range, .. }
-            | Self::Expression { range, .. } => range.clone(),
+            | Self::Expression { range, .. }
+            | Self::SpeakerNote { range, .. }
+            | Self::Comment { range, .. } => range.clone(),
         }
     }
 
@@ -200,7 +219,9 @@ impl WysiwygBlock {
             | Self::PureCode { raw, .. }
             | Self::ContentBlock { raw, .. }
             | Self::ControlFlow { raw, .. }
-            | Self::Expression { raw, .. } => raw,
+            | Self::Expression { raw, .. }
+            | Self::SpeakerNote { raw, .. }
+            | Self::Comment { raw, .. } => raw,
         }
     }
 
@@ -215,7 +236,9 @@ impl WysiwygBlock {
             | Self::CodeBlock { .. }
             | Self::Equation { .. }
             | Self::Paragraph { .. }
-            | Self::ContentBlock { .. } => true,
+            | Self::ContentBlock { .. }
+            | Self::SpeakerNote { .. }
+            | Self::Comment { .. } => true,
             | Self::FuncCall { callee, .. } => {
                 callee != "v" && callee != "h" && callee != "pagebreak" && callee != "colbreak"
             },
@@ -332,6 +355,22 @@ impl WysiwygBlock {
                 };
                 ("Block".to_string(), preview)
             },
+            | Self::SpeakerNote { content, .. } => {
+                let preview = if content.chars().count() > 22 {
+                    format!("{}…", content.chars().take(22).collect::<String>())
+                } else {
+                    content.clone()
+                };
+                ("Note".to_string(), preview)
+            },
+            | Self::Comment { content, .. } => {
+                let preview = if content.chars().count() > 22 {
+                    format!("{}…", content.chars().take(22).collect::<String>())
+                } else {
+                    content.clone()
+                };
+                ("Comment".to_string(), preview)
+            },
             | _ => ("Directive".to_string(), String::new()),
         }
     }
@@ -440,11 +479,7 @@ impl TypstDocumentEngine {
 
         for child in linked_root.children() {
             let kind = child.kind();
-            if kind == SyntaxKind::Space
-                || kind == SyntaxKind::LineComment
-                || kind == SyntaxKind::BlockComment
-                || kind == SyntaxKind::Parbreak
-            {
+            if kind == SyntaxKind::Space || kind == SyntaxKind::Parbreak {
                 continue;
             }
 
@@ -1322,11 +1357,8 @@ fn extract_semantic_blocks_from_nodes<'a, I>(
     for child in nodes {
         let kind = child.kind();
 
-        // 1. Comments and parbreaks flush pending paragraphs
-        if kind == SyntaxKind::Parbreak
-            || kind == SyntaxKind::LineComment
-            || kind == SyntaxKind::BlockComment
-        {
+        // 1. Parbreaks flush pending paragraphs
+        if kind == SyntaxKind::Parbreak {
             flush_pending_paragraph(
                 &mut pending_inline_start,
                 &mut pending_inline_end,
@@ -1334,6 +1366,27 @@ fn extract_semantic_blocks_from_nodes<'a, I>(
                 counter,
                 blocks,
             );
+            continue;
+        }
+
+        // 1b. Comments flush pending paragraphs and are parsed as SpeakerNote or Comment
+        if kind == SyntaxKind::LineComment || kind == SyntaxKind::BlockComment {
+            flush_pending_paragraph(
+                &mut pending_inline_start,
+                &mut pending_inline_end,
+                &mut pending_inline_text,
+                counter,
+                blocks,
+            );
+
+            let range = child.range();
+            let raw = source_text.get(range.clone()).unwrap_or("").to_string();
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                *counter += 1;
+                let id = format!("block-{}", *counter);
+                blocks.push(classify_comment_node(kind, id, range, raw));
+            }
             continue;
         }
 
@@ -1549,6 +1602,88 @@ fn find_content_blocks_in_funccall<'a>(fc_node: &'a LinkedNode<'a>) -> Vec<Linke
     cbs
 }
 
+/// Classify a LineComment or BlockComment node as SpeakerNote or Comment
+fn classify_comment_node(
+    kind: SyntaxKind,
+    id: String,
+    range: Range<usize>,
+    raw: String,
+) -> WysiwygBlock {
+    let trimmed = raw.trim();
+    let is_speaker_note = trimmed.starts_with("// [note]:")
+        || trimmed.starts_with("// [notes]:")
+        || trimmed.starts_with("// [note]")
+        || trimmed.starts_with("// [notes]")
+        || trimmed.starts_with("// Note:")
+        || trimmed.starts_with("// note:")
+        || trimmed.starts_with("// Notes:")
+        || trimmed.starts_with("// notes:")
+        || trimmed.starts_with("// Speaker:")
+        || trimmed.starts_with("// speaker:")
+        || trimmed.starts_with("// [speaker]:")
+        || trimmed.starts_with("// [speaker]")
+        || (trimmed.starts_with("/* [note]:") && trimmed.ends_with("*/"));
+
+    if is_speaker_note {
+        let content = if let Some(rest) = trimmed
+            .strip_prefix("// [note]:")
+            .or_else(|| trimmed.strip_prefix("// [notes]:"))
+            .or_else(|| trimmed.strip_prefix("// [note]"))
+            .or_else(|| trimmed.strip_prefix("// [notes]"))
+            .or_else(|| trimmed.strip_prefix("// Note:"))
+            .or_else(|| trimmed.strip_prefix("// note:"))
+            .or_else(|| trimmed.strip_prefix("// Notes:"))
+            .or_else(|| trimmed.strip_prefix("// notes:"))
+            .or_else(|| trimmed.strip_prefix("// Speaker:"))
+            .or_else(|| trimmed.strip_prefix("// speaker:"))
+            .or_else(|| trimmed.strip_prefix("// [speaker]:"))
+            .or_else(|| trimmed.strip_prefix("// [speaker]"))
+        {
+            rest.trim().to_string()
+        } else if trimmed.starts_with("/* [note]:") && trimmed.ends_with("*/") {
+            trimmed
+                .trim_start_matches("/* [note]:")
+                .trim_end_matches("*/")
+                .trim()
+                .to_string()
+        } else {
+            trimmed.to_string()
+        };
+
+        WysiwygBlock::SpeakerNote {
+            id,
+            range,
+            raw,
+            content,
+        }
+    } else {
+        let mut content = if kind == SyntaxKind::LineComment {
+            trimmed.trim_start_matches("//").trim().to_string()
+        } else {
+            trimmed
+                .trim_start_matches("/*")
+                .trim_end_matches("*/")
+                .trim()
+                .to_string()
+        };
+        if let Some(rest) = content
+            .strip_prefix("Comment:")
+            .or_else(|| content.strip_prefix("comment:"))
+            .or_else(|| content.strip_prefix("[comment]:"))
+            .or_else(|| content.strip_prefix("[comment]"))
+        {
+            content = rest.trim().to_string();
+        }
+        WysiwygBlock::Comment {
+            id,
+            range,
+            raw,
+            content,
+            is_block: kind == SyntaxKind::BlockComment,
+        }
+    }
+}
+
 /// Exhaustive AST Classifier: MATCHES ALL 61 VARIANTS OF `typst_syntax::ast::Expr`
 ///
 /// Under `#[deny(clippy::wildcard_enum_match_arm)]`, this is compiler-guaranteed
@@ -1563,10 +1698,19 @@ fn classify_linked_node(
     let untyped = linked.get();
     let kind = untyped.kind();
 
-    // Skip empty spaces, comments, hash tokens, parbreaks, and brackets
+    // Line and block comments are classified into Comment or SpeakerNote
+    if kind == SyntaxKind::LineComment || kind == SyntaxKind::BlockComment {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        *counter += 1;
+        let id = format!("block-{}", *counter);
+        return Some(classify_comment_node(kind, id, range, raw));
+    }
+
+    // Skip empty spaces, hash tokens, parbreaks, and brackets
     if kind == SyntaxKind::Space
-        || kind == SyntaxKind::LineComment
-        || kind == SyntaxKind::BlockComment
         || kind == SyntaxKind::Hash
         || kind == SyntaxKind::Parbreak
         || kind == SyntaxKind::LeftBracket
@@ -1802,12 +1946,36 @@ fn classify_linked_node(
                     .as_str()
                     .trim()
                     .to_string();
-                WysiwygBlock::FuncCall {
-                    id,
-                    callee,
-                    args,
-                    range,
-                    raw,
+                if callee == "speaker-note" || callee == "speaker_note" {
+                    let content = args
+                        .trim_matches(|c| c == '(' || c == ')' || c == '[' || c == ']' || c == '"')
+                        .trim()
+                        .to_string();
+                    WysiwygBlock::SpeakerNote {
+                        id,
+                        range,
+                        raw,
+                        content,
+                    }
+                } else if callee == "note" && (args.starts_with('[') || args.starts_with("(\"")) {
+                    let content = args
+                        .trim_matches(|c| c == '(' || c == ')' || c == '[' || c == ']' || c == '"')
+                        .trim()
+                        .to_string();
+                    WysiwygBlock::SpeakerNote {
+                        id,
+                        range,
+                        raw,
+                        content,
+                    }
+                } else {
+                    WysiwygBlock::FuncCall {
+                        id,
+                        callee,
+                        args,
+                        range,
+                        raw,
+                    }
                 }
             },
 

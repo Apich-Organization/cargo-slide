@@ -184,6 +184,16 @@ impl ViewerLauncherApp {
                 Task::none()
             },
             | Message::SelectPresentation(idx) => {
+                if self.selected_index == Some(idx) {
+                    if let Some(entry) = self.filtered_presentations().get(idx) {
+                        return self.launch_path_with_options(
+                            entry.path.clone(),
+                            self.hud_theme,
+                            &self.selected_animation.clone(),
+                            self.is_fullscreen,
+                        );
+                    }
+                }
                 self.selected_index = Some(idx);
                 Task::none()
             },
@@ -378,11 +388,11 @@ impl ViewerLauncherApp {
             | Message::InstallToSystem => {
                 match install_viewer_to_system() {
                     | Ok(msg) => {
-                        self.show_toast(&format!("✓ {}", msg));
+                        self.show_toast(&format!("[OK] {}", msg));
                         Task::none()
                     },
                     | Err(e) => {
-                        self.show_toast(&format!("✕ Failed to install: {}", e));
+                        self.show_toast(&format!("[ERR] Failed to install: {}", e));
                         Task::none()
                     },
                 }
@@ -416,7 +426,7 @@ impl ViewerLauncherApp {
                     }
                 }
                 if is_fav {
-                    self.show_toast("Added to Favorites ★");
+                    self.show_toast("Added to Favorites");
                 } else {
                     self.show_toast("Removed from Favorites");
                 }
@@ -426,7 +436,7 @@ impl ViewerLauncherApp {
                 match slide_core::package::verify_package_integrity(&path) {
                     | Ok(report) => {
                         let msg = format!(
-                            "✓ Verified: {} slides, {} assets ({:.1} KB)",
+                            "[OK] Verified: {} slides, {} assets ({:.1} KB)",
                             report.slide_count,
                             report.asset_count,
                             report.file_size as f64 / 1024.0
@@ -435,7 +445,7 @@ impl ViewerLauncherApp {
                         self.integrity_report = Some((path, report));
                     },
                     | Err(e) => {
-                        self.show_toast(&format!("✕ Verification failed: {}", e));
+                        self.show_toast(&format!("[ERR] Verification failed: {}", e));
                     },
                 }
                 Task::none()
@@ -790,7 +800,7 @@ impl ViewerLauncherApp {
                 }
 
                 if entry.has_notes {
-                    let notes_badge = container(text("📝 NOTES").size(10).color(theme.accent()))
+                    let notes_badge = container(text("NOTES").size(10).color(theme.accent()))
                         .padding([2, 8])
                         .style(move |_| badge_container(theme.bg_subtle(), theme.border_color()));
                     meta_badges = meta_badges.push(notes_badge);
@@ -812,15 +822,15 @@ impl ViewerLauncherApp {
                         HudTheme::Light,
                     ));
 
-                let edit_btn = button(text("✎ EDIT").size(10))
+                let edit_btn = button(text("EDIT").size(10))
                     .style(move |_theme, _status| secondary_button_style(theme))
                     .padding([4, 8])
                     .on_press(Message::OpenInEditor(entry_path.clone()));
 
                 let fav_icon = if entry.is_favorite {
-                    "★"
+                    "[FAV]"
                 } else {
-                    "☆"
+                    "[ + ]"
                 };
                 let fav_color = if entry.is_favorite {
                     Color::from_rgb(0.96, 0.72, 0.15)
@@ -908,7 +918,7 @@ impl ViewerLauncherApp {
             .padding([3, 8])
             .on_press(Message::SetFilter(PresentationFilter::Typst));
 
-        let filter_fav_btn = button(text("★ Favorites").size(11))
+        let filter_fav_btn = button(text("Favorites").size(11))
             .style(move |_t, _s| {
                 chip_button_style(theme, self.filter == PresentationFilter::Favorites)
             })
@@ -1011,7 +1021,7 @@ impl ViewerLauncherApp {
             }
 
             let notes_status_text = if entry.has_notes {
-                "✓ Includes presenter notes"
+                "[OK] Includes presenter notes"
             } else {
                 "No speaker notes"
             };
@@ -1045,7 +1055,7 @@ impl ViewerLauncherApp {
                     if r_path == &entry.path {
                         container(
                             column![
-                                text("✓ Package Integrity Verified")
+                                text("[OK] Package Integrity Verified")
                                     .size(12)
                                     .color(theme.accent()),
                                 text(format!(
@@ -1147,7 +1157,7 @@ impl ViewerLauncherApp {
                 .width(Length::Fill)
                 .on_press(Message::PlaySelectedWithTheme(HudTheme::Light));
 
-            let editor_btn = button(text("✎ OPEN IN SLIDE EDITOR").size(13))
+            let editor_btn = button(text("OPEN IN SLIDE EDITOR").size(13))
                 .style(move |_theme, _status| secondary_button_style(theme))
                 .padding([9, 16])
                 .width(Length::Fill)
@@ -1229,7 +1239,7 @@ impl ViewerLauncherApp {
                     row![
                         text(msg).size(12).color(theme.accent()),
                         Space::new().width(12),
-                        button(text("✕").size(11))
+                        button(text("X").size(11))
                             .style(move |_theme, _status| secondary_button_style(theme))
                             .padding([2, 6])
                             .on_press(Message::DismissToast),
@@ -1311,7 +1321,7 @@ impl ViewerLauncherApp {
                     row![
                         text("CUSTOM PRESENTATION LAUNCHER").size(15).color(theme.accent()),
                         Space::new().width(Length::Fill),
-                        button(text("✕").size(12))
+                        button(text("X").size(12))
                             .style(move |_theme, _status| secondary_button_style(theme))
                             .padding([2, 8])
                             .on_press(Message::CloseCustomOpenModal),
@@ -1382,7 +1392,7 @@ impl ViewerLauncherApp {
                             .style(move |_theme, _status| secondary_button_style(theme))
                             .padding([9, 14])
                             .on_press(Message::ExecuteCustomOpenPresentation(HudTheme::Light)),
-                        button(text("✎ OPEN IN SLIDE EDITOR").size(12))
+                        button(text("OPEN IN SLIDE EDITOR").size(12))
                             .style(move |_theme, _status| secondary_button_style(theme))
                             .padding([9, 14])
                             .on_press(Message::ExecuteCustomOpenInEditor),

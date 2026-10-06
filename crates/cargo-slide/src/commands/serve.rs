@@ -183,11 +183,13 @@ pub fn execute(
                         && last_recompile.elapsed() > std::time::Duration::from_millis(500)
                     {
                         last_recompile = std::time::Instant::now();
-                        println!("  🔄 Change detected, recompiling web presentation bundle...");
+                        println!(
+                            "  [CHANGE] Change detected, recompiling web presentation bundle..."
+                        );
                         if let Err(e) = prepare_csr_bundle(&watch_file, &target_dist) {
-                            eprintln!("  ✕ Recompilation failed: {e}");
+                            eprintln!("  [ERR] Recompilation failed: {e}");
                         } else {
-                            println!("  ✓ Web presentation recompiled successfully!");
+                            println!("  [OK] Web presentation recompiled successfully!");
                         }
                     }
                 }
@@ -202,7 +204,7 @@ pub fn execute(
     let base_url = format!("http://{bind_addr}/");
     slide_core::logger::log_event(
         "info",
-        &format!("🚀 Cargo Slide Web Server running at {base_url}"),
+        &format!("[SERVER] Cargo Slide Web Server running at {base_url}"),
         Some(serde_json::json!({
             "stage": "server_started",
             "url": base_url,
@@ -213,13 +215,13 @@ pub fn execute(
 
     println!();
     println!("  ┌────────────────────────────────────────────────────────┐");
-    println!("  │  🚀 Cargo Slide Static Web Server (Leptos CSR)        │");
+    println!("  │  [SERVER] Cargo Slide Static Web Server (Leptos CSR)   │");
     println!("  │                                                        │");
-    println!("  │  📡 URL:         http://{:<30}│", bind_addr);
-    println!("  │  📁 Directory:   {:<38}│", serve_dir.display());
-    println!("  │  ⚡ Mode:        Pure Rust WASM + CSR (Zero Inline JS) │");
+    println!("  │  URL:        http://{:<31}│", bind_addr);
+    println!("  │  Directory:  {:<42}│", serve_dir.display());
+    println!("  │  Mode:       Pure Rust WASM + CSR (Zero Inline JS)     │");
     if watch {
-        println!("  │  👀 Live Watch:  Active (auto-recompiling on change)   │");
+        println!("  │  Live Watch: Active (auto-recompiling on change)       │");
     }
     println!("  │                                                        │");
     println!("  │  Press Ctrl+C to terminate the server                  │");

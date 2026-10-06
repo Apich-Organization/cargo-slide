@@ -57,6 +57,8 @@ pub enum InsertBlockKind {
     Equation,
     Video,
     Audio,
+    SpeakerNote,
+    Comment,
 }
 
 impl InsertBlockKind {
@@ -98,6 +100,8 @@ impl InsertBlockKind {
             | Self::Audio => {
                 "#audio-player(\"assets/soundtrack.mp3\", title: \"Background Music\")\n"
             },
+            | Self::SpeakerNote => "#speaker-note[\n  Speaker note cues for presenter.\n]\n",
+            | Self::Comment => "// Comment: presentation memo or draft remark\n",
         }
     }
 
@@ -123,6 +127,8 @@ impl InsertBlockKind {
             | Self::Equation => "Math",
             | Self::Video => "Video",
             | Self::Audio => "Audio",
+            | Self::SpeakerNote => "Note",
+            | Self::Comment => "Comment",
         }
     }
 }
@@ -476,6 +482,8 @@ pub fn view_active_block_editor<'a>(
         | WysiwygBlock::CodeBlock { .. } => ((12.0 * scale).max(10.0), 4.0 * scale, 4.0 * scale),
         | WysiwygBlock::Equation { .. } => ((14.0 * scale).max(12.0), 4.0 * scale, 4.0 * scale),
         | WysiwygBlock::Paragraph { .. } => ((14.0 * scale).max(12.0), 2.0 * scale, 2.0 * scale),
+        | WysiwygBlock::SpeakerNote { .. } => ((12.0 * scale).max(11.0), 3.0 * scale, 3.0 * scale),
+        | WysiwygBlock::Comment { .. } => ((12.0 * scale).max(11.0), 3.0 * scale, 3.0 * scale),
         | _ => ((13.0 * scale).max(11.0), 2.0 * scale, 2.0 * scale),
     };
 
@@ -519,9 +527,9 @@ pub fn view_active_block_editor<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step Anim".to_string()
+            "Step Anim".to_string()
         })
         .size(9),
     )
@@ -2123,27 +2131,66 @@ pub fn parse_chart_data<'a>(args: &'a str) -> ChartData<'a> {
         trimmed
     };
 
-    let mut cursor = 0;
-    while let Some(start_paren) = inner_content[cursor..].find('(') {
-        let abs_start = cursor + start_paren;
-        if let Some(end_paren) = inner_content[abs_start..].find(')') {
-            let abs_end = abs_start + end_paren;
-            let inner = inner_content[abs_start + 1..abs_end].trim();
-            if let Some((label_raw, val_raw)) = inner.split_once(',') {
-                let label = label_raw.trim().trim_matches('"').trim_matches('\'').trim();
-                let val_str = val_raw
-                    .trim()
-                    .trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
-                if let Ok(val) = val_str.parse::<f32>()
-                    && !label.is_empty()
-                    && !is_named_arg(label_raw)
+    // 1. Try parsing standard cargo-slide format: data: (categories: (...), series: ((values: (...)),))
+    if let Some(cat_pos) = inner_content.find("categories:") {
+        let after_cat = &inner_content[cat_pos + 11..];
+        if let Some(open_p) = after_cat.find('(')
+            && let Some(close_p) = after_cat[open_p..].find(')')
+        {
+            let cats_str = &after_cat[open_p + 1..open_p + close_p];
+            let cats: Vec<&str> = cats_str
+                .split(',')
+                .map(|s| s.trim().trim_matches('"').trim_matches('\'').trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            if let Some(val_pos) = inner_content.find("values:") {
+                let after_val = &inner_content[val_pos + 7..];
+                if let Some(v_open) = after_val.find('(')
+                    && let Some(v_close) = after_val[v_open..].find(')')
                 {
-                    items.push((label, val));
+                    let vals_str = &after_val[v_open + 1..v_open + v_close];
+                    let vals: Vec<f32> = vals_str
+                        .split(',')
+                        .filter_map(|s| {
+                            let clean = s
+                                .trim()
+                                .trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            clean.parse::<f32>().ok()
+                        })
+                        .collect();
+
+                    for (c, v) in cats.into_iter().zip(vals.into_iter()) {
+                        items.push((c, v));
+                    }
                 }
             }
-            cursor = abs_end + 1;
-        } else {
-            break;
+        }
+    }
+
+    if items.is_empty() {
+        let mut cursor = 0;
+        while let Some(start_paren) = inner_content[cursor..].find('(') {
+            let abs_start = cursor + start_paren;
+            if let Some(end_paren) = inner_content[abs_start..].find(')') {
+                let abs_end = abs_start + end_paren;
+                let inner = inner_content[abs_start + 1..abs_end].trim();
+                if let Some((label_raw, val_raw)) = inner.split_once(',') {
+                    let label = label_raw.trim().trim_matches('"').trim_matches('\'').trim();
+                    let val_str = val_raw
+                        .trim()
+                        .trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                    if let Ok(val) = val_str.parse::<f32>()
+                        && !label.is_empty()
+                        && !is_named_arg(label_raw)
+                    {
+                        items.push((label, val));
+                    }
+                }
+                cursor = abs_end + 1;
+            } else {
+                break;
+            }
         }
     }
 
@@ -2340,9 +2387,9 @@ fn render_table_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -2548,9 +2595,9 @@ fn render_grid_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -3256,9 +3303,9 @@ fn render_callout_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(8),
     )
@@ -3348,9 +3395,9 @@ fn render_box_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -3502,9 +3549,9 @@ fn render_link_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -3665,9 +3712,9 @@ fn render_badge_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -3911,9 +3958,9 @@ fn render_title_slide_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -4208,9 +4255,9 @@ fn render_chart_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -4635,9 +4682,9 @@ fn render_video_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -4707,7 +4754,7 @@ fn render_video_block<'a>(
         let mut meta_right = row![q_pill].spacing(4).align_y(Alignment::Center);
         if let Some(dur) = data.duration {
             let dur_pill = container(
-                text(format!("⏱ {dur}"))
+                text(format!("{dur}"))
                     .size((9.0 * scale).max(8.0))
                     .color(theme.text_secondary()),
             )
@@ -4862,7 +4909,7 @@ fn render_video_block<'a>(
         let mut badges = row![q_badge].spacing(4).align_y(Alignment::Center);
         if let Some(dur) = data.duration {
             let dur_pill = container(
-                text(format!("⏱ {dur}"))
+                text(format!("{dur}"))
                     .size((9.0 * scale).max(8.0))
                     .color(theme.text_secondary()),
             )
@@ -4970,9 +5017,9 @@ fn render_audio_block<'a>(
 
     let btn_step = button(
         text(if let Some(tr) = transition {
-            format!("⚡ Step {} • {}", tr.order, tr.effect)
+            format!("Step {} • {}", tr.order, tr.effect)
         } else {
-            "⚡ Step".to_string()
+            "Step".to_string()
         })
         .size(9),
     )
@@ -5004,8 +5051,8 @@ fn render_audio_block<'a>(
 
     let card_content: Element<'a, Message> = if data.is_player {
         let note = container(
-            text("♫")
-                .size((13.0 * scale).max(11.0))
+            text("▶")
+                .size((11.0 * scale).max(9.0))
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
         )
         .width(Length::Fixed(28.0 * scale))
@@ -5042,7 +5089,7 @@ fn render_audio_block<'a>(
             .align_y(Alignment::End);
 
         let vol_badge = container(
-            text(format!("🔊 {vol_pct}%"))
+            text(format!("Vol: {vol_pct}%"))
                 .size((9.0 * scale).max(8.0))
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
         )
@@ -5057,7 +5104,7 @@ fn render_audio_block<'a>(
 
         let auto_badge = container(
             text(if data.autoplay {
-                "⚡ Auto"
+                "Auto"
             } else {
                 "Manual"
             })
@@ -5075,7 +5122,7 @@ fn render_audio_block<'a>(
 
         let loop_badge = container(
             text(if data.loop_playback {
-                "🔁 Loop"
+                "Loop"
             } else {
                 "Once"
             })
@@ -5129,7 +5176,7 @@ fn render_audio_block<'a>(
             .into()
     } else {
         let trigger_row = row![
-            text("🔊").size((13.0 * scale).max(11.0)),
+            text("Vol").size((13.0 * scale).max(11.0)),
             column![
                 text("Background Audio Trigger")
                     .size((11.0 * scale).max(9.5))
@@ -5144,14 +5191,14 @@ fn render_audio_block<'a>(
                 .size((9.0 * scale).max(8.0))
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
             text(if data.autoplay {
-                "⚡ Auto"
+                "Auto"
             } else {
                 "Manual"
             })
             .size((9.0 * scale).max(8.0))
             .color(theme.text_secondary()),
             text(if data.loop_playback {
-                "🔁 Loop"
+                "Loop"
             } else {
                 "Once"
             })
@@ -5674,11 +5721,222 @@ pub fn view_visual_block<'a>(
         | WysiwygBlock::Expression { raw, .. } => {
             text(raw).size(11).color(theme.text_muted()).into()
         },
+
+        | WysiwygBlock::SpeakerNote { content, raw, .. } => {
+            let (w_count, cjk_count) = slide_core::pacing::count_words_and_cjk(content);
+            let total_words = w_count + cjk_count;
+            let est_seconds = if total_words > 0 {
+                ((w_count as f64 / 135.0 + cjk_count as f64 / 230.0) * 60.0)
+                    .round()
+                    .max(1.0) as u64
+            } else {
+                0
+            };
+            let duration_badge_str = if est_seconds > 0 {
+                format!("~{est_seconds}s ({total_words} words)")
+            } else {
+                "~0s".to_string()
+            };
+
+            let note_header = row![
+                container(
+                    text("SPEAKER NOTE")
+                        .size(10)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::DEFAULT
+                        })
+                        .color(if theme.is_dark() {
+                            Color::from_rgb(0.98, 0.75, 0.25)
+                        } else {
+                            Color::from_rgb(0.70, 0.45, 0.05)
+                        })
+                )
+                .padding([2, 6])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(Background::Color(if theme.is_dark() {
+                            Color::from_rgba(0.98, 0.75, 0.25, 0.15)
+                        } else {
+                            Color::from_rgba(0.98, 0.75, 0.25, 0.18)
+                        })),
+                        border: border::rounded(4.0),
+                        ..container::Style::default()
+                    }
+                }),
+                Space::new().width(Length::Fixed(6.0)),
+                text(duration_badge_str)
+                    .size(10)
+                    .color(theme.text_secondary()),
+                Space::new().width(Length::Fill),
+                button(text("Edit").size(10))
+                    .padding([2, 6])
+                    .style(move |_t, _s| theme::subtle_button_style(theme, false))
+                    .on_press(Message::ActivateBlock {
+                        slide_idx,
+                        id: block.id().to_string(),
+                        range: block.range(),
+                        raw: raw.clone(),
+                    }),
+                button(text("Del").size(10))
+                    .padding([2, 5])
+                    .style(move |_t, _s| theme::danger_button_style(theme))
+                    .on_press(Message::DeleteBlockAtRange(block.range())),
+            ]
+            .align_y(Alignment::Center);
+
+            let note_body = container(
+                text(if content.trim().is_empty() {
+                    "Empty speaker note (click Edit to write cues)..."
+                } else {
+                    content.as_str()
+                })
+                .size(12)
+                .color(if content.trim().is_empty() {
+                    theme.text_muted()
+                } else {
+                    theme.text_primary()
+                }),
+            )
+            .padding([6, 8])
+            .width(Length::Fill)
+            .style(move |_| {
+                container::Style {
+                    background: Some(Background::Color(if theme.is_dark() {
+                        Color::from_rgba(0.98, 0.75, 0.25, 0.06)
+                    } else {
+                        Color::from_rgba(0.98, 0.75, 0.25, 0.08)
+                    })),
+                    border: Border {
+                        color: if theme.is_dark() {
+                            Color::from_rgba(0.98, 0.75, 0.25, 0.30)
+                        } else {
+                            Color::from_rgba(0.98, 0.75, 0.25, 0.35)
+                        },
+                        width: 1.0,
+                        radius: border::Radius::from(4.0),
+                    },
+                    ..container::Style::default()
+                }
+            });
+
+            column![
+                note_header,
+                Space::new().height(Length::Fixed(4.0)),
+                note_body
+            ]
+            .width(Length::Fill)
+            .into()
+        },
+
+        | WysiwygBlock::Comment {
+            content,
+            raw,
+            is_block,
+            ..
+        } => {
+            let kind_label = if *is_block {
+                "BLOCK COMMENT"
+            } else {
+                "COMMENT"
+            };
+            let comment_header = row![
+                container(
+                    text(kind_label)
+                        .size(10)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::DEFAULT
+                        })
+                        .color(if theme.is_dark() {
+                            Color::from_rgb(0.38, 0.72, 0.98)
+                        } else {
+                            Color::from_rgb(0.12, 0.45, 0.78)
+                        })
+                )
+                .padding([2, 6])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(Background::Color(if theme.is_dark() {
+                            Color::from_rgba(0.20, 0.60, 0.95, 0.15)
+                        } else {
+                            Color::from_rgba(0.15, 0.50, 0.90, 0.14)
+                        })),
+                        border: border::rounded(4.0),
+                        ..container::Style::default()
+                    }
+                }),
+                Space::new().width(Length::Fixed(6.0)),
+                text("Internal comment • Not displayed on slide")
+                    .size(10)
+                    .color(theme.text_muted()),
+                Space::new().width(Length::Fill),
+                button(text("Edit").size(10))
+                    .padding([2, 6])
+                    .style(move |_t, _s| theme::subtle_button_style(theme, false))
+                    .on_press(Message::ActivateBlock {
+                        slide_idx,
+                        id: block.id().to_string(),
+                        range: block.range(),
+                        raw: raw.clone(),
+                    }),
+                button(text("Del").size(10))
+                    .padding([2, 5])
+                    .style(move |_t, _s| theme::danger_button_style(theme))
+                    .on_press(Message::DeleteBlockAtRange(block.range())),
+            ]
+            .align_y(Alignment::Center);
+
+            let comment_body = container(
+                text(if content.trim().is_empty() {
+                    "Empty comment (click Edit to write draft remarks)..."
+                } else {
+                    content.as_str()
+                })
+                .size(12)
+                .color(if content.trim().is_empty() {
+                    theme.text_muted()
+                } else {
+                    theme.text_primary()
+                }),
+            )
+            .padding([6, 8])
+            .width(Length::Fill)
+            .style(move |_| {
+                container::Style {
+                    background: Some(Background::Color(if theme.is_dark() {
+                        Color::from_rgba(0.20, 0.60, 0.95, 0.06)
+                    } else {
+                        Color::from_rgba(0.15, 0.50, 0.90, 0.06)
+                    })),
+                    border: Border {
+                        color: if theme.is_dark() {
+                            Color::from_rgba(0.20, 0.60, 0.95, 0.28)
+                        } else {
+                            Color::from_rgba(0.15, 0.50, 0.90, 0.30)
+                        },
+                        width: 1.0,
+                        radius: border::Radius::from(4.0),
+                    },
+                    ..container::Style::default()
+                }
+            });
+
+            column![
+                comment_header,
+                Space::new().height(Length::Fixed(4.0)),
+                comment_body
+            ]
+            .width(Length::Fill)
+            .into()
+        },
     };
 
     // Styling container based on block type
     let is_code = matches!(block, WysiwygBlock::CodeBlock { .. });
     let is_math = matches!(block, WysiwygBlock::Equation { .. });
+    let is_speaker_note = matches!(block, WysiwygBlock::SpeakerNote { .. });
+    let is_comment = matches!(block, WysiwygBlock::Comment { .. });
     let is_complex_element = match block {
         | WysiwygBlock::FuncCall { callee, .. } => {
             matches!(
@@ -5727,7 +5985,7 @@ pub fn view_visual_block<'a>(
         .width(Length::Fill)
         .padding(if is_code || is_math {
             [4, 6]
-        } else if is_complex_element {
+        } else if is_complex_element || is_speaker_note || is_comment {
             [0, 0]
         } else {
             [2, 4]
@@ -5770,7 +6028,7 @@ pub fn view_visual_block<'a>(
 
     let drag_handle = mouse_area(
         container(
-            text("⠿")
+            text("::")
                 .size((13.0 * scale).max(11.0))
                 .color(if is_dragging {
                     theme.accent()
@@ -5881,17 +6139,15 @@ pub fn view_visual_block<'a>(
 
     let trans_badge: Option<Element<'a, Message>> = if let Some(tr) = transition {
         Some(
-            button(
-                text(format!("⚡ Step {} • {}", tr.order, tr.effect)).size((9.0 * scale).max(8.0)),
-            )
-            .padding([1, 6])
-            .style(move |_t, _s| theme::primary_button_style(theme))
-            .on_press(Message::OpenElementTransitionModal { slide_idx, block_idx })
-            .into(),
+            button(text(format!("Step {} • {}", tr.order, tr.effect)).size((9.0 * scale).max(8.0)))
+                .padding([1, 6])
+                .style(move |_t, _s| theme::primary_button_style(theme))
+                .on_press(Message::OpenElementTransitionModal { slide_idx, block_idx })
+                .into(),
         )
     } else if is_active {
         Some(
-            button(text("+ ⚡ Add Step Animation").size((9.0 * scale).max(8.0)))
+            button(text("+ Add Step Animation").size((9.0 * scale).max(8.0)))
                 .padding([1, 6])
                 .style(move |_t, _s| theme::subtle_button_style(theme, true))
                 .on_press(Message::OpenElementTransitionModal { slide_idx, block_idx })
@@ -6011,41 +6267,59 @@ pub fn view_insert_bar<'a>(
     let make_insert_btn = |kind: InsertBlockKind| {
         button(text(kind.label()).size(10))
             .style(move |_t, _s| theme::subtle_button_style(theme, false))
-            .padding([2, 6])
+            .padding([2, 5])
             .on_press(Message::InsertBlockAfter {
                 offset: after_offset,
                 kind,
             })
     };
 
-    let insert_row = row![
-        text("+ Add:").size(10).color(theme.accent()),
+    let row_text = row![
+        text("+ Text:").size(10).color(theme.accent()),
         make_insert_btn(InsertBlockKind::Paragraph),
         make_insert_btn(InsertBlockKind::Heading1),
         make_insert_btn(InsertBlockKind::Heading2),
         make_insert_btn(InsertBlockKind::Heading3),
-        make_insert_btn(InsertBlockKind::Heading4),
-        make_insert_btn(InsertBlockKind::TitleSlide),
         make_insert_btn(InsertBlockKind::Bullet),
         make_insert_btn(InsertBlockKind::Numbered),
-        make_insert_btn(InsertBlockKind::Table),
-        make_insert_btn(InsertBlockKind::Grid),
-        make_insert_btn(InsertBlockKind::Callout),
-        make_insert_btn(InsertBlockKind::BoxBlock),
-        make_insert_btn(InsertBlockKind::Link),
-        make_insert_btn(InsertBlockKind::Chart),
         make_insert_btn(InsertBlockKind::CodeBlock),
         make_insert_btn(InsertBlockKind::Equation),
-        make_insert_btn(InsertBlockKind::Video),
-        make_insert_btn(InsertBlockKind::Audio),
     ]
     .spacing(4)
-    .align_y(Alignment::Center)
-    .padding([2, 4]);
+    .align_y(Alignment::Center);
 
-    container(insert_row)
+    let row_media = row![
+        text("+ Media & Data:").size(10).color(theme.accent_cyan()),
+        make_insert_btn(InsertBlockKind::Table),
+        make_insert_btn(InsertBlockKind::Chart),
+        make_insert_btn(InsertBlockKind::Video),
+        make_insert_btn(InsertBlockKind::Audio),
+        make_insert_btn(InsertBlockKind::Link),
+        make_insert_btn(InsertBlockKind::TitleSlide),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+
+    let row_notes = row![
+        text("+ Notes & Cues:")
+            .size(10)
+            .color(theme.text_secondary()),
+        make_insert_btn(InsertBlockKind::SpeakerNote),
+        make_insert_btn(InsertBlockKind::Comment),
+        make_insert_btn(InsertBlockKind::Callout),
+        make_insert_btn(InsertBlockKind::BoxBlock),
+        make_insert_btn(InsertBlockKind::Grid),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+
+    let insert_col = column![row_text, row_media, row_notes]
+        .spacing(4)
+        .padding([4, 6]);
+
+    container(insert_col)
         .width(Length::Fill)
-        .padding([2, 6])
+        .padding([2, 4])
         .style(move |_| {
             container::Style {
                 background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),

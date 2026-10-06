@@ -172,10 +172,10 @@ fn dispatch_command(
                     let _ = std::process::Command::new("slide-viewer")
                         .arg("install")
                         .status();
-                    println!("✓ slide-viewer installed and registered successfully!");
+                    println!("[OK] slide-viewer installed and registered successfully!");
                 },
                 | _ => {
-                    eprintln!("✕ Failed to build/install slide-viewer.");
+                    eprintln!("[ERR] Failed to build/install slide-viewer.");
                 },
             }
         },

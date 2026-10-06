@@ -24,7 +24,7 @@ pub fn execute(
     let (deck, source_dir) = if is_slide_pkg {
         slide_core::logger::log_event(
             "info",
-            &format!("📦 Unpacking slide package {}...", file.display()),
+            &format!("[UNPACK] Unpacking slide package {}...", file.display()),
             Some(serde_json::json!({
                 "stage": "package_unpack",
                 "file": file.display().to_string(),
@@ -40,7 +40,7 @@ pub fn execute(
     } else {
         slide_core::logger::log_event(
             "info",
-            &format!("🎬 Compiling {}...", file.display()),
+            &format!("[COMPILE] Compiling {}...", file.display()),
             Some(serde_json::json!({
                 "stage": "compile_start",
                 "file": file.display().to_string(),
@@ -54,7 +54,7 @@ pub fn execute(
     slide_core::logger::log_event(
         "success",
         &format!(
-            "✨ Presentation loaded successfully! {} slides available.",
+            "[OK] Presentation loaded successfully! {} slides available.",
             deck.total_slides()
         ),
         Some(serde_json::json!({
@@ -74,7 +74,7 @@ pub fn execute(
 
     slide_core::logger::log_event(
         "info",
-        "🚀 Launching interactive GUI presentation player...",
+        "[RUN] Launching interactive GUI presentation player...",
         Some(serde_json::json!({
             "stage": "player_launch",
             "fullscreen": fullscreen,

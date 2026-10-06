@@ -38,7 +38,7 @@ impl AudioEngine {
             },
             | Err(e) => {
                 eprintln!(
-                    "⚠️ Audio device not available: {}. Continuing without audio.",
+                    "[WARN] Audio device not available: {}. Continuing without audio.",
                     e
                 );
                 None

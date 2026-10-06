@@ -13,7 +13,7 @@ impl MediaPlayer {
         let _ = std::thread::spawn(move || {
             let video_path = Path::new(&source_str);
             if !source_str.contains("://") && !video_path.exists() {
-                eprintln!("⚠️ Video file not found: {}", source_str);
+                eprintln!("[WARN] Video file not found: {}", source_str);
             }
 
             // 1. Try ffplay in a native window with titlebar, controls, and auto-exit

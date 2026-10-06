@@ -24,7 +24,7 @@ use iced::widget::container;
 use iced::widget::row;
 use iced::widget::text;
 
-/// Render the bottom status bar
+/// Render the bottom status bar with responsive layout
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn view_statusbar<'a>(
@@ -37,7 +37,10 @@ pub fn view_statusbar<'a>(
     char_count: usize,
     word_count: usize,
     zoom_percent: u32,
+    window_width: f32,
 ) -> Element<'a, Message> {
+    let is_narrow = window_width < 850.0;
+    let is_tiny = window_width < 650.0;
     // Left: Slide Counter and Word/Char count
     let slide_info = text(format!(
         "Slide {} of {}",
@@ -56,48 +59,36 @@ pub fn view_statusbar<'a>(
         .size(11)
         .color(theme.accent());
 
-    let health_btn = button(
-        row![
-            text("🩺").size(10),
-            text("Health").size(11).color(theme.text_secondary()),
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center),
-    )
-    .padding([2, 6])
-    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-    .on_press(Message::OpenPresentationHealthModal);
+    let health_btn = button(text("Health").size(11).color(theme.text_secondary()))
+        .padding([2, 6])
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .on_press(Message::OpenPresentationHealthModal);
 
-    let left_info = row![
-        slide_info,
+    let divider_widget = || {
         container(
             Space::new()
                 .width(Length::Fixed(1.0))
-                .height(Length::Fixed(10.0))
+                .height(Length::Fixed(10.0)),
         )
         .style(move |_| {
             container::Style {
                 background: Some(Background::Color(theme.border_color())),
                 ..container::Style::default()
             }
-        }),
-        stats_info,
-        container(
-            Space::new()
-                .width(Length::Fixed(1.0))
-                .height(Length::Fixed(10.0))
-        )
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.border_color())),
-                ..container::Style::default()
-            }
-        }),
-        pacing_info,
-        health_btn,
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center);
+        })
+    };
+
+    let mut left_info = row![slide_info].spacing(8).align_y(Alignment::Center);
+
+    if !is_tiny {
+        left_info = left_info.push(divider_widget());
+        left_info = left_info.push(stats_info);
+    }
+    if !is_narrow {
+        left_info = left_info.push(divider_widget());
+        left_info = left_info.push(pacing_info);
+    }
+    left_info = left_info.push(health_btn);
 
     // Center: Compiler Diagnostic status indicator
     let compiler_indicator: Element<'a, Message> = match status {
@@ -175,9 +166,27 @@ pub fn view_statusbar<'a>(
 
     // Right: Zoom controls and Format & Mode info
     let mode_str = match mode {
-        | EditorMode::LivePreview => "Live Preview",
-        | EditorMode::FocusMode => "Focus Mode",
-        | EditorMode::SourceMode => "Source Code",
+        | EditorMode::LivePreview => {
+            if is_narrow {
+                "Live"
+            } else {
+                "Live Preview"
+            }
+        },
+        | EditorMode::FocusMode => {
+            if is_narrow {
+                "Focus"
+            } else {
+                "Focus Mode"
+            }
+        },
+        | EditorMode::SourceMode => {
+            if is_narrow {
+                "Src"
+            } else {
+                "Source Code"
+            }
+        },
     };
 
     let mode_badge = container(text(mode_str).size(10).color(theme.text_secondary()))
@@ -228,7 +237,7 @@ pub fn view_statusbar<'a>(
         .spacing(4)
         .align_y(Alignment::Center);
 
-    let divider = || {
+    let right_divider = || {
         container(
             Space::new()
                 .width(Length::Fixed(1.0))
@@ -242,15 +251,17 @@ pub fn view_statusbar<'a>(
         })
     };
 
-    let right_info = row![
-        mode_badge,
-        divider(),
-        format_badge,
-        divider(),
-        zoom_controls
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center);
+    let mut right_info = row![].spacing(8).align_y(Alignment::Center);
+
+    if !is_tiny {
+        right_info = right_info.push(mode_badge);
+    }
+    if !is_narrow {
+        right_info = right_info.push(right_divider());
+        right_info = right_info.push(format_badge);
+    }
+    right_info = right_info.push(right_divider());
+    right_info = right_info.push(zoom_controls);
 
     let main_row = row![
         left_info,
@@ -260,7 +271,7 @@ pub fn view_statusbar<'a>(
         right_info
     ]
     .align_y(Alignment::Center)
-    .padding([5, 16]);
+    .padding([5, if is_narrow { 8 } else { 16 }]);
 
     container(main_row)
         .width(Length::Fill)

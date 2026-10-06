@@ -109,6 +109,22 @@
   body
 }
 
+/// Centered slide layout
+#let centered-slide(title: none, body) = {
+  slide(title: title)[
+    #set align(center + horizon)
+    #body
+  ]
+}
+
+/// Focus slide layout
+#let focus-slide(body) = {
+  slide(title: none)[
+    #set align(center + horizon)
+    #body
+  ]
+}
+
 /// In-slide step build / fragment reveal macro
 #let step(order, effect: "fade-in", body) = {
   link("step:" + str(order) + "?effect=" + effect)[#body]
@@ -163,7 +179,7 @@
                     fill: rgb(255, 255, 255, 10%),
                     radius: 3pt,
                     inset: (x: 6pt, y: 2pt),
-                    text(size: 8pt, fill: slide-colors.secondary)[⏱ #duration]
+                    text(size: 8pt, fill: slide-colors.secondary)[#duration]
                   )
                 ]
               ]
@@ -257,7 +273,7 @@
                     fill: rgb(255, 255, 255, 10%),
                     radius: 3pt,
                     inset: (x: 6pt, y: 2pt),
-                    text(size: 8.5pt, fill: slide-colors.secondary)[⏱ #duration]
+                    text(size: 8.5pt, fill: slide-colors.secondary)[#duration]
                   )
                 }
               )
@@ -335,14 +351,14 @@
                 fill: rgb(57, 211, 83, 15%),
                 radius: 3pt,
                 inset: (x: 5pt, y: 2pt),
-                text(size: 8.5pt, weight: "bold", fill: slide-colors.accent-cyan)[🔊 #vol-pct]
+                text(size: 8.5pt, weight: "bold", fill: slide-colors.accent-cyan)[Vol #vol-pct]
               ),
               if loop [
                 #box(
                   fill: rgb(255, 255, 255, 10%),
                   radius: 3pt,
                   inset: (x: 5pt, y: 2pt),
-                  text(size: 8.5pt, fill: slide-colors.secondary)[🔁 Loop]
+                  text(size: 8.5pt, fill: slide-colors.secondary)[Loop]
                 )
               ]
             )
@@ -624,6 +640,65 @@
   ]
 }
 
+#let _parse_chart_call_args(args, default-type) = {
+  let named = args.named()
+  let pos = args.pos()
+  let c-type = named.at("type", default: default-type)
+  let title = named.at("title", default: none)
+  let height = named.at("height", default: 120pt)
+  let source = named.at("source", default: none)
+  let sql = named.at("sql", default: none)
+  let dsl = named.at("dsl", default: none)
+  let format = named.at("format", default: none)
+  let unit = named.at("unit", default: none)
+  let prefix = named.at("prefix", default: none)
+  let precision = named.at("precision", default: none)
+  let data = named.at("data", default: none)
+
+  if data == none and source == none and sql == none and pos.len() > 0 {
+    let cats = ()
+    let vals = ()
+    for item in pos {
+      if type(item) == array and item.len() >= 2 {
+        cats.push(str(item.at(0)))
+        vals.push(float(item.at(1)))
+      }
+    }
+    if cats.len() > 0 {
+      data = (
+        categories: cats,
+        series: ((name: if title != none { title } else { "Value" }, values: vals),)
+      )
+    }
+  }
+
+  chart(
+    type: c-type,
+    title: title,
+    height: height,
+    source: source,
+    sql: sql,
+    dsl: dsl,
+    format: format,
+    unit: unit,
+    prefix: prefix,
+    precision: precision,
+    data: data,
+  )
+}
+
+/// Bar chart macro alias
+#let chart-bar(..args) = _parse_chart_call_args(args, "bar")
+
+/// Line chart macro alias
+#let chart-line(..args) = _parse_chart_call_args(args, "line")
+
+/// Pie chart macro alias
+#let chart-pie(..args) = _parse_chart_call_args(args, "pie")
+
+/// Plot / Line chart alias
+#let plot(..args) = _parse_chart_call_args(args, "line")
+
 /// Multi-column layout helper (supports 2, 3, 4 or more columns)
 #let cols(..args) = {
   let named = args.named()
@@ -656,6 +731,9 @@
   )
 }
 
+/// Pill badge alias
+#let pill(label, fill: rgb("1f6feb"), text-color: rgb("ffffff")) = badge(label, fill: fill, text-color: text-color)
+
 /// Callout box
 #let callout(title: none, body, stroke-color: rgb("58a6ff")) = {
   rect(
@@ -674,6 +752,18 @@
     ]
   )
 }
+
+/// Tip callout alias
+#let tip(title: "Tip", body) = callout(title: title, body, stroke-color: slide-colors.accent-cyan)
+
+/// Info callout alias
+#let info(title: "Info", body) = callout(title: title, body, stroke-color: slide-colors.accent)
+
+/// Warning callout alias
+#let warning(title: "Warning", body) = callout(title: title, body, stroke-color: slide-colors.accent-orange)
+
+/// Alert callout alias
+#let alert(title: "Alert", body) = callout(title: title, body, stroke-color: slide-colors.accent-red)
 
 /// Modern code editor window mockup with traffic lights
 #let code-window(title: "main.rs", body) = {
@@ -733,3 +823,8 @@
     ]
   )
 }
+
+/// Presenter speaker notes (invisible in compiled slide canvas, extracted for presenter tools)
+#let speaker-note(..body) = none
+#let speaker_note(..body) = none
+#let note(..body) = none

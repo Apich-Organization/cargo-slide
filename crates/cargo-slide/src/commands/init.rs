@@ -27,7 +27,7 @@ pub fn execute(
     log_event(
         "info",
         &format!(
-            "✨ Initializing cargo-slide presentation workspace ({template} template) in: {}",
+            "[INIT] Initializing cargo-slide presentation workspace ({template} template) in: {}",
             project_dir.display()
         ),
         Some(serde_json::json!({
@@ -148,7 +148,7 @@ impl SlideAnimation for CustomSpiralAnimation {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Running presentation with custom Rust animations...");
+    println!("[RUN] Running presentation with custom Rust animations...");
     SlideApp::new("slides.typ")
         .default_animation("spiral")
         .register_animation(CustomSpiralAnimation)
@@ -175,13 +175,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     log_event(
         "success",
         &format!(
-            "🎉 Presentation workspace initialized successfully in {}!\n\n\
+            "[OK] Presentation workspace initialized successfully in {}!\n\n\
              Workspace Files:\n  \
-             📄 slides.typ      - Main presentation deck (Pure Typst, no Rust required!)\n  \
-             🎨 theme.typ       - Visual theme & styling configuration\n  \
-             📦 slide.typ       - Component & layout macros (#slide, #step, #chart, #video, #callout)\n  \
-             📊 assets/data.csv - Starter dataset for interactive charts\n  \
-             🛡️  .gitignore      - Build output exclusions\n\n\
+             - slides.typ      - Main presentation deck (Pure Typst, no Rust required!)\n  \
+             - theme.typ       - Visual theme & styling configuration\n  \
+             - slide.typ       - Component & layout macros (#slide, #step, #chart, #video, #callout)\n  \
+             - assets/data.csv - Starter dataset for interactive charts\n  \
+             - .gitignore      - Build output exclusions\n\n\
              Quick Commands:\n  \
              cargo slide run    - Run interactive presentation player (60 FPS)\n  \
              cargo slide dev    - Run with live hot-reloading on file edit\n  \
@@ -332,15 +332,15 @@ fn get_template_slides(template: &str) -> &'static str {
 
   #cols(
     [
-      === ⚡ 60 FPS Native
+      === 60 FPS Native
       Zero-latency rendering powered by Rust and Tiny-Skia.
     ],
     [
-      === 📝 Typst Syntax
+      === Typst Syntax
       Clean, declarative syntax with full math and macro support.
     ],
     [
-      === 📦 One-Click Share
+      === One-Click Share
       Self-contained `.slide` bundles with embedded media.
     ]
   )

@@ -130,55 +130,126 @@ pub fn view_slide_canvas<'a>(
             None
         };
 
+        let is_compact_header = card_width < 640.0;
+
         let has_trans = slide.transition.is_some();
         let trans_text = match slide.transition.as_deref() {
-            | Some(t) if !t.is_empty() => format!("Transition: {t}"),
-            | _ => "Transition: Cut".to_string(),
+            | Some(t) if !t.is_empty() => {
+                if is_compact_header {
+                    t.to_string()
+                } else {
+                    format!("Trans: {t}")
+                }
+            },
+            | _ => {
+                if is_compact_header {
+                    "Cut".to_string()
+                } else {
+                    "Trans: Cut".to_string()
+                }
+            },
         };
-        let trans_btn = button(text(trans_text).size(11).color(if has_trans {
+        let trans_btn = button(text(trans_text).size(10).color(if has_trans {
             theme.accent()
         } else {
             theme.text_secondary()
         }))
         .style(move |_t, _s| theme::subtle_button_style(theme, has_trans))
-        .padding([3, 8])
+        .padding(if is_compact_header {
+            [2, 4]
+        } else {
+            [2, 6]
+        })
         .on_press(Message::OpenTransitionModal(idx));
 
         let is_vector_mode = slide_view_vector.contains(&idx);
-        let view_toggle_btn = button(
-            text(if is_vector_mode {
-                "Flow Edit"
+        let view_toggle_label = if is_compact_header {
+            if is_vector_mode {
+                "Flow"
             } else {
-                "Vector View"
+                "Vec"
+            }
+        } else if is_vector_mode {
+            "Flow"
+        } else {
+            "Vector"
+        };
+        let view_toggle_btn = button(text(view_toggle_label).size(10))
+            .style(move |_t, _s| theme::subtle_button_style(theme, is_vector_mode))
+            .padding(if is_compact_header {
+                [2, 4]
+            } else {
+                [2, 6]
             })
-            .size(11),
-        )
-        .style(move |_t, _s| theme::subtle_button_style(theme, is_vector_mode))
-        .padding([3, 8])
-        .on_press(Message::ToggleSlideViewMode(idx));
+            .on_press(Message::ToggleSlideViewMode(idx));
 
-        let delete_btn = button(text("Delete").size(11))
+        let note_label = if is_compact_header {
+            "Note"
+        } else {
+            "+ Note"
+        };
+        let add_note_btn = button(text(note_label).size(10))
+            .style(move |_t, _s| theme::subtle_button_style(theme, false))
+            .padding(if is_compact_header {
+                [2, 4]
+            } else {
+                [2, 5]
+            })
+            .on_press(Message::InsertBlockAfter {
+                offset: engine.get_slide_content_insert_offset(idx),
+                kind: InsertBlockKind::SpeakerNote,
+            });
+
+        let comment_label = if is_compact_header {
+            "Comment"
+        } else {
+            "+ Comment"
+        };
+        let add_comment_btn = button(text(comment_label).size(10))
+            .style(move |_t, _s| theme::subtle_button_style(theme, false))
+            .padding(if is_compact_header {
+                [2, 4]
+            } else {
+                [2, 5]
+            })
+            .on_press(Message::InsertBlockAfter {
+                offset: engine.get_slide_content_insert_offset(idx),
+                kind: InsertBlockKind::Comment,
+            });
+
+        let del_label = if is_compact_header {
+            "✕"
+        } else {
+            "Delete"
+        };
+        let delete_btn = button(text(del_label).size(10))
             .style(move |_t, _s| theme::danger_button_style(theme))
-            .padding([3, 8])
+            .padding(if is_compact_header {
+                [2, 4]
+            } else {
+                [2, 5]
+            })
             .on_press(Message::DeleteSlide(idx));
 
-        let mut header_items = row![
-            page_badge,
-            Space::new().width(Length::Fixed(8.0)),
-            title_input,
-            trans_btn,
-            view_toggle_btn,
-            Space::new().width(Length::Fixed(6.0)),
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .width(Length::Fill);
+        let mut right_actions = row![add_note_btn, add_comment_btn, trans_btn, view_toggle_btn,]
+            .spacing(if is_compact_header { 2 } else { 3 })
+            .align_y(Alignment::Center);
 
         if let Some(badge) = directive_badge {
-            header_items = header_items.push(badge);
+            right_actions = right_actions.push(badge);
         }
+        right_actions = right_actions.push(delete_btn);
 
-        header_items = header_items.push(delete_btn);
+        let header_items = row![
+            page_badge,
+            Space::new().width(Length::Fixed(4.0)),
+            title_input,
+            Space::new().width(Length::Fixed(4.0)),
+            right_actions,
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .width(Length::Fill);
 
         let slide_header = mouse_area(container(header_items).padding([4, 6]).width(Length::Fill))
             .on_press(Message::SelectSlide(idx));
@@ -545,8 +616,9 @@ pub fn view_slide_canvas<'a>(
             card_content = card_content.push(slide_ed);
         }
 
+        let card_container_width = (card_width + 24.0).max(460.0);
         let slide_card = container(card_content)
-            .width(Length::Fixed(card_width + 24.0))
+            .width(Length::Fixed(card_container_width))
             .style(move |_| theme::slide_card_style(theme, is_slide_active))
             .padding(10);
 

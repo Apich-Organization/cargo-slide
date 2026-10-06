@@ -129,6 +129,7 @@ pub enum ActiveModal {
     },
     SlideContextMenu {
         slide_idx: usize,
+        position: Option<iced::Point>,
     },
     BlockContextMenu {
         slide_idx: usize,
@@ -136,6 +137,7 @@ pub enum ActiveModal {
         range: Range<usize>,
         block_label: String,
         block_id: String,
+        position: Option<iced::Point>,
     },
     FontSelector {
         search_query: String,
@@ -151,7 +153,10 @@ pub enum ActiveModal {
         footer_right_custom: String,
     },
     TemplateLibrary,
-    PresentationHealth(Vec<slide_core::compiler::PresentationHealthIssue>),
+    PresentationHealth(
+        Vec<slide_core::compiler::PresentationHealthIssue>,
+        slide_core::pacing::DeckPacingReport,
+    ),
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -226,6 +231,8 @@ pub struct SlideEditorApp {
     pub undo_stack: Vec<DocumentSnapshot>,
     pub redo_stack: Vec<DocumentSnapshot>,
     pub recent_files: Vec<String>,
+    pub window_size: iced::Size,
+    pub last_cursor_pos: Option<iced::Point>,
 }
 
 /// Undo / Redo history snapshot
@@ -279,7 +286,14 @@ pub fn load_recent_editor_files() -> Vec<String> {
 
 pub fn save_recent_editor_file(file_path: &Path) {
     let mut recents = load_recent_editor_files();
-    let s = file_path.to_string_lossy().to_string();
+    let canonical = file_path.canonicalize().unwrap_or_else(|_| {
+        if file_path.is_absolute() {
+            file_path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(file_path)
+        }
+    });
+    let s = canonical.to_string_lossy().to_string();
     recents.retain(|p| p != &s);
     recents.insert(0, s);
     if recents.len() > 10 {
@@ -336,6 +350,7 @@ pub enum Message {
         y: f32,
     },
     GlobalCursorMoved(iced::Point),
+    WindowResized(iced::Size),
     GlobalButtonReleased,
     EndDragBlock,
     EndBlockInteraction {
@@ -717,6 +732,8 @@ impl SlideEditorApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             recent_files: load_recent_editor_files(),
+            window_size: iced::Size::new(1280.0, 720.0),
+            last_cursor_pos: None,
         };
         if let Some(ref p) = initial_file {
             save_recent_editor_file(p);
@@ -1600,6 +1617,7 @@ impl SlideEditorApp {
                 self.trigger_recompile();
             },
             | Message::ToggleBlockRawCode(id) => {
+                self.active_modal = None;
                 if self.raw_code_blocks.contains(&id) {
                     self.raw_code_blocks.remove(&id);
                 } else {
@@ -1669,6 +1687,7 @@ impl SlideEditorApp {
             | Message::DeleteBlockAtRange(range) => {
                 self.active_block_id = None;
                 self.active_block_range = None;
+                self.active_modal = None;
                 if range.start <= range.end && range.end <= self.engine.source_text.len() {
                     self.engine.source_text.drain(range);
                     self.engine.reparse();
@@ -1710,11 +1729,15 @@ impl SlideEditorApp {
                 return self.handle_drag_move(slide_idx, block_idx, y);
             },
             | Message::GlobalCursorMoved(position) => {
+                self.last_cursor_pos = Some(position);
                 if let Some((slide_idx, block_idx, _, _)) = self.dragging_block {
                     return self.handle_drag_move(slide_idx, block_idx, position.y);
                 } else if let Some((slide_idx, block_idx, _)) = self.dragging_spacing {
                     return self.handle_spacing_drag(slide_idx, block_idx, position.y);
                 }
+            },
+            | Message::WindowResized(size) => {
+                self.window_size = size;
             },
             | Message::EndDragBlock => {
                 self.dragging_block = None;
@@ -2088,7 +2111,8 @@ impl SlideEditorApp {
                     &self.doc.source_text,
                     self.doc.assets_dir.as_deref(),
                 );
-                self.active_modal = Some(ActiveModal::PresentationHealth(issues));
+                let pacing_report = deck.pacing_report(&self.doc.slide_chunks);
+                self.active_modal = Some(ActiveModal::PresentationHealth(issues, pacing_report));
             },
             | Message::ApplyQuickFix(qf) => {
                 self.push_undo_snapshot();
@@ -2108,15 +2132,45 @@ impl SlideEditorApp {
             },
             | Message::OpenRecentFile(path_str) => {
                 let p = PathBuf::from(&path_str);
-                if let Ok(new_doc) = EditorDocument::open(&p) {
-                    self.push_undo_snapshot();
-                    self.doc = new_doc;
-                    save_recent_editor_file(&p);
-                    self.recent_files = load_recent_editor_files();
-                    self.active_slide = 0;
-                    self.active_modal = None;
-                    self.sync_editors_from_doc();
-                    self.trigger_recompile();
+                let resolved = if p.is_absolute() {
+                    p.clone()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(&p)
+                };
+                self.commit_active_block();
+                match EditorDocument::open(&resolved) {
+                    | Ok(new_doc) => {
+                        self.push_undo_snapshot();
+                        save_recent_editor_file(&resolved);
+                        self.recent_files = load_recent_editor_files();
+                        self.doc = new_doc;
+                        self.engine =
+                            TypstDocumentEngine::from_source(self.doc.source_text.clone());
+                        self.active_slide = 0;
+                        self.active_block_id = None;
+                        self.active_block_range = None;
+                        self.in_place_editing_slide = None;
+                        self.active_modal = None;
+                        self.slide_images.clear();
+                        self.equation_images.clear();
+                        self.code_images.clear();
+                        self.sync_editors_from_doc();
+                        let has_editable_source = self.doc.has_editable_source()
+                            || !self.doc.source_text.trim().is_empty();
+                        if self.doc.format == DocumentFormat::SlidePackage && !has_editable_source {
+                            self.compilation_status = CompilationStatus::Ready;
+                            self.slide_view_vector = (0..self.doc.total_slides()).collect();
+                            self.update_slide_cache();
+                        } else {
+                            self.slide_view_vector.clear();
+                            task = self.trigger_recompile_task();
+                        }
+                    },
+                    | Err(e) => {
+                        self.open_error = Some(format!(
+                            "Failed to open recent presentation '{path_str}': {e}"
+                        ));
+                    },
                 }
             },
             | Message::ToggleSidebarViewMode => {
@@ -2126,7 +2180,10 @@ impl SlideEditorApp {
                 };
             },
             | Message::OpenSlideContextMenu(slide_idx) => {
-                self.active_modal = Some(ActiveModal::SlideContextMenu { slide_idx });
+                self.active_modal = Some(ActiveModal::SlideContextMenu {
+                    slide_idx,
+                    position: self.last_cursor_pos,
+                });
             },
             | Message::OpenBlockContextMenu {
                 slide_idx,
@@ -2141,6 +2198,7 @@ impl SlideEditorApp {
                     range,
                     block_label,
                     block_id,
+                    position: self.last_cursor_pos,
                 });
             },
             | Message::OpenMoveBlockModal {
@@ -2543,6 +2601,7 @@ impl SlideEditorApp {
                 if self.active_slide >= self.doc.total_slides() {
                     self.active_slide = self.doc.total_slides().saturating_sub(1);
                 }
+                self.active_modal = None;
                 self.sync_editors_from_doc();
                 self.trigger_recompile();
             },
@@ -3976,18 +4035,16 @@ impl SlideEditorApp {
         Task::none()
     }
 
-    /// Global application subscription for smooth mouse drag gestures
+    /// Global application subscription for events and drag gestures
     pub fn subscription(&self) -> Subscription<Message> {
-        if self.dragging_block.is_some() || self.dragging_spacing.is_some() {
-            iced::event::listen_with(handle_global_drag_event)
-        } else {
-            Subscription::none()
-        }
+        iced::event::listen_with(handle_global_drag_event)
     }
 
     /// Render application UI
     #[must_use]
     pub fn view(&self) -> Element<'_, Message> {
+        let win_w = self.window_size.width;
+
         let toolbar = view_toolbar(
             self.theme,
             &self.doc.title,
@@ -3997,9 +4054,10 @@ impl SlideEditorApp {
             self.sidebar_visible,
             !self.undo_stack.is_empty(),
             !self.redo_stack.is_empty(),
+            win_w,
         );
 
-        let formatting_bar = view_formatting_bar(self.theme, self.active_slide);
+        let formatting_bar = view_formatting_bar(self.theme, self.active_slide, win_w);
 
         let main_view: Element<'_, Message> = match self.mode {
             | EditorMode::LivePreview => {
@@ -4063,6 +4121,7 @@ impl SlideEditorApp {
                 &self.slide_images,
                 self.active_slide,
                 self.sidebar_view_mode,
+                win_w,
             );
             row![sidebar, main_view]
                 .width(Length::Fill)
@@ -4111,6 +4170,7 @@ impl SlideEditorApp {
             chars,
             words,
             self.zoom_percent,
+            win_w,
         );
 
         let base_content = column![toolbar, formatting_bar, center_content, statusbar]
@@ -4198,11 +4258,13 @@ impl SlideEditorApp {
                         self.doc.total_slides(),
                     )
                 },
-                | ActiveModal::SlideContextMenu { slide_idx } => {
+                | ActiveModal::SlideContextMenu { slide_idx, position } => {
                     crate::ui::modals::view_slide_context_menu_modal(
                         self.theme,
                         *slide_idx,
                         self.doc.total_slides(),
+                        *position,
+                        self.window_size,
                     )
                 },
                 | ActiveModal::BlockContextMenu {
@@ -4211,6 +4273,7 @@ impl SlideEditorApp {
                     range,
                     block_label,
                     block_id,
+                    position,
                 } => {
                     crate::ui::modals::view_block_context_menu_modal(
                         self.theme,
@@ -4219,6 +4282,8 @@ impl SlideEditorApp {
                         range.clone(),
                         block_label,
                         block_id,
+                        *position,
+                        self.window_size,
                     )
                 },
                 | ActiveModal::FontSelector {
@@ -4252,13 +4317,8 @@ impl SlideEditorApp {
                     )
                 },
                 | ActiveModal::TemplateLibrary => view_template_library_modal(self.theme),
-                | ActiveModal::PresentationHealth(issues) => {
-                    view_presentation_health_modal(
-                        self.theme,
-                        issues,
-                        self.cached_word_count,
-                        self.doc.total_slides(),
-                    )
+                | ActiveModal::PresentationHealth(issues, pacing) => {
+                    view_presentation_health_modal(self.theme, issues, pacing)
                 },
             };
 
@@ -4277,6 +4337,9 @@ fn handle_global_drag_event(
     _window: iced::window::Id,
 ) -> Option<Message> {
     match event {
+        | iced::Event::Window(iced::window::Event::Resized(size)) => {
+            Some(Message::WindowResized(size))
+        },
         | iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             Some(Message::GlobalCursorMoved(position))
         },

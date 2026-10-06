@@ -31,3 +31,4 @@ tar.workspace = true
 xz2.workspace = true
 lzma-rs.workspace = true
 slide-theme.workspace = true
+chrono.workspace = true

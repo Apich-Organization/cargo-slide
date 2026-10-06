@@ -556,7 +556,7 @@ fn test_geek_in_place_editing_flow() {
     let _ = app.update(Message::DeactivateBlock);
     assert!(app.active_block_id.is_none());
 
-    // 4. Test "✏️ Edit Slide" on Slide 2
+    // 4. Test "Edit Slide" on Slide 2
     let _ = app.update(Message::ToggleInPlaceEdit(1));
     assert_eq!(app.in_place_editing_slide, Some(1));
     let slide2_source = app.in_place_content.text();
@@ -1370,13 +1370,30 @@ fn test_complex_elements_argument_parsers() {
     let box_body = parse_box_data(box_args);
     assert_eq!(box_body, "Inner box content");
 
-    // Chart parsing
+    // Chart parsing (tuple format)
     let chart_args = "(title: \"Q1 Results\", (\"Alpha\", 25), (\"Beta\", 75))";
     let chart = parse_chart_data(chart_args);
     assert_eq!(chart.title, "Q1 Results");
     assert_eq!(chart.items.len(), 2);
     assert_eq!(chart.items[0], ("Alpha", 25.0));
     assert_eq!(chart.items[1], ("Beta", 75.0));
+
+    // Standard data dictionary chart parsing
+    let std_chart_args = "(title: \"Metrics\", data: (categories: (\"Speed\", \"Safety\", \"Simplicity\"), series: ((name: \"Score\", values: (85, 95, 80)),)))";
+    let std_chart = parse_chart_data(std_chart_args);
+    assert_eq!(std_chart.title, "Metrics");
+    assert_eq!(std_chart.items.len(), 3);
+    assert_eq!(std_chart.items[0], ("Speed", 85.0));
+    assert_eq!(std_chart.items[1], ("Safety", 95.0));
+    assert_eq!(std_chart.items[2], ("Simplicity", 80.0));
+
+    // Single item standard chart parsing
+    let single_chart_args =
+        "(title: \"Single\", data: (categories: (\"Only\",), series: ((values: (42,)),)))";
+    let single_chart = parse_chart_data(single_chart_args);
+    assert_eq!(single_chart.title, "Single");
+    assert_eq!(single_chart.items.len(), 1);
+    assert_eq!(single_chart.items[0], ("Only", 42.0));
 }
 
 #[test]
@@ -3696,6 +3713,117 @@ fn test_typst_compiler_bridge_variadic_cols_compilation() {
 }
 
 #[test]
+fn test_typst_compiler_bridge_chart_and_callout_macros_compilation() {
+    let compiler = slide_core::compiler::SlideCompiler::new().expect("SlideCompiler");
+    let tmp_dir = std::env::temp_dir().join("cargo_slide_chart_macros_test");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let typ_file = tmp_dir.join("test_chart_macros.typ");
+    std::fs::write(tmp_dir.join("slide.typ"), slide_theme::SLIDE_MACROS).expect("write slide.typ");
+
+    let typst_source = r#"
+#import "slide.typ": *
+
+#title-slide(
+  title: "Chart & Callout Compatibility Test",
+  author: "Test Suite",
+)
+
+#slide(title: "Bar & Line Macros")[
+  #cols(
+    [
+      #chart-bar(
+        title: "Metrics",
+        height: 80pt,
+        ("Speed", 85),
+        ("Safety", 95),
+      )
+    ],
+    [
+      #chart-line(
+        title: "Trend",
+        height: 80pt,
+        ("Jan", 10),
+        ("Feb", 25),
+      )
+    ]
+  )
+]
+
+#slide(title: "Pie & Plot Macros")[
+  #cols(
+    [
+      #chart-pie(
+        title: "Distribution",
+        height: 80pt,
+        ("Compute", 60),
+        ("Storage", 40),
+      )
+    ],
+    [
+      #plot(
+        title: "Plot",
+        height: 80pt,
+        ("P1", 100),
+      )
+    ]
+  )
+]
+
+#slide(title: "Standard Chart")[
+  #chart(
+    type: "bar",
+    title: "Standard Chart",
+    height: 100pt,
+    data: (
+      categories: ("Alpha", "Beta"),
+      series: ((name: "Metric", values: (50, 75)),),
+    ),
+  )
+]
+
+#slide(title: "Tip and Warning Callouts")[
+  #cols(
+    [#tip[Helpful hint text]],
+    [#warning[Warning notice]]
+  )
+]
+
+#slide(title: "Info, Alert, Pill, and Notes")[
+  #cols(
+    [#info[Informational note]],
+    [#alert[Urgent alert message]]
+  )
+  #v(0.2cm)
+  #pill("Status")
+  #speaker-note[Speaker note body]
+  #speaker_note[Alternative speaker note body]
+]
+
+#centered-slide(title: "Centered Slide")[
+  Centered content body.
+]
+
+#focus-slide[
+  Focus content body.
+]
+"#;
+    std::fs::write(&typ_file, typst_source).expect("write test_chart_macros.typ");
+
+    let res = compiler.compile_file(&typ_file);
+    assert!(
+        res.is_ok(),
+        "All chart, callout, and slide macro aliases must compile cleanly with SlideCompiler: {:?}",
+        res.err()
+    );
+    let doc = res.unwrap();
+    assert_eq!(
+        doc.slides.len(),
+        8,
+        "Must compile all 8 slides cleanly without overflow"
+    );
+}
+
+#[test]
 fn test_callout_with_nested_code_fences_and_brackets() {
     use slide_editor::app::ActiveModal;
     use slide_editor::app::Message;
@@ -4553,4 +4681,267 @@ fn test_compiler_bridge_theme_typ_upgrade() {
         upgraded.contains("footer: none"),
         "theme.typ should be upgraded to support footer parameter"
     );
+}
+
+#[test]
+fn test_speaker_note_and_comment_distinction_and_insertion() {
+    use slide_editor::model::ast_engine::WysiwygBlock;
+    use slide_editor::ui::wysiwyg::block_view::InsertBlockKind;
+
+    // 1. Verify template separation
+    let note_template = InsertBlockKind::SpeakerNote.template();
+    let comment_template = InsertBlockKind::Comment.template();
+    assert!(
+        note_template.contains("#speaker-note"),
+        "Speaker note template should use #speaker-note"
+    );
+    assert!(
+        comment_template.contains("// Comment:"),
+        "Comment template should use // Comment: to avoid note prefix collision"
+    );
+    assert!(
+        !comment_template.contains("// Note:"),
+        "Comment template MUST NOT start with // Note: which causes speaker note classification"
+    );
+
+    // 2. Parse a slide containing both a comment and a speaker note
+    let source = r#"#slide(title: "Distinct Cues")[
+  = Main Slide
+  // Comment: This is an internal presentation comment
+  Content paragraph here.
+  #speaker-note[
+    These are the verbal cues for the speaker.
+  ]
+]"#;
+    let engine = TypstDocumentEngine::from_source(source.to_string());
+    assert_eq!(engine.slides.len(), 1);
+    let slide = &engine.slides[0];
+
+    let has_comment = slide.blocks.iter().any(|b| {
+        if let WysiwygBlock::Comment { content, .. } = b {
+            content.contains("internal presentation comment")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_comment,
+        "Comment must be parsed as WysiwygBlock::Comment"
+    );
+
+    let has_note = slide.blocks.iter().any(|b| {
+        if let WysiwygBlock::SpeakerNote { content, .. } = b {
+            content.contains("verbal cues for the speaker")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_note,
+        "Speaker note must be parsed as WysiwygBlock::SpeakerNote"
+    );
+
+    // Ensure they have distinct chips
+    for b in &slide.blocks {
+        match b {
+            | WysiwygBlock::SpeakerNote { .. } => {
+                let (badge, _) = b.chip_info();
+                assert_eq!(badge, "Note");
+            },
+            | WysiwygBlock::Comment { .. } => {
+                let (badge, _) = b.chip_info();
+                assert_eq!(badge, "Comment");
+            },
+            | _ => {},
+        }
+    }
+}
+
+#[test]
+fn test_comment_and_speaker_note_visualization_and_root_insertion() {
+    use slide_editor::model::ast_engine::TypstDocumentEngine;
+    use slide_editor::model::ast_engine::WysiwygBlock;
+    use slide_editor::ui::wysiwyg::block_view::InsertBlockKind;
+    let example_path = std::path::PathBuf::from("../../examples/geek-presentation/slides.typ");
+    let content = std::fs::read_to_string(&example_path).expect("read slides.typ");
+    let mut engine = TypstDocumentEngine::from_source(content);
+
+    // 1. Verify that preamble/root-level comment before Slide 1 is preserved and recognized
+    let slide0 = &engine.slides[0];
+    let has_preamble_comment = slide0.blocks.iter().any(|b| {
+        if let WysiwygBlock::Comment { content, .. } = b {
+            content.contains("Title Slide with Autoplay")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_preamble_comment,
+        "Preamble comment must be parsed into Slide 1"
+    );
+
+    // 2. Insert a comment into Slide 0 (Title Slide)
+    let offset_0 = engine.get_slide_content_insert_offset(0);
+    engine.insert_block_after(offset_0, InsertBlockKind::Comment.template());
+    let slide0_after = &engine.slides[0];
+    let has_inserted_comment_0 = slide0_after.blocks.iter().any(|b| {
+        if let WysiwygBlock::Comment { content, .. } = b {
+            content.contains("presentation memo or draft remark")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_inserted_comment_0,
+        "Comment inserted on Title Slide must be parsed and visualized"
+    );
+
+    // 3. Insert a comment into Slide 1 (Macro Slide)
+    let offset_1 = engine.get_slide_content_insert_offset(1);
+    engine.insert_block_after(offset_1, InsertBlockKind::Comment.template());
+    let slide1_after = &engine.slides[1];
+    let has_inserted_comment_1 = slide1_after.blocks.iter().any(|b| {
+        if let WysiwygBlock::Comment { content, .. } = b {
+            content.contains("presentation memo or draft remark")
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_inserted_comment_1,
+        "Comment inserted on Macro Slide must be parsed and visualized"
+    );
+
+    // 4. Verify clean content extraction (prefixes like 'Comment:' stripped from display content)
+    for b in &slide1_after.blocks {
+        if let WysiwygBlock::Comment { content, .. } = b {
+            if content.contains("presentation memo or draft remark") {
+                assert!(
+                    !content.starts_with("Comment:"),
+                    "Comment display content must not redundantly include 'Comment:' prefix"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_floating_context_menus_and_cursor_tracking() {
+    let mut app = SlideEditorApp::new(None, false);
+
+    // 1. Cursor position and window size tracking
+    let cursor_pt = iced::Point::new(320.0, 210.0);
+    let _ = app.update(Message::GlobalCursorMoved(cursor_pt));
+    assert_eq!(app.last_cursor_pos, Some(cursor_pt));
+
+    let new_size = iced::Size::new(1600.0, 900.0);
+    let _ = app.update(Message::WindowResized(new_size));
+    assert_eq!(app.window_size, new_size);
+
+    // 2. Open Slide Context Menu - captures last cursor position
+    let _ = app.update(Message::OpenSlideContextMenu(0));
+    match app.active_modal.as_ref() {
+        | Some(ActiveModal::SlideContextMenu { slide_idx, position }) => {
+            assert_eq!(*slide_idx, 0);
+            assert_eq!(*position, Some(cursor_pt));
+        },
+        | _ => panic!("Expected SlideContextMenu active modal"),
+    }
+
+    // View rendering must execute smoothly without errors
+    let _ = app.view();
+
+    // Close modal via Escape / backdrop click
+    let _ = app.update(Message::CloseModal);
+    assert!(app.active_modal.is_none());
+
+    // 3. Open Block Context Menu - captures position and verifies dismissal on actions
+    let _ = app.update(Message::OpenBlockContextMenu {
+        slide_idx: 0,
+        block_idx: 0,
+        range: 0..5,
+        block_label: "Heading".to_string(),
+        block_id: "blk-test-1".to_string(),
+    });
+
+    match app.active_modal.as_ref() {
+        | Some(ActiveModal::BlockContextMenu {
+            slide_idx,
+            block_idx,
+            range,
+            block_label,
+            position,
+            ..
+        }) => {
+            assert_eq!(*slide_idx, 0);
+            assert_eq!(*block_idx, 0);
+            assert_eq!(*range, 0..5);
+            assert_eq!(block_label, "Heading");
+            assert_eq!(*position, Some(cursor_pt));
+        },
+        | _ => panic!("Expected BlockContextMenu active modal"),
+    }
+
+    let _ = app.view();
+
+    // Deleting element dismisses the context menu immediately
+    let _ = app.update(Message::DeleteBlockAtRange(0..5));
+    assert!(app.active_modal.is_none());
+
+    // 4. Duplicate block dismisses context menu
+    let _ = app.update(Message::OpenBlockContextMenu {
+        slide_idx: 0,
+        block_idx: 0,
+        range: 0..5,
+        block_label: "Callout".to_string(),
+        block_id: "blk-test-2".to_string(),
+    });
+    assert!(app.active_modal.is_some());
+    let _ = app.update(Message::DuplicateBlock(0..5));
+    assert!(app.active_modal.is_none());
+
+    // 5. Delete slide dismisses slide context menu
+    let _ = app.update(Message::OpenSlideContextMenu(0));
+    assert!(app.active_modal.is_some());
+    let _ = app.update(Message::DeleteSlide(0));
+    assert!(app.active_modal.is_none());
+}
+
+#[test]
+fn test_responsive_window_scaling_and_proportional_layout() {
+    let mut app = SlideEditorApp::new(None, false);
+
+    // Test different screen widths: Ultrawide, Standard, Compact, and Ultra-narrow
+    let test_resolutions = [
+        iced::Size::new(1920.0, 1080.0),
+        iced::Size::new(1440.0, 900.0),
+        iced::Size::new(1100.0, 700.0),
+        iced::Size::new(800.0, 600.0),
+        iced::Size::new(550.0, 450.0),
+    ];
+
+    for res in test_resolutions {
+        let _ = app.update(Message::WindowResized(res));
+        assert_eq!(app.window_size, res);
+
+        // Rendering view must succeed without overflow panic across all responsive tiers
+        let _ = app.view();
+
+        // Switch modes and ensure responsive view rendering functions correctly
+        let _ = app.update(Message::SwitchMode(EditorMode::FocusMode));
+        let _ = app.view();
+
+        let _ = app.update(Message::SwitchMode(EditorMode::SourceMode));
+        let _ = app.view();
+
+        let _ = app.update(Message::SwitchMode(EditorMode::LivePreview));
+        let _ = app.view();
+    }
+
+    // Test extreme zoom levels (50% to 200%) to verify slide card width clamping and no UI crush
+    let zoom_levels = [50, 75, 100, 150, 200];
+    for z in zoom_levels {
+        app.zoom_percent = z;
+        let _ = app.view();
+    }
 }

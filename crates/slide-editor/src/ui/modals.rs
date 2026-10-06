@@ -9,14 +9,19 @@ use crate::ui::theme::{
     self,
 };
 use iced::Alignment;
+use iced::Background;
 use iced::Element;
 use iced::Length;
+use iced::Point;
+use iced::Size;
 use iced::widget::Space;
 use iced::widget::button;
 use iced::widget::column;
 use iced::widget::container;
+use iced::widget::mouse_area;
 use iced::widget::row;
 use iced::widget::scrollable;
+use iced::widget::stack;
 use iced::widget::text;
 use iced::widget::text_input;
 use std::path::Path;
@@ -280,7 +285,7 @@ pub fn view_open_modal<'a>(
                 .unwrap_or(rf);
             let btn = button(
                 row![
-                    text("📄").size(11),
+                    text("•").size(11),
                     text(display_name).size(12).color(theme.accent()),
                     text(rf).size(10).color(theme.text_muted()),
                 ]
@@ -399,7 +404,7 @@ pub fn view_error_details_modal<'a>(
         let qf_clone = qf.clone();
         container(
             row![
-                text("💡").size(15),
+                text("[TIP]").size(11),
                 column![
                     text("Automated Quick Fix Available")
                         .size(11)
@@ -634,40 +639,73 @@ pub fn view_move_block_modal<'a>(
         .into()
 }
 
-/// Render right-click context menu modal for a slide
+/// Render right-click context menu popup for a slide
 #[must_use]
 pub fn view_slide_context_menu_modal<'a>(
     theme: AppTheme,
     slide_idx: usize,
     total_slides: usize,
+    position: Option<Point>,
+    window_size: Size,
 ) -> Element<'a, Message> {
     let slide_num = slide_idx + 1;
-    let title = text(format!("Slide {slide_num} Options"))
-        .size(15)
-        .color(theme.text_primary());
 
-    let menu_btn = |label: &'static str, msg: Message, danger: bool| {
-        button(text(label).size(13).color(if danger {
-            theme.danger()
-        } else {
-            theme.text_primary()
-        }))
+    let header_label = container(
+        text(format!("Slide {slide_num}"))
+            .size(11)
+            .color(theme.text_muted()),
+    )
+    .padding([2, 8]);
+
+    let divider = || {
+        container(Space::new())
+            .height(Length::Fixed(1.0))
+            .width(Length::Fill)
+            .style(move |_| {
+                container::Style {
+                    background: Some(Background::Color(theme.border_color())),
+                    ..container::Style::default()
+                }
+            })
+    };
+
+    let menu_btn = |icon: &'static str, label: &'static str, msg: Message, danger: bool| {
+        button(
+            row![
+                text(icon).size(11).color(if danger {
+                    theme.danger()
+                } else {
+                    theme.text_secondary()
+                }),
+                Space::new().width(6),
+                text(label).size(12).color(if danger {
+                    theme.danger()
+                } else {
+                    theme.text_primary()
+                }),
+            ]
+            .align_y(Alignment::Center),
+        )
         .width(Length::Fill)
-        .padding([8, 14])
+        .padding([5, 8])
         .style(move |_theme, status| {
             let is_hovered = matches!(status, iced::widget::button::Status::Hovered);
             iced::widget::button::Style {
-                background: Some(iced::Background::Color(if is_hovered {
-                    theme.bg_subtle()
+                background: if is_hovered {
+                    Some(iced::Background::Color(if danger {
+                        iced::Color::from_rgba(0.9, 0.2, 0.2, 0.15)
+                    } else {
+                        theme.bg_subtle()
+                    }))
                 } else {
-                    iced::Color::TRANSPARENT
-                })),
+                    None
+                },
                 text_color: if danger {
                     theme.danger()
                 } else {
                     theme.text_primary()
                 },
-                border: iced::border::rounded(theme::RADIUS_SM),
+                border: iced::border::rounded(theme::RADIUS_XS),
                 ..Default::default()
             }
         })
@@ -675,77 +713,101 @@ pub fn view_slide_context_menu_modal<'a>(
     };
 
     let mut menu_items = column![
-        title,
-        Space::new().height(4),
+        header_label,
+        divider(),
         menu_btn(
+            "+",
             "Insert Slide Above",
             Message::InsertSlideAt(slide_idx),
             false
         ),
         menu_btn(
+            "+",
             "Insert Slide Below",
             Message::InsertSlideAt(slide_idx + 1),
             false
         ),
-        menu_btn("Duplicate Slide", Message::DuplicateSlide(slide_idx), false),
+        menu_btn(
+            "❐",
+            "Duplicate Slide",
+            Message::DuplicateSlide(slide_idx),
+            false
+        ),
     ]
-    .spacing(4);
+    .spacing(2);
 
-    if slide_idx > 0 {
-        menu_items = menu_items.push(menu_btn(
-            "Move Slide Up",
-            Message::MoveSlide {
-                from_idx: slide_idx,
-                to_idx: slide_idx - 1,
-            },
-            false,
-        ));
-    }
-    if slide_idx + 1 < total_slides {
-        menu_items = menu_items.push(menu_btn(
-            "Move Slide Down",
-            Message::MoveSlide {
-                from_idx: slide_idx,
-                to_idx: slide_idx + 1,
-            },
-            false,
-        ));
+    if slide_idx > 0 || slide_idx + 1 < total_slides {
+        menu_items = menu_items.push(divider());
+        if slide_idx > 0 {
+            menu_items = menu_items.push(menu_btn(
+                "▲",
+                "Move Slide Up",
+                Message::MoveSlide {
+                    from_idx: slide_idx,
+                    to_idx: slide_idx - 1,
+                },
+                false,
+            ));
+        }
+        if slide_idx + 1 < total_slides {
+            menu_items = menu_items.push(menu_btn(
+                "▼",
+                "Move Slide Down",
+                Message::MoveSlide {
+                    from_idx: slide_idx,
+                    to_idx: slide_idx + 1,
+                },
+                false,
+            ));
+        }
     }
 
+    menu_items = menu_items.push(divider());
     menu_items = menu_items.push(menu_btn(
-        "Configure Transition...",
+        "⚡",
+        "Slide Transition...",
         Message::OpenTransitionModal(slide_idx),
         false,
     ));
 
     if total_slides > 1 {
+        menu_items = menu_items.push(divider());
         menu_items = menu_items.push(menu_btn(
+            "✕",
             "Delete Slide",
             Message::DeleteSlide(slide_idx),
             true,
         ));
     }
 
-    let cancel_btn = button(text("Close").size(12))
-        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-        .padding([6, 14])
-        .on_press(Message::CloseModal);
-
-    menu_items = menu_items.push(Space::new().height(4));
-    menu_items = menu_items.push(row![Space::new().width(Length::Fill), cancel_btn]);
-
     let card = container(menu_items)
-        .width(Length::Fixed(280.0))
-        .padding(16)
-        .style(move |_| theme::modal_dialog_style(theme));
+        .width(Length::Fixed(210.0))
+        .padding(4)
+        .style(move |_| theme::context_menu_card_style(theme));
 
-    container(card)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_| theme::modal_backdrop_style(theme))
-        .into()
+    let backdrop = mouse_area(
+        container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .on_press(Message::CloseModal);
+
+    let menu_w = 210.0;
+    let menu_h = 240.0;
+    let (pos_x, pos_y) = if let Some(p) = position {
+        let x = (p.x + 2.0).clamp(6.0, (window_size.width - menu_w - 10.0).max(6.0));
+        let y = (p.y + 2.0).clamp(6.0, (window_size.height - menu_h - 10.0).max(6.0));
+        (x, y)
+    } else {
+        (180.0, 90.0)
+    };
+
+    let menu_placement = row![
+        Space::new().width(Length::Fixed(pos_x)),
+        column![Space::new().height(Length::Fixed(pos_y)), card,]
+    ];
+
+    stack![backdrop, menu_placement,].into()
 }
 
 /// Render right-click context menu modal for a WYSIWYG block
@@ -757,33 +819,65 @@ pub fn view_block_context_menu_modal<'a>(
     range: std::ops::Range<usize>,
     block_label: &'a str,
     block_id: &'a str,
+    position: Option<Point>,
+    window_size: Size,
 ) -> Element<'a, Message> {
-    let title = text(format!("Element: {block_label}"))
-        .size(15)
-        .color(theme.text_primary());
+    let header_label = container(
+        text(format!("Block: {block_label}"))
+            .size(11)
+            .color(theme.text_muted()),
+    )
+    .padding([2, 8]);
 
-    let menu_btn = |label: &'static str, msg: Message, danger: bool| {
-        button(text(label).size(13).color(if danger {
-            theme.danger()
-        } else {
-            theme.text_primary()
-        }))
+    let divider = || {
+        container(Space::new())
+            .height(Length::Fixed(1.0))
+            .width(Length::Fill)
+            .style(move |_| {
+                container::Style {
+                    background: Some(Background::Color(theme.border_color())),
+                    ..container::Style::default()
+                }
+            })
+    };
+
+    let menu_btn = |icon: &'static str, label: &'static str, msg: Message, danger: bool| {
+        button(
+            row![
+                text(icon).size(11).color(if danger {
+                    theme.danger()
+                } else {
+                    theme.text_secondary()
+                }),
+                Space::new().width(6),
+                text(label).size(12).color(if danger {
+                    theme.danger()
+                } else {
+                    theme.text_primary()
+                }),
+            ]
+            .align_y(Alignment::Center),
+        )
         .width(Length::Fill)
-        .padding([8, 14])
+        .padding([5, 8])
         .style(move |_theme, status| {
             let is_hovered = matches!(status, iced::widget::button::Status::Hovered);
             iced::widget::button::Style {
-                background: Some(iced::Background::Color(if is_hovered {
-                    theme.bg_subtle()
+                background: if is_hovered {
+                    Some(iced::Background::Color(if danger {
+                        iced::Color::from_rgba(0.9, 0.2, 0.2, 0.15)
+                    } else {
+                        theme.bg_subtle()
+                    }))
                 } else {
-                    iced::Color::TRANSPARENT
-                })),
+                    None
+                },
                 text_color: if danger {
                     theme.danger()
                 } else {
                     theme.text_primary()
                 },
-                border: iced::border::rounded(theme::RADIUS_SM),
+                border: iced::border::rounded(theme::RADIUS_XS),
                 ..Default::default()
             }
         })
@@ -796,9 +890,10 @@ pub fn view_block_context_menu_modal<'a>(
     let label_s = block_label.to_string();
 
     let menu_items = column![
-        title,
-        Space::new().height(4),
+        header_label,
+        divider(),
         menu_btn(
+            "➔",
             "Move to Another Slide...",
             Message::OpenMoveBlockModal {
                 from_slide_idx: slide_idx,
@@ -809,48 +904,61 @@ pub fn view_block_context_menu_modal<'a>(
             false
         ),
         menu_btn(
+            "❐",
             "Duplicate Element",
             Message::DuplicateBlock(range_c2),
             false
         ),
         menu_btn(
+            "✎",
             "Edit Raw Typst Code",
             Message::ToggleBlockRawCode(block_id.to_string()),
             false
         ),
         menu_btn(
+            "⚡",
             "Configure Step Animation...",
             Message::OpenElementTransitionModal { slide_idx, block_idx },
             false
         ),
+        divider(),
         menu_btn(
+            "✕",
             "Delete Element",
             Message::DeleteBlockAtRange(range_c3),
             true
         ),
-        Space::new().height(4),
-        row![
-            Space::new().width(Length::Fill),
-            button(text("Close").size(12))
-                .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-                .padding([6, 14])
-                .on_press(Message::CloseModal)
-        ]
     ]
-    .spacing(4);
+    .spacing(2);
 
     let card = container(menu_items)
-        .width(Length::Fixed(290.0))
-        .padding(16)
-        .style(move |_| theme::modal_dialog_style(theme));
+        .width(Length::Fixed(220.0))
+        .padding(4)
+        .style(move |_| theme::context_menu_card_style(theme));
 
-    container(card)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Alignment::Center)
-        .align_y(Alignment::Center)
-        .style(move |_| theme::modal_backdrop_style(theme))
-        .into()
+    let backdrop = mouse_area(
+        container(Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .on_press(Message::CloseModal);
+
+    let menu_w = 220.0;
+    let menu_h = 190.0;
+    let (pos_x, pos_y) = if let Some(p) = position {
+        let x = (p.x + 2.0).clamp(6.0, (window_size.width - menu_w - 10.0).max(6.0));
+        let y = (p.y + 2.0).clamp(6.0, (window_size.height - menu_h - 10.0).max(6.0));
+        (x, y)
+    } else {
+        (240.0, 160.0)
+    };
+
+    let menu_placement = row![
+        Space::new().width(Length::Fixed(pos_x)),
+        column![Space::new().height(Length::Fixed(pos_y)), card,]
+    ];
+
+    stack![backdrop, menu_placement,].into()
 }
 
 /// Render font selector modal
@@ -1047,7 +1155,7 @@ pub fn view_search_replace_bar<'a>(
         .padding([3, 8])
         .on_press(Message::FindNextMatch);
 
-    let close_btn = button(text("✕").size(11))
+    let close_btn = button(text("X").size(11))
         .style(move |_t, _s| theme::subtle_button_style(theme, false))
         .padding([3, 7])
         .on_press(Message::CloseSearchBar);
@@ -1550,8 +1658,7 @@ pub fn view_template_library_modal<'a>(theme: AppTheme) -> Element<'a, Message> 
 pub fn view_presentation_health_modal<'a>(
     theme: AppTheme,
     issues: &'a [slide_core::compiler::PresentationHealthIssue],
-    word_count: usize,
-    total_slides: usize,
+    pacing: &'a slide_core::pacing::DeckPacingReport,
 ) -> Element<'a, Message> {
     let title = row![
         text("Presentation Health & Pacing Inspector")
@@ -1560,59 +1667,167 @@ pub fn view_presentation_health_modal<'a>(
     ]
     .align_y(Alignment::Center);
 
-    let est_minutes = ((word_count as f32) / 130.0).max(1.0).ceil() as usize;
-    let avg_words = word_count.checked_div(total_slides).unwrap_or(0);
-
+    // Multi-modal pacing model summary card
     let pacing_card = container(
-        row![
-            column![
-                text("ESTIMATED TALK TIME")
+        column![
+            row![
+                column![
+                    text("ESTIMATED TALK TIME")
+                        .size(10)
+                        .color(theme.text_muted()),
+                    text(format!("~{}", pacing.formatted_duration))
+                        .size(18)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::DEFAULT
+                        })
+                        .color(theme.accent()),
+                    text(format!("Range: {}", pacing.duration_range))
+                        .size(10)
+                        .color(theme.text_secondary()),
+                ]
+                .spacing(2),
+                container(
+                    Space::new()
+                        .width(Length::Fixed(1.0))
+                        .height(Length::Fixed(40.0))
+                )
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.border_color())),
+                        ..container::Style::default()
+                    }
+                }),
+                column![
+                    text("SLIDES & PACING").size(10).color(theme.text_muted()),
+                    text(format!("{} slides", pacing.total_slides))
+                        .size(16)
+                        .color(theme.text_primary()),
+                    text(format!("Avg: {}s / slide", pacing.avg_seconds_per_slide))
+                        .size(10)
+                        .color(theme.text_secondary()),
+                ]
+                .spacing(2),
+                container(
+                    Space::new()
+                        .width(Length::Fixed(1.0))
+                        .height(Length::Fixed(40.0))
+                )
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.border_color())),
+                        ..container::Style::default()
+                    }
+                }),
+                column![
+                    text("SPEAKER NOTES").size(10).color(theme.text_muted()),
+                    text(format!("{}% covered", pacing.notes_coverage_percent))
+                        .size(16)
+                        .color(if pacing.notes_coverage_percent > 70 {
+                            theme.success()
+                        } else if pacing.notes_coverage_percent > 30 {
+                            theme.warning()
+                        } else {
+                            theme.text_muted()
+                        }),
+                    text(format!(
+                        "{}w • {} CJK",
+                        pacing.total_notes_words, pacing.total_notes_cjk
+                    ))
+                    .size(10)
+                    .color(theme.text_secondary()),
+                ]
+                .spacing(2),
+                container(
+                    Space::new()
+                        .width(Length::Fixed(1.0))
+                        .height(Length::Fixed(40.0))
+                )
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.border_color())),
+                        ..container::Style::default()
+                    }
+                }),
+                column![
+                    text("HEALTH PROFILE").size(10).color(theme.text_muted()),
+                    row![
+                        container(
+                            text(format!("OK {}", pacing.optimal_count))
+                                .size(10)
+                                .color(theme.success())
+                        )
+                        .padding([2, 5])
+                        .style(move |_| {
+                            container::Style {
+                                background: Some(iced::Background::Color(
+                                    theme.success().scale_alpha(0.15),
+                                )),
+                                border: iced::border::rounded(3.0),
+                                ..container::Style::default()
+                            }
+                        }),
+                        container(
+                            text(format!("WARN {}", pacing.dense_count))
+                                .size(10)
+                                .color(theme.warning())
+                        )
+                        .padding([2, 5])
+                        .style(move |_| {
+                            container::Style {
+                                background: Some(iced::Background::Color(
+                                    theme.warning().scale_alpha(0.15),
+                                )),
+                                border: iced::border::rounded(3.0),
+                                ..container::Style::default()
+                            }
+                        }),
+                        container(
+                            text(format!("ALERT {}", pacing.overloaded_count))
+                                .size(10)
+                                .color(theme.danger())
+                        )
+                        .padding([2, 5])
+                        .style(move |_| {
+                            container::Style {
+                                background: Some(iced::Background::Color(
+                                    theme.danger().scale_alpha(0.15),
+                                )),
+                                border: iced::border::rounded(3.0),
+                                ..container::Style::default()
+                            }
+                        }),
+                        container(
+                            text(format!("FAST {}", pacing.brisk_count))
+                                .size(10)
+                                .color(theme.accent())
+                        )
+                        .padding([2, 5])
+                        .style(move |_| {
+                            container::Style {
+                                background: Some(iced::Background::Color(
+                                    theme.accent().scale_alpha(0.15),
+                                )),
+                                border: iced::border::rounded(3.0),
+                                ..container::Style::default()
+                            }
+                        }),
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center),
+                    text(format!(
+                        "Visual text: {}w • {} CJK",
+                        pacing.total_visual_words, pacing.total_visual_cjk
+                    ))
                     .size(10)
                     .color(theme.text_muted()),
-                text(format!("~{est_minutes} min"))
-                    .size(16)
-                    .color(theme.accent()),
+                ]
+                .spacing(2),
             ]
-            .spacing(2),
-            container(
-                Space::new()
-                    .width(Length::Fixed(1.0))
-                    .height(Length::Fixed(30.0))
-            )
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.border_color())),
-                    ..container::Style::default()
-                }
-            }),
-            column![
-                text("TOTAL SLIDES").size(10).color(theme.text_muted()),
-                text(format!("{total_slides}"))
-                    .size(16)
-                    .color(theme.text_primary()),
-            ]
-            .spacing(2),
-            container(
-                Space::new()
-                    .width(Length::Fixed(1.0))
-                    .height(Length::Fixed(30.0))
-            )
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.border_color())),
-                    ..container::Style::default()
-                }
-            }),
-            column![
-                text("PACING DENSITY").size(10).color(theme.text_muted()),
-                text(format!("{avg_words} words / slide"))
-                    .size(16)
-                    .color(theme.text_primary()),
-            ]
-            .spacing(2),
+            .spacing(14)
+            .align_y(Alignment::Center),
         ]
-        .spacing(16)
-        .align_y(Alignment::Center),
+        .spacing(8),
     )
     .padding(12)
     .style(move |_| {
@@ -1623,24 +1838,126 @@ pub fn view_presentation_health_modal<'a>(
         }
     });
 
-    let mut issues_col = column![].spacing(8);
+    // Per-slide pacing cards
+    let mut slides_pacing_col = column![].spacing(6);
+    for s in &pacing.slides {
+        let (status_bg, status_fg) = match s.status {
+            | slide_core::pacing::SlidePacingStatus::Optimal => {
+                (theme.success().scale_alpha(0.15), theme.success())
+            },
+            | slide_core::pacing::SlidePacingStatus::Dense => {
+                (theme.warning().scale_alpha(0.15), theme.warning())
+            },
+            | slide_core::pacing::SlidePacingStatus::Overloaded => {
+                (theme.danger().scale_alpha(0.15), theme.danger())
+            },
+            | slide_core::pacing::SlidePacingStatus::Brisk => {
+                (theme.accent().scale_alpha(0.15), theme.accent())
+            },
+        };
 
+        let status_badge = container(
+            text(format!("{} (~{}s)", s.status.label(), s.estimated_seconds))
+                .size(10)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::DEFAULT
+                })
+                .color(status_fg),
+        )
+        .padding([2, 6])
+        .style(move |_| {
+            container::Style {
+                background: Some(iced::Background::Color(status_bg)),
+                border: iced::border::rounded(4.0),
+                ..container::Style::default()
+            }
+        });
+
+        let s_idx = s.slide_index;
+        let jump_btn = button(text(format!("Slide {}", s_idx + 1)).size(11))
+            .style(move |_t, _s| theme::subtle_button_style(theme, false))
+            .padding([2, 8])
+            .on_press(Message::SelectSlide(s_idx));
+
+        let title_str = if s.title.trim().is_empty() {
+            format!("(Slide {})", s_idx + 1)
+        } else {
+            s.title.clone()
+        };
+
+        let slide_header = row![
+            jump_btn,
+            text(title_str)
+                .size(12)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Medium,
+                    ..iced::Font::DEFAULT
+                })
+                .color(theme.text_primary()),
+            Space::new().width(Length::Fill),
+            status_badge,
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let notes_info = if s.has_speaker_notes {
+            format!("Notes: {} words, {} CJK", s.notes_words, s.notes_cjk_chars)
+        } else {
+            "No speaker notes (visual pacing applied)".to_string()
+        };
+
+        let visual_info = format!(
+            "Visual: {} words, {} CJK | {} code lines | {} math | {} tables/charts | {} steps",
+            s.visual_words,
+            s.visual_cjk_chars,
+            s.code_lines,
+            s.math_formulas,
+            s.charts_and_tables,
+            s.step_count
+        );
+
+        let metrics_text = text(format!("{notes_info}  •  {visual_info}"))
+            .size(10)
+            .color(theme.text_secondary());
+
+        let rec_text = text(&s.recommendation).size(10).color(theme.text_muted());
+
+        let slide_card = container(column![slide_header, metrics_text, rec_text].spacing(3))
+            .padding(8)
+            .width(Length::Fill)
+            .style(move |_| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.bg_subtle())),
+                    border: iced::border::rounded(6.0),
+                    ..container::Style::default()
+                }
+            });
+
+        slides_pacing_col = slides_pacing_col.push(slide_card);
+    }
+
+    let mut issues_col = column![].spacing(6);
     if issues.is_empty() {
         let healthy_card = container(
             row![
-                text("✓").size(18).color(theme.success()),
+                text("[OK]").size(12).color(theme.success()),
                 column![
-                    text("Deck is healthy!").size(13).color(theme.success()),
-                    text("No excessive text density, missing media, or macro issues detected.")
-                        .size(11)
-                        .color(theme.text_muted()),
+                    text("Deck diagnostics clear!")
+                        .size(12)
+                        .color(theme.success()),
+                    text(
+                        "No excessive text density, missing media, or macro syntax issues detected."
+                    )
+                    .size(10)
+                    .color(theme.text_muted()),
                 ]
                 .spacing(2),
             ]
-            .spacing(10)
+            .spacing(8)
             .align_y(Alignment::Center),
         )
-        .padding(14)
+        .padding(10)
         .width(Length::Fill)
         .style(move |_| {
             container::Style {
@@ -1659,7 +1976,7 @@ pub fn view_presentation_health_modal<'a>(
             };
 
             let sev_badge = container(text(badge_text).size(9).color(iced::Color::WHITE))
-                .padding([2, 6])
+                .padding([2, 5])
                 .style(move |_| {
                     container::Style {
                         background: Some(iced::Background::Color(badge_color)),
@@ -1668,28 +1985,28 @@ pub fn view_presentation_health_modal<'a>(
                     }
                 });
 
-            let mut header_row = row![sev_badge].spacing(8).align_y(Alignment::Center);
+            let mut header_row = row![sev_badge].spacing(6).align_y(Alignment::Center);
 
             if let Some(s_idx) = issue.slide_index {
-                let jump_btn = button(text(format!("Slide {}", s_idx.saturating_add(1))).size(11))
+                let jump_btn = button(text(format!("Slide {}", s_idx.saturating_add(1))).size(10))
                     .style(move |_t, _s| theme::subtle_button_style(theme, false))
-                    .padding([2, 8])
+                    .padding([1, 6])
                     .on_press(Message::SelectSlide(s_idx));
                 header_row = header_row.push(jump_btn);
             }
 
-            let desc = text(&issue.message).size(12).color(theme.text_primary());
+            let desc = text(&issue.message).size(11).color(theme.text_primary());
             let rec = text(
                 issue
                     .suggestion
                     .as_deref()
                     .unwrap_or("No specific recommendation."),
             )
-            .size(11)
+            .size(10)
             .color(theme.text_muted());
 
-            let issue_card = container(column![header_row, desc, rec].spacing(4))
-                .padding(10)
+            let issue_card = container(column![header_row, desc, rec].spacing(3))
+                .padding(8)
                 .width(Length::Fill)
                 .style(move |_| {
                     container::Style {
@@ -1703,28 +2020,44 @@ pub fn view_presentation_health_modal<'a>(
         }
     }
 
-    let close_btn = button(text("Close").size(13))
+    let close_btn = button(text("Close").size(12))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-        .padding([8, 18])
+        .padding([6, 16])
         .on_press(Message::CloseModal);
 
     let dialog_content = column![
         title,
-        Space::new().height(4),
+        Space::new().height(2),
         pacing_card,
-        Space::new().height(6),
+        Space::new().height(4),
+        text(format!(
+            "Per-Slide Pacing Breakdown ({})",
+            pacing.slides.len()
+        ))
+        .size(12)
+        .font(iced::Font {
+            weight: iced::font::Weight::Medium,
+            ..iced::Font::DEFAULT
+        })
+        .color(theme.text_secondary()),
+        scrollable(slides_pacing_col).height(Length::Fixed(190.0)),
+        Space::new().height(4),
         text(format!("Diagnostic Issues ({})", issues.len()))
             .size(12)
+            .font(iced::Font {
+                weight: iced::font::Weight::Medium,
+                ..iced::Font::DEFAULT
+            })
             .color(theme.text_secondary()),
-        scrollable(issues_col).height(Length::Fixed(240.0)),
-        Space::new().height(8),
+        scrollable(issues_col).height(Length::Fixed(110.0)),
+        Space::new().height(6),
         row![Space::new().width(Length::Fill), close_btn],
     ]
-    .spacing(8);
+    .spacing(6);
 
     let dialog_card = container(dialog_content)
-        .width(Length::Fixed(600.0))
-        .padding(24)
+        .width(Length::Fixed(720.0))
+        .padding(20)
         .style(move |_| theme::modal_dialog_style(theme));
 
     container(dialog_card)

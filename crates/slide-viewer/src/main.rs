@@ -63,11 +63,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(Commands::Install) = args.command {
         match install_viewer_to_system() {
             | Ok(msg) => {
-                println!("✓ {msg}");
+                println!("[OK] {msg}");
                 return Ok(());
             },
             | Err(e) => {
-                eprintln!("✕ Failed to install slide-viewer: {e}");
+                eprintln!("[ERR] Failed to install slide-viewer: {e}");
                 std::process::exit(1);
             },
         }
@@ -235,7 +235,14 @@ pub fn load_recent_viewer_files() -> Vec<String> {
 /// Save recent presentation to configuration
 pub fn save_recent_viewer_file(file_path: &Path) {
     let mut recents = load_recent_viewer_files();
-    let s = file_path.to_string_lossy().to_string();
+    let canonical = file_path.canonicalize().unwrap_or_else(|_| {
+        if file_path.is_absolute() {
+            file_path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(file_path)
+        }
+    });
+    let s = canonical.to_string_lossy().to_string();
     recents.retain(|p| p != &s);
     recents.insert(0, s);
     if recents.len() > 20 {

@@ -35,6 +35,7 @@ pub fn view_sidebar<'a>(
     slide_images: &'a [iced::widget::image::Handle],
     active_slide: usize,
     view_mode: SidebarViewMode,
+    window_width: f32,
 ) -> Element<'a, Message> {
     let count_badge = container(
         text(format!(
@@ -442,12 +443,16 @@ pub fn view_sidebar<'a>(
         container(add_slide_btn).padding([8, 10])
     ];
 
+    let base_width = if view_mode == SidebarViewMode::Thumbnails {
+        260.0
+    } else {
+        240.0
+    };
+    // Proportional sidebar: shrink at narrow widths, never exceed base, never go below 160px
+    let sidebar_width = (window_width * 0.2).clamp(160.0, base_width);
+
     container(content)
-        .width(Length::Fixed(if view_mode == SidebarViewMode::Thumbnails {
-            260.0
-        } else {
-            240.0
-        }))
+        .width(Length::Fixed(sidebar_width))
         .height(Length::Fill)
         .style(move |_| theme::sidebar_container_style(theme))
         .into()

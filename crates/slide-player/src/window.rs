@@ -1116,13 +1116,13 @@ impl SlidePlayer {
                     | Ok(w) => {
                         let watch_dir = w.watch_dir();
                         println!(
-                            "👀 Live hot reload active. Watching {} for changes...",
+                            "[WATCH] Live hot reload active. Watching {} for changes...",
                             watch_dir.display()
                         );
                         slide_core::logger::log_event(
                             "info",
                             &format!(
-                                "👀 Live hot reload active. Watching {} for changes...",
+                                "[WATCH] Live hot reload active. Watching {} for changes...",
                                 watch_dir.display()
                             ),
                             Some(serde_json::json!({
@@ -1134,7 +1134,7 @@ impl SlidePlayer {
                         Some(w)
                     },
                     | Err(e) => {
-                        eprintln!("⚠️ Failed to initialize slide watcher: {}", e);
+                        eprintln!("[WARN] Failed to initialize slide watcher: {}", e);
                         None
                     },
                 }
@@ -2556,7 +2556,7 @@ impl SlidePlayer {
             if let Some(ref mut w) = watcher
                 && let Some(changed_path) = w.poll_change()
             {
-                println!("📝 Detected change in: {}", changed_path.display());
+                println!("[CHANGE] Detected change in: {}", changed_path.display());
                 hot_reload_detected = true;
             }
 
@@ -2575,10 +2575,10 @@ impl SlidePlayer {
                                 current_step = 1;
                             }
                             cache.clear();
-                            println!("🔥 Slides live-reloaded! ({} slides)", total_slides);
+                            println!("[RELOAD] Slides live-reloaded! ({} slides)", total_slides);
                             slide_core::logger::log_event(
                                 "success",
-                                &format!("✨ Slides live-reloaded! ({} slides)", total_slides),
+                                &format!("[OK] Slides live-reloaded! ({} slides)", total_slides),
                                 Some(serde_json::json!({
                                     "stage": "hot_reload_success",
                                     "total_slides": total_slides,
@@ -2593,7 +2593,7 @@ impl SlidePlayer {
                             );
                         },
                         | Err(e) => {
-                            eprintln!("⚠️ [cargo-slide] Hot reload compilation error:\n{}", e);
+                            eprintln!("[WARN] [cargo-slide] Hot reload compilation error:\n{}", e);
                             slide_core::logger::log_event(
                                 "error",
                                 &format!("Hot reload compilation error: {}", e),

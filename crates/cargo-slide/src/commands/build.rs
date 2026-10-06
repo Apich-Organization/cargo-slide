@@ -49,7 +49,7 @@ pub fn execute_wasm(
     slide_core::logger::log_event(
         "info",
         &format!(
-            "🌐 Building Leptos CSR web presentation: {}",
+            "[BUILD] Building Leptos CSR web presentation: {}",
             out_dir.display()
         ),
         Some(serde_json::json!({
@@ -64,7 +64,7 @@ pub fn execute_wasm(
     slide_core::logger::log_event(
         "success",
         &format!(
-            "✅ Leptos CSR web bundle created successfully at: {}",
+            "[OK] Leptos CSR web bundle created successfully at: {}",
             out_dir.display()
         ),
         Some(serde_json::json!({
@@ -99,7 +99,7 @@ pub fn execute_binary(
     slide_core::logger::log_event(
         "info",
         &format!(
-            "📦 Packaging presentation into single binary: {}",
+            "[PACKAGE] Packaging presentation into single binary: {}",
             file.display()
         ),
         Some(serde_json::json!({
@@ -125,7 +125,7 @@ pub fn execute_binary(
     slide_core::logger::log_event(
         "info",
         &format!(
-            "⏳ Generating self-contained Rust bundle with {} slides...",
+            "[BUNDLE] Generating self-contained Rust bundle with {} slides...",
             deck.total_slides()
         ),
         Some(serde_json::json!({
@@ -229,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
 
     slide_core::logger::log_event(
         "info",
-        "🔨 Compiling release binary with Cargo...",
+        "[CARGO] Compiling release binary with Cargo...",
         Some(serde_json::json!({
             "stage": "cargo_build_release",
             "percent": 5,
@@ -276,9 +276,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     slide_core::logger::log_event(
         "success",
         &format!(
-            "✅ Single binary generated successfully!\n\
-             📍 Output: {} ({:.2} MB)\n\
-             💡 You can now distribute and run this standalone presentation on any machine!",
+            "[OK] Single binary generated successfully!\n\
+             Output: {} ({:.2} MB)\n\
+             You can now distribute and run this standalone presentation on any machine!",
             target_binary.display(),
             size_mb
         ),
@@ -444,7 +444,7 @@ fn run_cargo_build_with_progress(
                     slide_core::logger::log_event(
                         "info",
                         &format!(
-                            "🔨 Compiling {pkg_name} ({compiled}/{}, cross-target: {})",
+                            "[BUILD] Compiling {pkg_name} ({compiled}/{}, cross-target: {})",
                             if total == 0 {
                                 "?".to_string()
                             } else {

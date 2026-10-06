@@ -32,6 +32,13 @@
 
 - **Typst-Centric Authoring**: Slide decks are written in pure Typst markup (`slides.typ`). Rust is only required when implementing custom transition algorithms or shader-like effects via traits.
 - **Minimal Project Scaffolding**: `cargo slide init` initializes a clean 5-file project structure without unnecessary boilerplate.
+- **Typora-Style WYSIWYG Desktop Editor (`slide-editor`)**:
+  - Live visual preview canvas rendering vector slides directly in the document flow.
+  - **In-Place Slide Editing**: Click directly inside the visual presentation flow to edit Typst markup inline with debounced live recompilation.
+  - **Categorized Insertion Bar**: 1-click addition of content blocks (Paragraph, Headings, Lists, Code, Math Formulas), media & data (Table, SQL Chart, Video, Audio, Links), and presentation cues (Speaker Notes, Comments, Callouts, Grids).
+  - **Outline Sidebar & Navigation**: Thumbnail preview cards and outline hierarchy for rapid slide navigation.
+  - **Speaker Notes & Pacing Engine**: Clear visual distinction between speaker notes (`SPEAKER NOTE`) and block comments (`[COMMENT]`), word count tracking (Latin words + CJK characters), target presentation pacing, and slide density analysis.
+  - **Presentation Health Audit**: Diagnostic inspection checking missing asset paths, excessive text density, and compiler errors.
 - **Universal Viewer (`slide-viewer`)**:
   - Resizable modern GUI launcher with true fullscreen support (`F` / `F11`).
   - Automatic detection of local presentations and embedded 22-slide reference showcase.
@@ -48,7 +55,9 @@
   - Execute in-memory SQL queries (`SELECT ... WHERE ...`) or pipeline DSL transformations.
   - In-presentation HUD Data Inspector: click any chart or table to switch visualization types (Bar, Line, Area, Scatter), apply transform presets (`TOP 5`, `SORT ▼`, `SORT ▲`, `CUM`, `% SHARE`, `MA3`), filter by condition (`>50`), sort columns, and export filtered data to CSV.
 - **Slide Overflow Protection**: Compares compiled vector pages against declared `#slide(...)` counts. If content exceeds vertical canvas bounds, compilation reports the specific slide title and source line number.
-- **Vectorized Typography & Multilingual Support**: Typst resolves text (Latin, CJK, math formulas, and Unicode emojis) into vector Bézier `<path>` outlines, ensuring identical rendering across platforms without requiring target fonts.
+- **Universal Rendering & Vector Typography**:
+  - Native GUI components (`slide-editor`, `slide-viewer`) and CLI logs rely on universal Unicode/ASCII indicators (`[OK]`, `[WARN]`, `[ERR]`, `[INFO]`, `+ Note`, etc.) to prevent missing-glyph boxes across minimal Linux environments, Wayland/X11 desktops, macOS, and Windows without requiring color emoji fonts.
+  - Typst resolves slide content (Latin, CJK, math formulas, and symbols) into vector Bézier `<path>` outlines, ensuring consistent cross-platform presentation display.
 - **13 Built-in Transitions & In-Slide Fragments**: `fade`, `cut`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `zoom`, `wipe-left`, `wipe-right`, `iris`, `glitch`, `cube`, and `particles`. Control sequential item reveals with `#step(order, effect: "...")`.
 
 ---
@@ -99,11 +108,17 @@ my-talk/
 Edit `slides.typ` with your favorite text editor, then run:
 
 ```bash
+# Launch Typora-style WYSIWYG desktop editor with live preview
+cargo slide edit
+
 # Launch native presentation player with 60 FPS rendering
 cargo slide run
 
 # Or launch development mode with live hot-reloading
 cargo slide dev
+
+# Run comprehensive presentation health audit (density, assets, pacing)
+cargo slide check
 ```
 
 ### Step 4: Build, Pack, or Serve
@@ -216,10 +231,11 @@ cargo-slide/
 ├── crates/
 │   ├── slide-core/                 # Typst compiler bridge, SVG parser, charts/SQL, package (LZMA2)
 │   ├── slide-player/               # Native player: tiny-skia blitter, windowing, audio mixer, presenter tools, HUD
+│   ├── slide-editor/               # Typora-style WYSIWYG live-preview desktop editor for Typst decks and documents
 │   ├── slide-viewer/               # Standalone universal presentation player binary with GUI launcher for .slide files
 │   ├── slide-web/                  # Pure Rust Leptos 0.7 CSR Web presentation player (strictly zero inline JS)
 │   ├── slide-theme/                # Built-in themes, default templates, and Typst macros (#slide, #step, #chart)
-│   └── cargo-slide/                # CLI tool implementing init, new, run, dev, build, pack, serve, export
+│   └── cargo-slide/                # CLI tool implementing init, new, run, dev, edit, check, build, pack, serve, export
 └── examples/
     ├── geek-presentation/          # 22-slide reference showcase demonstrating all engine capabilities
     ├── dist-web/                   # Exported Leptos CSR static web bundle

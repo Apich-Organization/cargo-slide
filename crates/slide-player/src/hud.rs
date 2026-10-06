@@ -1798,19 +1798,21 @@ pub fn draw_presenter_clock(
     let secs = elapsed_secs % 60;
     let elapsed_str = format!("{:02}:{:02}", mins, secs);
 
-    let system_time_str = {
-        let now = std::time::SystemTime::now();
-        if let Ok(duration) = now.duration_since(std::time::UNIX_EPOCH) {
-            let total_secs = duration.as_secs();
-            let hours = (total_secs / 3600) % 24;
-            let m = (total_secs / 60) % 60;
-            format!("{:02}:{:02}", hours, m)
-        } else {
-            "--:--".to_string()
-        }
+    let (system_time_str, tz_display) = {
+        let local_now = chrono::Local::now();
+        let time = local_now.format("%H:%M:%S").to_string();
+        let tz = local_now.format("%Z").to_string();
+        let offset = local_now.offset();
+        let tz_str =
+            if tz.is_empty() || tz == "+00:00" || tz.starts_with('+') || tz.starts_with('-') {
+                format!("UTC{offset}")
+            } else {
+                format!("{tz} (UTC{offset})")
+            };
+        (time, tz_str)
     };
 
-    let clock_text = format!("TIMER: {} • CLOCK: {}", elapsed_str, system_time_str);
+    let clock_text = format!("TIMER: {elapsed_str} • CLOCK: {system_time_str} [{tz_display}]");
 
     let char_w = 6usize;
     let char_h = 8usize;

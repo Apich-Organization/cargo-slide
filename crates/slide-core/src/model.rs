@@ -193,27 +193,18 @@ impl Slide {
         self.notes.as_deref().unwrap_or("")
     }
 
-    /// Approximate word count of speaker notes
+    /// Approximate word count of speaker notes (bilingual Latin + CJK aware)
     #[must_use]
     pub fn notes_word_count(&self) -> usize {
-        self.notes_text().split_whitespace().count()
+        let (words, cjk) = crate::pacing::count_words_and_cjk(self.notes_text());
+        words.saturating_add((cjk.saturating_mul(10)) / 17)
     }
 
-    /// Estimated speaking duration in seconds based on notes or slide complexity
+    /// Estimated speaking duration in seconds based on multi-modal pacing model
     #[must_use]
     pub fn estimated_speaking_seconds(&self) -> usize {
-        let note_words = self.notes_word_count();
-        if note_words > 0 {
-            // Average spoken pace ~ 130 words per minute (approx 2.16 words/sec)
-            (note_words.saturating_mul(60)) / 130
-        } else {
-            // Default baseline: 30 seconds for content slides, 15 for title
-            if self.page_number <= 1 {
-                15
-            } else {
-                30
-            }
-        }
+        let page_idx = self.page_number.saturating_sub(1);
+        crate::pacing::calculate_slide_pacing(self, page_idx, None).estimated_seconds
     }
 }
 
@@ -268,5 +259,14 @@ impl SlideDeck {
             .iter()
             .map(Slide::estimated_speaking_seconds)
             .fold(0usize, |acc, sec| acc.saturating_add(sec))
+    }
+
+    /// Generate comprehensive pacing analysis report for the deck
+    #[must_use]
+    pub fn pacing_report(
+        &self,
+        chunks: &[String],
+    ) -> crate::pacing::DeckPacingReport {
+        crate::pacing::calculate_deck_pacing(self, chunks)
     }
 }

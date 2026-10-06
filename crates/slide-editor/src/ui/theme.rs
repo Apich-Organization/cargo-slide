@@ -520,6 +520,28 @@ pub fn modal_dialog_style(theme: AppTheme) -> container::Style {
     }
 }
 
+/// Style for floating context menu popup (compact, elevated card with crisp border)
+#[must_use]
+pub fn context_menu_card_style(theme: AppTheme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(match theme {
+            | AppTheme::Light => Color::WHITE,
+            | AppTheme::Dark => Color::from_rgb(0.098, 0.118, 0.165),
+        })),
+        text_color: Some(theme.text_primary()),
+        border: Border {
+            color: match theme {
+                | AppTheme::Light => Color::from_rgba(0.0, 0.0, 0.0, 0.15),
+                | AppTheme::Dark => Color::from_rgba(1.0, 1.0, 1.0, 0.15),
+            },
+            width: 1.0,
+            radius: border::Radius::from(RADIUS_SM),
+        },
+        shadow: elevation_mid(theme),
+        snap: true,
+    }
+}
+
 /// Style for full-screen modal backdrop overlay
 #[must_use]
 pub fn modal_backdrop_style(theme: AppTheme) -> container::Style {

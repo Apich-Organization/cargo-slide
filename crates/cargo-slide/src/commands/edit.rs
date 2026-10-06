@@ -10,7 +10,7 @@ pub fn execute(
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     slide_core::logger::log_event(
         "info",
-        "🎨 Launching Slide Editor (Typora-style WYSIWYG)...",
+        "[EDITOR] Launching Slide Editor (Typora-style WYSIWYG)...",
         Some(serde_json::json!({
             "stage": "editor_launch",
             "file": file.map(|f| f.display().to_string()),
