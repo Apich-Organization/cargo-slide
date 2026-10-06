@@ -13,7 +13,7 @@ members = [
 default-members = ["crates/cargo-slide"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.89"
 authors = [
@@ -45,11 +45,11 @@ exclude = [
 ]
 
 [workspace.dependencies]
-slide-core = { path = "crates/slide-core", version = "0.2.0" }
-slide-player = { path = "crates/slide-player", version = "0.2.0" }
-slide-theme = { path = "crates/slide-theme", version = "0.2.0" }
-slide-viewer = { path = "crates/slide-viewer", version = "0.2.0" }
-slide-editor = { path = "crates/slide-editor", version = "0.2.0" }
+slide-core = { path = "crates/slide-core", version = "0.3.0" }
+slide-player = { path = "crates/slide-player", version = "0.3.0" }
+slide-theme = { path = "crates/slide-theme", version = "0.3.0" }
+slide-viewer = { path = "crates/slide-viewer", version = "0.3.0" }
+slide-editor = { path = "crates/slide-editor", version = "0.3.0" }
 
 resvg = "0.48"
 usvg = "0.48"
