@@ -166,8 +166,12 @@ pub struct Slide {
     pub view_box: Rect,
     pub hotspots: Vec<Hotspot>,
     pub animation: Option<String>,
+    /// In-slide step fragments
     #[serde(default)]
     pub steps: Vec<StepFragment>,
+    /// Optional presenter speaker notes for this slide
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 impl Slide {
@@ -175,6 +179,41 @@ impl Slide {
     #[must_use]
     pub fn max_step(&self) -> usize {
         self.steps.iter().map(|s| s.order).max().unwrap_or(0)
+    }
+
+    /// Check if this slide has presenter speaker notes
+    #[must_use]
+    pub fn has_notes(&self) -> bool {
+        self.notes.as_ref().is_some_and(|n| !n.trim().is_empty())
+    }
+
+    /// Presenter notes string slice or empty string
+    #[must_use]
+    pub fn notes_text(&self) -> &str {
+        self.notes.as_deref().unwrap_or("")
+    }
+
+    /// Approximate word count of speaker notes
+    #[must_use]
+    pub fn notes_word_count(&self) -> usize {
+        self.notes_text().split_whitespace().count()
+    }
+
+    /// Estimated speaking duration in seconds based on notes or slide complexity
+    #[must_use]
+    pub fn estimated_speaking_seconds(&self) -> usize {
+        let note_words = self.notes_word_count();
+        if note_words > 0 {
+            // Average spoken pace ~ 130 words per minute (approx 2.16 words/sec)
+            (note_words.saturating_mul(60)) / 130
+        } else {
+            // Default baseline: 30 seconds for content slides, 15 for title
+            if self.page_number <= 1 {
+                15
+            } else {
+                30
+            }
+        }
     }
 }
 
@@ -194,7 +233,15 @@ impl SlideDeck {
             default_animation: "fade".to_string(),
         }
     }
+}
 
+impl Default for SlideDeck {
+    fn default() -> Self {
+        Self::new("Untitled Presentation")
+    }
+}
+
+impl SlideDeck {
     #[must_use]
     pub const fn total_slides(&self) -> usize {
         self.slides.len()
@@ -206,5 +253,20 @@ impl SlideDeck {
         index: usize,
     ) -> Option<&Slide> {
         self.slides.get(index)
+    }
+
+    /// Check whether any slide in the deck has speaker notes
+    #[must_use]
+    pub fn has_any_notes(&self) -> bool {
+        self.slides.iter().any(Slide::has_notes)
+    }
+
+    /// Compute estimated total speaking duration in seconds for the entire deck
+    #[must_use]
+    pub fn total_speaking_seconds(&self) -> usize {
+        self.slides
+            .iter()
+            .map(Slide::estimated_speaking_seconds)
+            .fold(0usize, |acc, sec| acc.saturating_add(sec))
     }
 }

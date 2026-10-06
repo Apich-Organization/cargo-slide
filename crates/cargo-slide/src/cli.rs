@@ -33,6 +33,10 @@ pub enum Commands {
         /// Include Rust Cargo package with main.rs for custom trait extensions
         #[arg(long)]
         rust: bool,
+
+        /// Starter presentation template (minimal, geek, academic, pitch, business)
+        #[arg(short, long, default_value = "minimal")]
+        template: String,
     },
     /// Create a new presentation project directory
     New {
@@ -42,6 +46,10 @@ pub enum Commands {
         /// Include Rust Cargo package with main.rs for custom trait extensions
         #[arg(long)]
         rust: bool,
+
+        /// Starter presentation template (minimal, geek, academic, pitch, business)
+        #[arg(short, long, default_value = "minimal")]
+        template: String,
     },
     /// Run presentation with interactive GUI player
     Run {
@@ -161,6 +169,22 @@ pub enum Commands {
         /// Open presentation in default web browser
         #[arg(long)]
         open: bool,
+
+        /// Watch source Typst file and assets, hot-recompiling bundle on change
+        #[arg(short, long)]
+        watch: bool,
+    },
+    /// Inspect presentation package or Typst file metadata, slide count, and integrity
+    Info {
+        /// Path to .slide package or .typ file (default: slides.typ)
+        #[arg(default_value = "slides.typ")]
+        file: PathBuf,
+    },
+    /// Audit presentation health, element density, slide titles, and media assets
+    Check {
+        /// Path to .typ slide file (default: slides.typ)
+        #[arg(default_value = "slides.typ")]
+        file: PathBuf,
     },
     /// Export presentation to PDF, SVG, .slide, or WASM CSR
     Export {

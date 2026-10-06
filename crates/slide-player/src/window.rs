@@ -10,11 +10,15 @@ use crate::hud::InspectorAction;
 use crate::hud::PALETTE_COLORS;
 use crate::hud::PaletteAction;
 use crate::hud::PresenterMode;
+use crate::hud::draw_blank_screen;
 use crate::hud::draw_chart_inspector;
 use crate::hud::draw_chart_visualizer;
 use crate::hud::draw_help_overlay;
 use crate::hud::draw_hotspot_highlight;
 use crate::hud::draw_page_badge;
+use crate::hud::draw_presenter_clock;
+use crate::hud::draw_slide_grid_overlay;
+use crate::hud::draw_speaker_notes_overlay;
 use crate::hud::draw_volume_toast;
 use crate::hud::get_chart_quick_action_rects;
 use crate::hud::get_dock_rects;
@@ -1189,6 +1193,15 @@ impl SlidePlayer {
         let mut last_frame_time = Instant::now();
         let mut cursor_hidden = false;
         let mut show_help = false;
+        let mut show_timer = false;
+        let mut show_grid = false;
+        let mut show_notes = false;
+        let mut blank_mode: Option<bool> = None;
+        let mut kiosk_mode = false;
+        let mut last_kiosk_advance = Instant::now();
+        let presentation_start_time = Instant::now();
+        let mut grid_click_rects: Vec<(usize, slide_core::model::Rect)> = Vec::new();
+        let mut hovered_grid_idx: Option<usize>;
         let mut exit_requested = false;
 
         let trigger_slide_audio =
@@ -1451,6 +1464,17 @@ impl SlidePlayer {
             let hovered_dock_action = mouse_pos.and_then(|(mx, my)| {
                 hit_test_dock(width, height, is_fullscreen, hud_theme, mx, my)
             });
+
+            hovered_grid_idx = if show_grid {
+                mouse_pos.and_then(|(mx, my)| {
+                    grid_click_rects
+                        .iter()
+                        .find(|(_, r)| r.contains(mx, my))
+                        .map(|(idx, _)| *idx)
+                })
+            } else {
+                None
+            };
 
             let (slider_popup_rect, track_rect) =
                 get_volume_slider_rects(width, height, is_fullscreen, hud_theme);
@@ -1749,6 +1773,25 @@ impl SlidePlayer {
                             },
                         }
                     }
+                } else if blank_mode.is_some() {
+                    blank_mode = None;
+                } else if show_grid {
+                    if let Some((mx, my)) = mouse_pos {
+                        let mut clicked = false;
+                        for (g_idx, g_rect) in &grid_click_rects {
+                            if g_rect.contains(mx, my) {
+                                jump_target = Some(*g_idx);
+                                show_grid = false;
+                                clicked = true;
+                                break;
+                            }
+                        }
+                        if !clicked {
+                            show_grid = false;
+                        }
+                    } else {
+                        show_grid = false;
+                    }
                 } else if let Some(pal_action) = hovered_palette_action {
                     match pal_action {
                         | PaletteAction::Color(pal_idx) => active_color_idx = pal_idx,
@@ -1780,6 +1823,16 @@ impl SlidePlayer {
                                 audio_engine.toggle_mute();
                                 last_volume_change = Some(Instant::now());
                             }
+                        },
+                        | DockAction::ToggleTimer => show_timer = !show_timer,
+                        | DockAction::ToggleGrid => show_grid = !show_grid,
+                        | DockAction::ToggleNotes => show_notes = !show_notes,
+                        | DockAction::ToggleBlank => {
+                            blank_mode = if blank_mode.is_some() {
+                                None
+                            } else {
+                                Some(false)
+                            };
                         },
                         | DockAction::ToggleTheme => hud_theme = hud_theme.toggle(),
                         | DockAction::ToggleFullscreen => toggle_fullscreen_requested = true,
@@ -2277,10 +2330,18 @@ impl SlidePlayer {
                     } else {
                         match key {
                             | Key::Right | Key::Down | Key::Space | Key::PageDown | Key::Enter => {
-                                trigger_forward = true;
+                                if blank_mode.is_some() {
+                                    blank_mode = None;
+                                } else {
+                                    trigger_forward = true;
+                                }
                             },
                             | Key::Left | Key::Up | Key::Backspace | Key::PageUp => {
-                                trigger_backward = true;
+                                if blank_mode.is_some() {
+                                    blank_mode = None;
+                                } else {
+                                    trigger_backward = true;
+                                }
                             },
                             | Key::Home => jump_target = Some(0),
                             | Key::End => jump_target = Some(total_slides.saturating_sub(1)),
@@ -2358,7 +2419,42 @@ impl SlidePlayer {
                                 hud_theme = hud_theme.toggle();
                             },
                             | Key::B => {
-                                active_brush_type = active_brush_type.cycle();
+                                if presenter_mode == PresenterMode::Pen {
+                                    active_brush_type = active_brush_type.cycle();
+                                } else {
+                                    blank_mode = if blank_mode == Some(false) {
+                                        None
+                                    } else {
+                                        Some(false)
+                                    };
+                                }
+                            },
+                            | Key::Period => {
+                                blank_mode = if blank_mode == Some(false) {
+                                    None
+                                } else {
+                                    Some(false)
+                                };
+                            },
+                            | Key::W => {
+                                blank_mode = if blank_mode == Some(true) {
+                                    None
+                                } else {
+                                    Some(true)
+                                };
+                            },
+                            | Key::O => {
+                                show_timer = !show_timer;
+                            },
+                            | Key::G | Key::Tab => {
+                                show_grid = !show_grid;
+                            },
+                            | Key::N => {
+                                show_notes = !show_notes;
+                            },
+                            | Key::A => {
+                                kiosk_mode = !kiosk_mode;
+                                last_kiosk_advance = Instant::now();
                             },
                             | Key::LeftBracket => {
                                 active_brush_width = active_brush_width.saturating_sub(2).max(1);
@@ -2418,7 +2514,13 @@ impl SlidePlayer {
                                 last_volume_change = Some(Instant::now());
                             },
                             | Key::Escape => {
-                                if is_fullscreen {
+                                if show_grid {
+                                    show_grid = false;
+                                } else if show_notes {
+                                    show_notes = false;
+                                } else if blank_mode.is_some() {
+                                    blank_mode = None;
+                                } else if is_fullscreen {
                                     toggle_fullscreen_requested = true;
                                 } else {
                                     exit_requested = true;
@@ -2512,6 +2614,15 @@ impl SlidePlayer {
             let max_substep = get_max_step(&self.deck, current_idx);
             let mut next_slide = false;
             let mut prev_slide = false;
+            // Automatic advance in kiosk mode (every 10s)
+            if kiosk_mode && last_kiosk_advance.elapsed() >= Duration::from_secs(10) {
+                last_kiosk_advance = Instant::now();
+                if current_idx.saturating_add(1) >= total_slides && current_step >= max_substep {
+                    jump_target = Some(0);
+                } else {
+                    trigger_forward = true;
+                }
+            }
 
             if trigger_forward {
                 if current_step < max_substep {
@@ -2662,6 +2773,10 @@ impl SlidePlayer {
                 active_color,
                 palette_open,
                 hud_theme,
+                show_timer,
+                show_grid,
+                show_notes,
+                blank_mode.is_some(),
             );
 
             // Draw Color Palette popup if open
@@ -2733,6 +2848,47 @@ impl SlidePlayer {
             if let Some(ref inspector) = active_chart_inspector {
                 let (mx, my) = mouse_pos.unwrap_or((-1.0, -1.0));
                 draw_chart_inspector(&mut buffer, width, height, inspector, mx, my);
+            }
+
+            // Presenter timer & wall clock HUD
+            if show_timer {
+                let elapsed = presentation_start_time.elapsed().as_secs();
+                draw_presenter_clock(&mut buffer, width, height, elapsed, hud_theme);
+            }
+
+            // Speaker notes overlay
+            if show_notes {
+                let current_notes = self
+                    .deck
+                    .get_slide(current_idx)
+                    .and_then(|s| s.notes.as_deref());
+                draw_speaker_notes_overlay(
+                    &mut buffer,
+                    width,
+                    height,
+                    current_idx.saturating_add(1),
+                    total_slides,
+                    current_notes,
+                    hud_theme,
+                );
+            }
+
+            // Interactive slide grid navigator overlay
+            if show_grid {
+                grid_click_rects = draw_slide_grid_overlay(
+                    &mut buffer,
+                    width,
+                    height,
+                    &self.deck,
+                    current_idx,
+                    hovered_grid_idx,
+                    hud_theme,
+                );
+            }
+
+            // Blank screen mode (blackout or whiteout)
+            if let Some(is_white) = blank_mode {
+                draw_blank_screen(&mut buffer, width, height, is_white);
             }
 
             window

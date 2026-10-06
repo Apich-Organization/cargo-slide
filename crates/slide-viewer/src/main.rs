@@ -134,6 +134,7 @@ pub fn play_presentation_file(
     fullscreen: bool,
     hud_theme: HudTheme,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    save_recent_viewer_file(path);
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let (deck, source_dir) = match extension.to_lowercase().as_str() {
         | "slide" => {
@@ -194,8 +195,8 @@ pub fn launch_builtin_demo(
     Ok(())
 }
 
-/// Discovered presentation entry in current directory
-#[derive(Clone, Debug)]
+/// Discovered presentation entry in current directory or recent history
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SlideFileEntry {
     pub path: PathBuf,
     pub name: String,
@@ -203,11 +204,91 @@ pub struct SlideFileEntry {
     pub title: String,
     pub slides_count: usize,
     pub is_slide_pkg: bool,
+    pub is_favorite: bool,
+    pub aspect_ratio: Option<String>,
+    pub has_notes: bool,
+    pub author: Option<String>,
 }
 
-/// Scan current directory for `.slide` and `slides.typ` presentation files
+/// Helper to get cargo-slide viewer configuration directory
+pub fn get_viewer_config_dir() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(|h| PathBuf::from(h).join(".config").join("cargo-slide"))
+}
+
+/// Load recent presentations from configuration
+pub fn load_recent_viewer_files() -> Vec<String> {
+    if let Some(dir) = get_viewer_config_dir() {
+        let path = dir.join("recent_viewer.json");
+        if path.is_file()
+            && let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(list) = serde_json::from_str::<Vec<String>>(&content)
+        {
+            return list;
+        }
+    }
+    Vec::new()
+}
+
+/// Save recent presentation to configuration
+pub fn save_recent_viewer_file(file_path: &Path) {
+    let mut recents = load_recent_viewer_files();
+    let s = file_path.to_string_lossy().to_string();
+    recents.retain(|p| p != &s);
+    recents.insert(0, s);
+    if recents.len() > 20 {
+        recents.truncate(20);
+    }
+    if let Some(dir) = get_viewer_config_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("recent_viewer.json");
+        if let Ok(json) = serde_json::to_string_pretty(&recents) {
+            let _ = std::fs::write(path, json);
+        }
+    }
+}
+
+/// Load favorite presentation paths from configuration
+pub fn load_favorite_files() -> Vec<String> {
+    if let Some(dir) = get_viewer_config_dir() {
+        let path = dir.join("favorites_viewer.json");
+        if path.is_file()
+            && let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(list) = serde_json::from_str::<Vec<String>>(&content)
+        {
+            return list;
+        }
+    }
+    Vec::new()
+}
+
+/// Toggle favorite status of a presentation file
+pub fn toggle_favorite_file(file_path: &Path) -> bool {
+    let mut favs = load_favorite_files();
+    let s = file_path.to_string_lossy().to_string();
+    let is_fav = if favs.contains(&s) {
+        favs.retain(|p| p != &s);
+        false
+    } else {
+        favs.push(s);
+        true
+    };
+    if let Some(dir) = get_viewer_config_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("favorites_viewer.json");
+        if let Ok(json) = serde_json::to_string_pretty(&favs) {
+            let _ = std::fs::write(path, json);
+        }
+    }
+    is_fav
+}
+
+/// Scan current directory and recent history for presentation files
 pub fn scan_local_presentations() -> Vec<SlideFileEntry> {
     let mut entries = Vec::new();
+    let favorites = load_favorite_files();
 
     if let Ok(cwd) = std::env::current_dir() {
         if let Ok(dir_entries) = std::fs::read_dir(&cwd) {
@@ -218,16 +299,31 @@ pub fn scan_local_presentations() -> Vec<SlideFileEntry> {
                 {
                     let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
                     let size_str = format!("{:.1} KB", size as f64 / 1024.0);
-                    let (title, total_slides) = read_package_metadata(&p)
-                        .map(|m| (m.title, m.total_slides))
-                        .unwrap_or_else(|_| {
-                            (
-                                p.file_stem()
-                                    .map(|s| s.to_string_lossy().to_string())
-                                    .unwrap_or_default(),
-                                0,
-                            )
-                        });
+                    let (title, total_slides, aspect_ratio, has_notes, author) =
+                        read_package_metadata(&p)
+                            .map(|m| {
+                                (
+                                    m.title,
+                                    m.total_slides,
+                                    m.aspect_ratio,
+                                    m.has_notes,
+                                    m.author,
+                                )
+                            })
+                            .unwrap_or_else(|_| {
+                                (
+                                    p.file_stem()
+                                        .map(|s| s.to_string_lossy().to_string())
+                                        .unwrap_or_default(),
+                                    0,
+                                    Some("16:9".to_string()),
+                                    false,
+                                    None,
+                                )
+                            });
+
+                    let p_str = p.to_string_lossy().to_string();
+                    let is_favorite = favorites.contains(&p_str);
 
                     entries.push(SlideFileEntry {
                         name: p
@@ -240,26 +336,115 @@ pub fn scan_local_presentations() -> Vec<SlideFileEntry> {
                         title,
                         slides_count: total_slides,
                         is_slide_pkg: true,
+                        is_favorite,
+                        aspect_ratio,
+                        has_notes,
+                        author,
                     });
                 }
             }
         }
 
-        // Also check if `slides.typ` or `main.typ` exists in current directory
-        let typ_candidate = cwd.join("slides.typ");
-        if typ_candidate.exists() {
-            let size = std::fs::metadata(&typ_candidate)
-                .map(|m| m.len())
-                .unwrap_or(0);
+        // Also check if `slides.typ` or other presentation typst files exist in current directory
+        for typ_name in &["slides.typ", "main.typ", "presentation.typ"] {
+            let typ_candidate = cwd.join(typ_name);
+            if typ_candidate.exists() && !entries.iter().any(|e| e.path == typ_candidate) {
+                let size = std::fs::metadata(&typ_candidate)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let size_str = format!("{:.1} KB", size as f64 / 1024.0);
+                let p_str = typ_candidate.to_string_lossy().to_string();
+                let is_favorite = favorites.contains(&p_str);
+                entries.push(SlideFileEntry {
+                    name: (*typ_name).to_string(),
+                    path: typ_candidate,
+                    size_str,
+                    title: format!("Local Typst Slides ({})", typ_name),
+                    slides_count: 0,
+                    is_slide_pkg: false,
+                    is_favorite,
+                    aspect_ratio: Some("16:9".to_string()),
+                    has_notes: false,
+                    author: None,
+                });
+            }
+        }
+    }
+
+    // Also bring in recent presentations that exist on disk
+    for recent_path_str in load_recent_viewer_files() {
+        let p = PathBuf::from(&recent_path_str);
+        if p.exists() && !entries.iter().any(|e| e.path == p) {
+            let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
             let size_str = format!("{:.1} KB", size as f64 / 1024.0);
-            entries.push(SlideFileEntry {
-                name: "slides.typ".to_string(),
-                path: typ_candidate,
-                size_str,
-                title: "Local Typst Slides (slides.typ)".to_string(),
-                slides_count: 0,
-                is_slide_pkg: false,
-            });
+            let is_favorite = favorites.contains(&recent_path_str);
+
+            if p.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("slide"))
+            {
+                let (title, total_slides, aspect_ratio, has_notes, author) =
+                    read_package_metadata(&p)
+                        .map(|m| {
+                            (
+                                m.title,
+                                m.total_slides,
+                                m.aspect_ratio,
+                                m.has_notes,
+                                m.author,
+                            )
+                        })
+                        .unwrap_or_else(|_| {
+                            (
+                                p.file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                                0,
+                                Some("16:9".to_string()),
+                                false,
+                                None,
+                            )
+                        });
+
+                entries.push(SlideFileEntry {
+                    name: p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    path: p,
+                    size_str,
+                    title,
+                    slides_count: total_slides,
+                    is_slide_pkg: true,
+                    is_favorite,
+                    aspect_ratio,
+                    has_notes,
+                    author,
+                });
+            } else if p
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("typ"))
+            {
+                entries.push(SlideFileEntry {
+                    name: p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    path: p.clone(),
+                    size_str,
+                    title: format!(
+                        "Recent Typst: {}",
+                        p.file_stem().unwrap_or_default().to_string_lossy()
+                    ),
+                    slides_count: 0,
+                    is_slide_pkg: false,
+                    is_favorite,
+                    aspect_ratio: Some("16:9".to_string()),
+                    has_notes: false,
+                    author: None,
+                });
+            }
         }
     }
 

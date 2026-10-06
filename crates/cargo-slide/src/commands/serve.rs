@@ -137,6 +137,7 @@ pub fn execute(
     ip: &str,
     dir: Option<PathBuf>,
     open_browser: bool,
+    watch: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let serve_dir = if let Some(custom_dir) = dir {
         if !custom_dir.exists() {
@@ -157,6 +158,43 @@ pub fn execute(
         dist
     };
 
+    if watch && !file.is_dir() {
+        let watch_file = file.to_path_buf();
+        let target_dist = serve_dir.clone();
+        std::thread::spawn(move || {
+            use notify::RecursiveMode;
+            use notify::Watcher;
+            let (tx, rx) = std::sync::mpsc::channel();
+            let Ok(mut watcher) = notify::recommended_watcher(tx) else {
+                return;
+            };
+            let watch_path = watch_file.parent().unwrap_or_else(|| Path::new("."));
+            let _ = watcher.watch(watch_path, RecursiveMode::Recursive);
+
+            let mut last_recompile = std::time::Instant::now();
+            while let Ok(event) = rx.recv() {
+                if let Ok(ev) = event {
+                    let is_relevant = ev.paths.iter().any(|p| {
+                        p.extension().is_some_and(|ext| {
+                            ext == "typ" || ext == "csv" || ext == "png" || ext == "svg"
+                        })
+                    });
+                    if is_relevant
+                        && last_recompile.elapsed() > std::time::Duration::from_millis(500)
+                    {
+                        last_recompile = std::time::Instant::now();
+                        println!("  🔄 Change detected, recompiling web presentation bundle...");
+                        if let Err(e) = prepare_csr_bundle(&watch_file, &target_dist) {
+                            eprintln!("  ✕ Recompilation failed: {e}");
+                        } else {
+                            println!("  ✓ Web presentation recompiled successfully!");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     let bind_addr = format!("{ip}:{port}");
     let server = Server::http(&bind_addr)
         .map_err(|e| format!("Failed to bind static server to {bind_addr}: {e}"))?;
@@ -169,6 +207,7 @@ pub fn execute(
             "stage": "server_started",
             "url": base_url,
             "serve_dir": serve_dir.display().to_string(),
+            "watch": watch,
         })),
     );
 
@@ -179,6 +218,9 @@ pub fn execute(
     println!("  │  📡 URL:         http://{:<30}│", bind_addr);
     println!("  │  📁 Directory:   {:<38}│", serve_dir.display());
     println!("  │  ⚡ Mode:        Pure Rust WASM + CSR (Zero Inline JS) │");
+    if watch {
+        println!("  │  👀 Live Watch:  Active (auto-recompiling on change)   │");
+    }
     println!("  │                                                        │");
     println!("  │  Press Ctrl+C to terminate the server                  │");
     println!("  └────────────────────────────────────────────────────────┘");

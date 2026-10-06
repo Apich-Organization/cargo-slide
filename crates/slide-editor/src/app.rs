@@ -11,6 +11,8 @@ use crate::model::ast_engine::parse_length_to_pt;
 use crate::ui::modals::view_error_details_modal;
 use crate::ui::modals::view_export_modal;
 use crate::ui::modals::view_open_modal;
+use crate::ui::modals::view_presentation_health_modal;
+use crate::ui::modals::view_template_library_modal;
 use crate::ui::sidebar::view_sidebar;
 use crate::ui::statusbar::view_statusbar;
 use crate::ui::theme::AppTheme;
@@ -148,6 +150,8 @@ pub enum ActiveModal {
         footer_right_mode: usize,
         footer_right_custom: String,
     },
+    TemplateLibrary,
+    PresentationHealth(Vec<slide_core::compiler::PresentationHealthIssue>),
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -219,6 +223,76 @@ pub struct SlideEditorApp {
     pub modal_box_editor: text_editor::Content,
     pub modal_title_slide_editor: text_editor::Content,
     pub modal_callout_editor: text_editor::Content,
+    pub undo_stack: Vec<DocumentSnapshot>,
+    pub redo_stack: Vec<DocumentSnapshot>,
+    pub recent_files: Vec<String>,
+}
+
+/// Undo / Redo history snapshot
+#[derive(Debug, Clone)]
+pub struct DocumentSnapshot {
+    pub source_text: String,
+    pub active_slide: usize,
+}
+
+pub const TEMPLATE_SOURCES: [&str; 8] = [
+    // 0: Title Hero
+    "#title-slide(\n  title: [Presentation Title],\n  subtitle: [A Code-Driven Presentation],\n  author: [Presenter Name],\n  date: datetime.today().display(),\n)",
+    // 1: 2-Column Comparison
+    "#slide(title: [Feature Comparison])[\n  #cols(columns: (1fr, 1fr))[\n    #callout(title: [Traditional Tools], kind: \"warning\")[\n      - Manual alignment friction\n      - Bulky binary formats\n      - Clunky diff & review\n    ]\n  ][\n    #callout(title: [Cargo Slide], kind: \"info\")[\n      - Declarative Typst markup\n      - Instant live preview\n      - Zero-overhead native runtime\n    ]\n  ]\n]",
+    // 2: 3-Column Feature Pillars
+    "#slide(title: [Architecture Pillars])[\n  #cols(columns: (1fr, 1fr, 1fr))[\n    #block(stroke: 1pt + rgb(\"0284c7\"), inset: 10pt, radius: 6pt)[\n      === Blazing Fast\n      Instant SVG recompilation and cached rendering\n    ]\n  ][\n    #block(stroke: 1pt + rgb(\"16a34a\"), inset: 10pt, radius: 6pt)[\n      === Expressive\n      Native charts, math, audio, and transitions\n    ]\n  ][\n    #block(stroke: 1pt + rgb(\"9333ea\"), inset: 10pt, radius: 6pt)[\n      === Standalone\n      Compressed LZMA2 `.slide` bundles\n    ]\n  ]\n]",
+    // 3: Code & Commentary
+    "#slide(title: [Implementation Details])[\n  #cols(columns: (3fr, 2fr))[\n    ```rust\n    fn main() {\n        println!(\"Hello, Cargo Slide!\");\n    }\n    ```\n  ][\n    - Zero-dependency native Rust player\n    - Hardware-smooth page transitions\n    - Presenter timer & whiteboard ink\n  ]\n]",
+    // 4: Metric KPI Showcase
+    "#slide(title: [Key Performance Metrics])[\n  #cols(columns: (1fr, 1fr, 1fr))[\n    #metric(title: [Render Latency], value: [16 ms], delta: [-45%])\n  ][\n    #metric(title: [Playback FPS], value: [60 FPS], delta: [+100%])\n  ][\n    #metric(title: [Bundle Size], value: [1.2 MB], delta: [-80%])\n  ]\n]",
+    // 5: Quote Spotlight
+    "#slide(title: [Design Philosophy])[\n  #align(center + horizon)[\n    #quote(attribution: [Design Principles])[\n      Simplicity is prerequisite for reliability.\n    ]\n  ]\n]",
+    // 6: Roadmap Timeline
+    "#slide(title: [Product Roadmap])[\n  - [x] Phase 1: Core Compiler & SVG Engine\n  - [x] Phase 2: Native Player & Presentation Tools\n  - [x] Phase 3: Typora-Style WYSIWYG Editor\n  - [ ] Phase 4: Collaborative Presentation Cloud\n]",
+    // 7: Closing Q&A
+    "#slide(title: [Thank You!])[\n  #align(center + horizon)[\n    = Questions & Discussion\n\n    #v(0.5cm)\n    GitHub: `github.com/user/cargo-slide`\n\n    #v(0.3cm)\n    Thank you for listening!\n  ]\n]",
+];
+
+fn get_recent_editor_file() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(|h| {
+            PathBuf::from(h)
+                .join(".config")
+                .join("cargo-slide")
+                .join("recent_editor.json")
+        })
+}
+
+pub fn load_recent_editor_files() -> Vec<String> {
+    if let Some(path) = get_recent_editor_file()
+        && path.is_file()
+        && let Ok(content) = std::fs::read_to_string(path)
+        && let Ok(list) = serde_json::from_str::<Vec<String>>(&content)
+    {
+        return list;
+    }
+    Vec::new()
+}
+
+pub fn save_recent_editor_file(file_path: &Path) {
+    let mut recents = load_recent_editor_files();
+    let s = file_path.to_string_lossy().to_string();
+    recents.retain(|p| p != &s);
+    recents.insert(0, s);
+    if recents.len() > 10 {
+        recents.truncate(10);
+    }
+    if let Some(path) = get_recent_editor_file() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&recents) {
+            let _ = std::fs::write(path, json);
+        }
+    }
 }
 
 /// Application messages
@@ -510,6 +584,23 @@ pub enum Message {
     FooterRightModeChanged(usize),
     FooterRightCustomChanged(String),
     ApplyHeaderFooterSettings,
+    // Intelligent quick fix
+    ApplyQuickFix(crate::compiler_bridge::QuickFix),
+    // Multi-level undo / redo
+    Undo,
+    Redo,
+    // Template library modal
+    OpenTemplateLibraryModal,
+    InsertTemplateSlide(usize),
+    // Presentation health & pacing inspector
+    OpenPresentationHealthModal,
+    // Recent documents
+    OpenRecentFile(String),
+    // Slide keyboard management
+    MoveActiveSlideUp,
+    MoveActiveSlideDown,
+    DuplicateActiveSlide,
+    InsertSlideAfterActive,
 }
 
 impl SlideEditorApp {
@@ -623,15 +714,39 @@ impl SlideEditorApp {
             modal_box_editor: text_editor::Content::new(),
             modal_title_slide_editor: text_editor::Content::new(),
             modal_callout_editor: text_editor::Content::new(),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            recent_files: load_recent_editor_files(),
         };
+        if let Some(ref p) = initial_file {
+            save_recent_editor_file(p);
+        }
         app.update_slide_cache();
         app
+    }
+
+    /// Record a snapshot for multi-level Undo before document mutation
+    pub fn push_undo_snapshot(&mut self) {
+        if self.undo_stack.last().map(|s| &s.source_text) == Some(&self.doc.source_text) {
+            return;
+        }
+        self.undo_stack.push(DocumentSnapshot {
+            source_text: self.doc.source_text.clone(),
+            active_slide: self.active_slide,
+        });
+        if self.undo_stack.len() > 50 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
     }
 
     /// Commit active block editing in-place into engine and document
     pub fn commit_active_block(&mut self) {
         if let Some(range) = self.active_block_range.take() {
             let new_text = self.active_block_content.text();
+            if self.engine.source_text.get(range.clone()) != Some(&new_text) {
+                self.push_undo_snapshot();
+            }
             let _ = self.engine.update_block_at_range(range, &new_text);
             self.doc.source_text = self.engine.source_text.clone();
             self.doc.is_dirty = true;
@@ -1015,6 +1130,7 @@ impl SlideEditorApp {
     }
 
     /// Trigger asynchronous background compilation without blocking the UI thread
+    #[allow(clippy::result_large_err)]
     pub fn trigger_recompile_task(&mut self) -> Task<Message> {
         if self.compilation_in_flight {
             self.pending_recompile = true;
@@ -1048,6 +1164,7 @@ impl SlideEditorApp {
                         line: None,
                         column: None,
                         full_stderr: String::new(),
+                        quick_fix: None,
                     })
                 })
             },
@@ -1817,6 +1934,7 @@ impl SlideEditorApp {
             },
 
             | Message::InsertSlide => {
+                self.push_undo_snapshot();
                 self.commit_active_block();
                 self.doc.add_new_slide();
                 self.engine.source_text = self.doc.source_text.clone();
@@ -1826,6 +1944,7 @@ impl SlideEditorApp {
                 self.trigger_recompile();
             },
             | Message::InsertSlideAt(target_idx) => {
+                self.push_undo_snapshot();
                 self.commit_active_block();
                 self.doc.insert_slide_at(target_idx);
                 self.engine.source_text = self.doc.source_text.clone();
@@ -1836,6 +1955,7 @@ impl SlideEditorApp {
                 self.trigger_recompile();
             },
             | Message::DuplicateSlide(idx) => {
+                self.push_undo_snapshot();
                 self.commit_active_block();
                 self.doc.duplicate_slide(idx);
                 self.engine.source_text = self.doc.source_text.clone();
@@ -1846,6 +1966,7 @@ impl SlideEditorApp {
                 self.trigger_recompile();
             },
             | Message::MoveSlide { from_idx, to_idx } => {
+                self.push_undo_snapshot();
                 self.commit_active_block();
                 self.doc.move_slide(from_idx, to_idx);
                 self.engine.source_text = self.doc.source_text.clone();
@@ -1854,6 +1975,149 @@ impl SlideEditorApp {
                 self.active_modal = None;
                 self.sync_editors_from_doc();
                 self.trigger_recompile();
+            },
+            | Message::MoveActiveSlideUp => {
+                if self.active_slide > 0 {
+                    self.push_undo_snapshot();
+                    self.commit_active_block();
+                    let target = self.active_slide.saturating_sub(1);
+                    self.doc.move_slide(self.active_slide, target);
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.active_slide = target;
+                    self.sync_editors_from_doc();
+                    self.trigger_recompile();
+                }
+            },
+            | Message::MoveActiveSlideDown => {
+                let next = self.active_slide.saturating_add(1);
+                if next < self.doc.total_slides() {
+                    self.push_undo_snapshot();
+                    self.commit_active_block();
+                    self.doc.move_slide(self.active_slide, next);
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.active_slide = next;
+                    self.sync_editors_from_doc();
+                    self.trigger_recompile();
+                }
+            },
+            | Message::DuplicateActiveSlide => {
+                self.push_undo_snapshot();
+                self.commit_active_block();
+                self.doc.duplicate_slide(self.active_slide);
+                self.engine.source_text = self.doc.source_text.clone();
+                self.engine.reparse();
+                self.active_slide =
+                    (self.active_slide + 1).min(self.doc.total_slides().saturating_sub(1));
+                self.sync_editors_from_doc();
+                self.trigger_recompile();
+            },
+            | Message::InsertSlideAfterActive => {
+                self.push_undo_snapshot();
+                self.commit_active_block();
+                let target = self.active_slide + 1;
+                self.doc.insert_slide_at(target);
+                self.engine.source_text = self.doc.source_text.clone();
+                self.engine.reparse();
+                self.active_slide = target.min(self.doc.total_slides().saturating_sub(1));
+                self.sync_editors_from_doc();
+                self.trigger_recompile();
+            },
+            | Message::Undo => {
+                if let Some(snapshot) = self.undo_stack.pop() {
+                    self.redo_stack.push(DocumentSnapshot {
+                        source_text: self.doc.source_text.clone(),
+                        active_slide: self.active_slide,
+                    });
+                    self.commit_active_block();
+                    self.doc.source_text = snapshot.source_text;
+                    self.doc.sync_chunks_from_source();
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.active_slide = snapshot
+                        .active_slide
+                        .min(self.doc.total_slides().saturating_sub(1));
+                    self.sync_editors_from_doc();
+                    self.trigger_recompile();
+                }
+            },
+            | Message::Redo => {
+                if let Some(snapshot) = self.redo_stack.pop() {
+                    self.undo_stack.push(DocumentSnapshot {
+                        source_text: self.doc.source_text.clone(),
+                        active_slide: self.active_slide,
+                    });
+                    self.commit_active_block();
+                    self.doc.source_text = snapshot.source_text;
+                    self.doc.sync_chunks_from_source();
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.active_slide = snapshot
+                        .active_slide
+                        .min(self.doc.total_slides().saturating_sub(1));
+                    self.sync_editors_from_doc();
+                    self.trigger_recompile();
+                }
+            },
+            | Message::OpenTemplateLibraryModal => {
+                self.active_modal = Some(ActiveModal::TemplateLibrary);
+            },
+            | Message::InsertTemplateSlide(idx) => {
+                if let Some(&template_code) = TEMPLATE_SOURCES.get(idx) {
+                    self.push_undo_snapshot();
+                    self.commit_active_block();
+                    let target_idx = (self.active_slide + 1).min(self.doc.total_slides());
+                    self.doc
+                        .slide_chunks
+                        .insert(target_idx, template_code.to_string());
+                    self.doc.rebuild_source_from_chunks();
+                    self.doc.is_dirty = true;
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.active_slide = target_idx.min(self.doc.total_slides().saturating_sub(1));
+                    self.active_modal = None;
+                    self.sync_editors_from_doc();
+                    self.trigger_recompile();
+                }
+            },
+            | Message::OpenPresentationHealthModal => {
+                let deck = self.doc.deck.clone().unwrap_or_default();
+                let issues = slide_core::compiler::check_presentation_health(
+                    &deck,
+                    &self.doc.source_text,
+                    self.doc.assets_dir.as_deref(),
+                );
+                self.active_modal = Some(ActiveModal::PresentationHealth(issues));
+            },
+            | Message::ApplyQuickFix(qf) => {
+                self.push_undo_snapshot();
+                if let Some(ref prepend) = qf.prepend_text {
+                    self.doc.source_text = format!("{}{}", prepend, self.doc.source_text);
+                }
+                if let Some((ref from, ref to)) = qf.replace_pair {
+                    self.doc.source_text = self.doc.source_text.replacen(from, to, 1);
+                }
+                self.doc.sync_chunks_from_source();
+                self.doc.is_dirty = true;
+                self.engine.source_text = self.doc.source_text.clone();
+                self.engine.reparse();
+                self.active_modal = None;
+                self.sync_editors_from_doc();
+                self.trigger_recompile();
+            },
+            | Message::OpenRecentFile(path_str) => {
+                let p = PathBuf::from(&path_str);
+                if let Ok(new_doc) = EditorDocument::open(&p) {
+                    self.push_undo_snapshot();
+                    self.doc = new_doc;
+                    save_recent_editor_file(&p);
+                    self.recent_files = load_recent_editor_files();
+                    self.active_slide = 0;
+                    self.active_modal = None;
+                    self.sync_editors_from_doc();
+                    self.trigger_recompile();
+                }
             },
             | Message::ToggleSidebarViewMode => {
                 self.sidebar_view_mode = match self.sidebar_view_mode {
@@ -2271,6 +2535,7 @@ impl SlideEditorApp {
                 }
             },
             | Message::DeleteSlide(idx) => {
+                self.push_undo_snapshot();
                 self.commit_active_block();
                 self.doc.delete_slide(idx);
                 self.engine.source_text = self.doc.source_text.clone();
@@ -2434,6 +2699,8 @@ impl SlideEditorApp {
                     match EditorDocument::open(&path) {
                         | Ok(new_doc) => {
                             self.commit_active_block();
+                            save_recent_editor_file(&path);
+                            self.recent_files = load_recent_editor_files();
                             self.doc = new_doc;
                             self.engine =
                                 TypstDocumentEngine::from_source(self.doc.source_text.clone());
@@ -2471,6 +2738,10 @@ impl SlideEditorApp {
                     });
                 } else {
                     let _ = self.doc.save(None);
+                    if let Some(ref p) = self.doc.file_path {
+                        save_recent_editor_file(p);
+                        self.recent_files = load_recent_editor_files();
+                    }
                     task = self.trigger_recompile_task();
                 }
             },
@@ -3724,6 +3995,8 @@ impl SlideEditorApp {
             self.doc.is_dirty,
             self.mode,
             self.sidebar_visible,
+            !self.undo_stack.is_empty(),
+            !self.redo_stack.is_empty(),
         );
 
         let formatting_bar = view_formatting_bar(self.theme, self.active_slide);
@@ -3864,7 +4137,12 @@ impl SlideEditorApp {
                     )
                 },
                 | ActiveModal::Open => {
-                    view_open_modal(self.theme, &self.open_path, self.open_error.as_deref())
+                    view_open_modal(
+                        self.theme,
+                        &self.open_path,
+                        self.open_error.as_deref(),
+                        &self.recent_files,
+                    )
                 },
                 | ActiveModal::ErrorDetails(diag) => view_error_details_modal(self.theme, diag),
                 | ActiveModal::ComplexElement(modal) => {
@@ -3973,6 +4251,15 @@ impl SlideEditorApp {
                         footer_right_custom,
                     )
                 },
+                | ActiveModal::TemplateLibrary => view_template_library_modal(self.theme),
+                | ActiveModal::PresentationHealth(issues) => {
+                    view_presentation_health_modal(
+                        self.theme,
+                        issues,
+                        self.cached_word_count,
+                        self.doc.total_slides(),
+                    )
+                },
             };
 
             // Overlay modal on top of base content
@@ -4007,6 +4294,57 @@ fn handle_global_drag_event(
         }) if (c == "f" || c == "F") && (modifiers.control() || modifiers.command()) => {
             Some(Message::OpenSearchModal)
         },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "z" || c == "Z")
+            && (modifiers.control() || modifiers.command())
+            && !modifiers.shift() =>
+        {
+            Some(Message::Undo)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "y" || c == "Y") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::Redo)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "z" || c == "Z")
+            && (modifiers.control() || modifiers.command())
+            && modifiers.shift() =>
+        {
+            Some(Message::Redo)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "s" || c == "S") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::SaveDocument)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "d" || c == "D") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::DuplicateActiveSlide)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp),
+            modifiers,
+            ..
+        }) if modifiers.alt() => Some(Message::MoveActiveSlideUp),
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown),
+            modifiers,
+            ..
+        }) if modifiers.alt() => Some(Message::MoveActiveSlideDown),
         | _ => None,
     }
 }

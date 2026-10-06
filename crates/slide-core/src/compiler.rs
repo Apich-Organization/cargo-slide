@@ -207,6 +207,8 @@ impl SlideCompiler {
             SlideError::Compilation(format!("Failed to read {}: {e}", typ_file.display()))
         })?;
         let current_source_hash = compute_source_hash(&source_bytes);
+        let source_str = String::from_utf8_lossy(&source_bytes);
+        let extracted_notes = extract_speaker_notes_by_slide(&source_str);
 
         let cache_dir = get_render_cache_dir(typ_file);
         let canonical_path_str = typ_file
@@ -348,12 +350,23 @@ impl SlideCompiler {
 
             if let Some(mut s) = cached_slide {
                 s.page_number = page_num;
+                if s.notes.is_none() {
+                    s.notes = extracted_notes
+                        .get(page_num.saturating_sub(1))
+                        .cloned()
+                        .flatten();
+                }
                 slides.push(s);
                 reused_slide_count += 1;
             } else {
                 let svg_content = crate::svg::sanitize_svg(&raw_svg);
                 let svg_info =
                     crate::svg::parse_svg_slide_with_root(&svg_content, Some(&root_dir))?;
+
+                let note = extracted_notes
+                    .get(page_num.saturating_sub(1))
+                    .cloned()
+                    .flatten();
 
                 slides.push(Slide {
                     page_number: page_num,
@@ -362,6 +375,7 @@ impl SlideCompiler {
                     hotspots: svg_info.hotspots,
                     animation: svg_info.transition,
                     steps: svg_info.steps,
+                    notes: note,
                 });
                 parsed_slide_count += 1;
             }
@@ -791,4 +805,196 @@ fn preprocess_charts(
             }
         }
     }
+}
+
+/// Extract speaker notes per slide from Typst source code
+#[must_use]
+pub fn extract_speaker_notes_by_slide(source: &str) -> Vec<Option<String>> {
+    let mut results = Vec::new();
+    let mut current_notes: Vec<String> = Vec::new();
+    let mut has_slide_started = false;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        let is_pagebreak = trimmed.starts_with("#pagebreak()");
+        let is_slide_macro = (trimmed.starts_with("#slide(")
+            || trimmed.starts_with("#title-slide("))
+            && !trimmed.starts_with("#let ");
+
+        if is_pagebreak {
+            let note_text = if current_notes.is_empty() {
+                None
+            } else {
+                Some(current_notes.join("\n").trim().to_string())
+            };
+            results.push(note_text);
+            current_notes.clear();
+            has_slide_started = true;
+        } else if is_slide_macro {
+            if has_slide_started {
+                let note_text = if current_notes.is_empty() {
+                    None
+                } else {
+                    Some(current_notes.join("\n").trim().to_string())
+                };
+                results.push(note_text);
+                current_notes.clear();
+            }
+            has_slide_started = true;
+        }
+
+        // Check for note patterns
+        if let Some(rest) = trimmed
+            .strip_prefix("// [note]:")
+            .or_else(|| trimmed.strip_prefix("// [notes]:"))
+            .or_else(|| trimmed.strip_prefix("// Note:"))
+            .or_else(|| trimmed.strip_prefix("// Speaker:"))
+        {
+            let n = rest.trim();
+            if !n.is_empty() {
+                current_notes.push(n.to_string());
+            }
+        } else if trimmed.starts_with("#note[") && trimmed.ends_with(']') {
+            let inner = trimmed
+                .get(6..trimmed.len().saturating_sub(1))
+                .unwrap_or("")
+                .trim();
+            if !inner.is_empty() {
+                current_notes.push(inner.to_string());
+            }
+        }
+    }
+
+    let final_note = if current_notes.is_empty() {
+        None
+    } else {
+        Some(current_notes.join("\n").trim().to_string())
+    };
+    results.push(final_note);
+
+    results
+}
+
+/// Issue severity for presentation health checks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum HealthSeverity {
+    /// Informational suggestion
+    Info,
+    /// Warning that may affect presentation quality
+    Warning,
+    /// Error preventing successful presentation
+    Error,
+}
+
+/// A detected presentation issue or suggestion
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PresentationHealthIssue {
+    /// Severity level
+    pub severity: HealthSeverity,
+    /// Slide index if issue is specific to a slide
+    pub slide_index: Option<usize>,
+    /// Human-readable diagnostic description
+    pub message: String,
+    /// Actionable suggestion to remediate
+    pub suggestion: Option<String>,
+}
+
+/// Analyze a presentation deck and source code for common pitfalls and formatting issues.
+#[must_use]
+pub fn check_presentation_health(
+    deck: &SlideDeck,
+    source: &str,
+    project_root: Option<&Path>,
+) -> Vec<PresentationHealthIssue> {
+    let mut issues = Vec::new();
+
+    // 1. Check total slide count
+    if deck.slides.is_empty() {
+        issues.push(PresentationHealthIssue {
+            severity: HealthSeverity::Error,
+            slide_index: None,
+            message: "Presentation has no slides.".to_string(),
+            suggestion: Some("Add at least one slide with `= Title` or `#slide(...)`.".to_string()),
+        });
+    }
+
+    // 2. Check each slide for text density and media assets
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let text_in_svg = slide
+            .svg_data
+            .lines()
+            .filter(|l| l.contains("<text"))
+            .count();
+        if text_in_svg > 150 {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Warning,
+                slide_index: Some(idx),
+                message: format!(
+                    "Slide {} has very high visual text density ({} text elements).",
+                    idx.saturating_add(1),
+                    text_in_svg
+                ),
+                suggestion: Some(
+                    "Consider splitting this slide into two slides to improve audience readability."
+                        .to_string(),
+                ),
+            });
+        }
+
+        // Check for media file hotspots
+        for hs in &slide.hotspots {
+            match hs {
+                | crate::model::Hotspot::Video {
+                    source: media_src, ..
+                }
+                | crate::model::Hotspot::Audio {
+                    source: media_src, ..
+                } => {
+                    if !media_src.contains("://") && !media_src.starts_with('#') {
+                        let clean = media_src.strip_prefix("file://").unwrap_or(media_src);
+                        let exists = if let Some(root) = project_root {
+                            root.join(clean).exists() || Path::new(clean).exists()
+                        } else {
+                            Path::new(clean).exists()
+                        };
+                        if !exists {
+                            issues.push(PresentationHealthIssue {
+                                severity: HealthSeverity::Warning,
+                                slide_index: Some(idx),
+                                message: format!(
+                                    "Slide {}: Media asset file not found: '{}'",
+                                    idx.saturating_add(1),
+                                    clean
+                                ),
+                                suggestion: Some(
+                                    "Check the media file path or copy the file into the project directory."
+                                        .to_string(),
+                                ),
+                            });
+                        }
+                    }
+                },
+                | _ => {},
+            }
+        }
+    }
+
+    // 3. Check source text for common Typst slide issues
+    if !source.contains("#import \"slide.typ\"")
+        && !source.contains("#import \"theme.typ\"")
+        && source.contains("#slide(")
+    {
+        issues.push(PresentationHealthIssue {
+            severity: HealthSeverity::Error,
+            slide_index: None,
+            message:
+                "Missing slide macros import: source uses '#slide(' but does not import 'slide.typ'."
+                    .to_string(),
+            suggestion: Some(
+                "Add `#import \"slide.typ\": *` at the top of your document.".to_string(),
+            ),
+        });
+    }
+
+    issues
 }

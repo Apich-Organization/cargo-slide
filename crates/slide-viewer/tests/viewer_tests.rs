@@ -42,6 +42,7 @@ fn test_viewer_lzma2_package_roundtrip() {
         hotspots: vec![],
         animation: Some("fade".to_string()),
         steps: vec![],
+        notes: None,
     });
 
     // Pack using LZMA2 extreme

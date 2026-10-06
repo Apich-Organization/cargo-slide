@@ -217,7 +217,23 @@ impl ChartData {
         chart_type: ChartType,
         title: Option<String>,
     ) -> Result<Self> {
+        let delimiter = if let Some(first_line) = csv_text.lines().find(|l| !l.trim().is_empty()) {
+            let semi = first_line.matches(';').count();
+            let tab = first_line.matches('\t').count();
+            let comma = first_line.matches(',').count();
+            if semi > comma && semi > tab {
+                b';'
+            } else if tab > comma && tab > semi {
+                b'\t'
+            } else {
+                b','
+            }
+        } else {
+            b','
+        };
+
         let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(delimiter)
             .has_headers(true)
             .flexible(true)
             .from_reader(csv_text.as_bytes());

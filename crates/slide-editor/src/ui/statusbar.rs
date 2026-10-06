@@ -51,6 +51,23 @@ pub fn view_statusbar<'a>(
         .size(11)
         .color(theme.text_muted());
 
+    let talk_mins = ((word_count as f32) / 130.0).max(1.0).ceil() as usize;
+    let pacing_info = text(format!("~{talk_mins} min talk"))
+        .size(11)
+        .color(theme.accent());
+
+    let health_btn = button(
+        row![
+            text("🩺").size(10),
+            text("Health").size(11).color(theme.text_secondary()),
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center),
+    )
+    .padding([2, 6])
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .on_press(Message::OpenPresentationHealthModal);
+
     let left_info = row![
         slide_info,
         container(
@@ -65,8 +82,21 @@ pub fn view_statusbar<'a>(
             }
         }),
         stats_info,
+        container(
+            Space::new()
+                .width(Length::Fixed(1.0))
+                .height(Length::Fixed(10.0))
+        )
+        .style(move |_| {
+            container::Style {
+                background: Some(Background::Color(theme.border_color())),
+                ..container::Style::default()
+            }
+        }),
+        pacing_info,
+        health_btn,
     ]
-    .spacing(10)
+    .spacing(8)
     .align_y(Alignment::Center);
 
     // Center: Compiler Diagnostic status indicator

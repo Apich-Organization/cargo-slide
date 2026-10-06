@@ -19,6 +19,7 @@ use iced::widget::row;
 use iced::widget::text;
 
 /// Render the primary top toolbar
+#[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn view_toolbar<'a>(
     theme: AppTheme,
@@ -27,6 +28,8 @@ pub fn view_toolbar<'a>(
     is_dirty: bool,
     mode: EditorMode,
     sidebar_visible: bool,
+    can_undo: bool,
+    can_redo: bool,
 ) -> Element<'a, Message> {
     let outline_label = if sidebar_visible {
         "< Outline"
@@ -189,10 +192,44 @@ pub fn view_toolbar<'a>(
         .padding([5, 10])
         .on_press(Message::OpenHeaderFooterModal);
 
+    let undo_btn = button(text("↶ Undo").size(12).color(if can_undo {
+        theme.text_primary()
+    } else {
+        theme.text_muted()
+    }))
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .padding([5, 9])
+    .on_press_maybe(if can_undo {
+        Some(Message::Undo)
+    } else {
+        None
+    });
+
+    let redo_btn = button(text("↷ Redo").size(12).color(if can_redo {
+        theme.text_primary()
+    } else {
+        theme.text_muted()
+    }))
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .padding([5, 9])
+    .on_press_maybe(if can_redo {
+        Some(Message::Redo)
+    } else {
+        None
+    });
+
+    let templates_btn = button(text("Templates").size(12))
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .padding([5, 10])
+        .on_press(Message::OpenTemplateLibraryModal);
+
     let right_bar = row![
         new_btn,
+        templates_btn,
         open_btn,
         save_btn,
+        undo_btn,
+        redo_btn,
         find_btn,
         font_btn,
         header_footer_btn,

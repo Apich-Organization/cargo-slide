@@ -116,6 +116,10 @@ pub enum DockAction {
     TogglePalette,
     ClearInk,
     ToggleMute,
+    ToggleTimer,
+    ToggleGrid,
+    ToggleNotes,
+    ToggleBlank,
     ToggleTheme,
     ToggleFullscreen,
     ToggleHelp,
@@ -717,7 +721,7 @@ pub fn get_dock_rects(
     is_fullscreen: bool,
     theme: HudTheme,
 ) -> (Rect, Vec<(DockAction, Rect, &'static str)>) {
-    let dock_w = 510.0f32;
+    let dock_w = 680.0f32.min((screen_w as f32 - 40.0).max(400.0));
     let dock_h = 36.0f32;
     let dock_x = ((screen_w as f32) - dock_w) / 2.0;
     let dock_y = (screen_h as f32) - 48.0;
@@ -739,6 +743,10 @@ pub fn get_dock_rects(
         (DockAction::TogglePalette, "COL"),
         (DockAction::ClearInk, "CLR"),
         (DockAction::ToggleMute, "VOL"),
+        (DockAction::ToggleTimer, "TIM"),
+        (DockAction::ToggleGrid, "GRD"),
+        (DockAction::ToggleNotes, "NOT"),
+        (DockAction::ToggleBlank, "BLK"),
         (DockAction::ToggleTheme, theme.label()),
         (DockAction::ToggleFullscreen, full_label),
         (DockAction::ToggleHelp, "?"),
@@ -798,6 +806,10 @@ pub fn render_dock(
     active_color: u32,
     palette_open: bool,
     theme: HudTheme,
+    timer_active: bool,
+    grid_active: bool,
+    notes_active: bool,
+    blank_active: bool,
 ) {
     let (dock_rect, items) = get_dock_rects(width, height, is_fullscreen, theme);
 
@@ -861,6 +873,10 @@ pub fn render_dock(
             | DockAction::ModePen => mode == PresenterMode::Pen,
             | DockAction::TogglePalette => palette_open,
             | DockAction::ToggleTheme => theme.is_light(),
+            | DockAction::ToggleTimer => timer_active,
+            | DockAction::ToggleGrid => grid_active,
+            | DockAction::ToggleNotes => notes_active,
+            | DockAction::ToggleBlank => blank_active,
             | _ => false,
         };
         let is_hovered = hovered == Some(action);
@@ -1752,6 +1768,498 @@ pub fn draw_page_badge(
     }
 }
 
+/// Extract a human-readable title preview from SVG text elements
+#[must_use]
+pub fn extract_slide_title_preview(svg_data: &str) -> Option<String> {
+    for line in svg_data.lines() {
+        if let Some(start) = line.find("<text")
+            && let Some(content_start) = line.get(start..).and_then(|s| s.find('>'))
+            && let Some(tp) = line.get(start.saturating_add(content_start).saturating_add(1)..)
+            && let Some(content_end) = tp.find("</text>")
+        {
+            let raw = tp.get(..content_end).unwrap_or("").trim();
+            if !raw.is_empty() && raw.len() <= 60 {
+                return Some(raw.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Draw floating presenter timer & wall-clock HUD at the top right
+pub fn draw_presenter_clock(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    elapsed_secs: u64,
+    theme: HudTheme,
+) {
+    let mins = elapsed_secs / 60;
+    let secs = elapsed_secs % 60;
+    let elapsed_str = format!("{:02}:{:02}", mins, secs);
+
+    let system_time_str = {
+        let now = std::time::SystemTime::now();
+        if let Ok(duration) = now.duration_since(std::time::UNIX_EPOCH) {
+            let total_secs = duration.as_secs();
+            let hours = (total_secs / 3600) % 24;
+            let m = (total_secs / 60) % 60;
+            format!("{:02}:{:02}", hours, m)
+        } else {
+            "--:--".to_string()
+        }
+    };
+
+    let clock_text = format!("TIMER: {} • CLOCK: {}", elapsed_str, system_time_str);
+
+    let char_w = 6usize;
+    let char_h = 8usize;
+    let padding = 8usize;
+    let text_w = clock_text.len().saturating_mul(char_w.saturating_add(1));
+    let box_w = text_w.saturating_add(padding.saturating_mul(2));
+    let box_h = char_h.saturating_add(padding.saturating_mul(2));
+
+    let start_x = width.saturating_sub(box_w.saturating_add(16));
+    let start_y = 16usize;
+
+    let (bg_r, bg_g, bg_b, text_color, border_color) = if theme.is_light() {
+        (0xf4, 0xf6, 0xf8, 0xFF0969da, 0xFFd0d7de)
+    } else {
+        (0x16, 0x1b, 0x22, 0xFF58a6ff, 0xFF30363d)
+    };
+
+    for y in start_y..(start_y.saturating_add(box_h)).min(height) {
+        let row_start = y.saturating_mul(width);
+        for x in start_x..(start_x.saturating_add(box_w)).min(width) {
+            let idx = row_start.saturating_add(x);
+            if let Some(px) = buffer.get_mut(idx) {
+                let bg = *px;
+                let r = (((bg >> 16) & 0xFF) * 15 + bg_r * 85) / 100;
+                let g = (((bg >> 8) & 0xFF) * 15 + bg_g * 85) / 100;
+                let b = ((bg & 0xFF) * 15 + bg_b * 85) / 100;
+                *px = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    for x in start_x..(start_x.saturating_add(box_w)).min(width) {
+        let top_idx = start_y.saturating_mul(width).saturating_add(x);
+        if let Some(px) = buffer.get_mut(top_idx) {
+            *px = border_color;
+        }
+        let bot_y = (start_y.saturating_add(box_h).saturating_sub(1)).min(height.saturating_sub(1));
+        let bot_idx = bot_y.saturating_mul(width).saturating_add(x);
+        if let Some(px) = buffer.get_mut(bot_idx) {
+            *px = border_color;
+        }
+    }
+    for y in start_y..(start_y.saturating_add(box_h)).min(height) {
+        let left_idx = y.saturating_mul(width).saturating_add(start_x);
+        if let Some(px) = buffer.get_mut(left_idx) {
+            *px = border_color;
+        }
+        let right_x =
+            (start_x.saturating_add(box_w).saturating_sub(1)).min(width.saturating_sub(1));
+        let right_idx = y.saturating_mul(width).saturating_add(right_x);
+        if let Some(px) = buffer.get_mut(right_idx) {
+            *px = border_color;
+        }
+    }
+
+    let mut cur_x = start_x.saturating_add(padding);
+    let cur_y = start_y.saturating_add(padding);
+    for ch in clock_text.chars() {
+        draw_char(buffer, width, height, cur_x, cur_y, ch, text_color);
+        cur_x = cur_x.saturating_add(char_w.saturating_add(1));
+    }
+}
+
+/// Draw interactive slide navigator grid overlay
+pub fn draw_slide_grid_overlay(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    deck: &slide_core::model::SlideDeck,
+    current_idx: usize,
+    hovered_idx: Option<usize>,
+    theme: HudTheme,
+) -> Vec<(usize, Rect)> {
+    let backdrop_alpha = 0.85f32;
+    let (bg_r, bg_g, bg_b) = if theme.is_light() {
+        (245u32, 247u32, 250u32)
+    } else {
+        (13u32, 17u32, 23u32)
+    };
+
+    for px in buffer.iter_mut() {
+        let pr = (*px >> 16) & 0xFF;
+        let pg = (*px >> 8) & 0xFF;
+        let pb = *px & 0xFF;
+        let out_r =
+            ((bg_r as f32 * backdrop_alpha + pr as f32 * (1.0 - backdrop_alpha)) as u32).min(255);
+        let out_g =
+            ((bg_g as f32 * backdrop_alpha + pg as f32 * (1.0 - backdrop_alpha)) as u32).min(255);
+        let out_b =
+            ((bg_b as f32 * backdrop_alpha + pb as f32 * (1.0 - backdrop_alpha)) as u32).min(255);
+        *px = (0xFF << 24) | (out_r << 16) | (out_g << 8) | out_b;
+    }
+
+    let mut click_rects = Vec::new();
+    let total = deck.total_slides();
+    if total == 0 {
+        return click_rects;
+    }
+
+    let title = "SLIDE NAVIGATOR (Jump to Slide)";
+    let subtitle = "Click a slide tile or press 1-9 to jump directly • Press Esc to close";
+    let title_color = if theme.is_light() {
+        0xFF0969da
+    } else {
+        0xFF58a6ff
+    };
+    let sub_color = if theme.is_light() {
+        0xFF57606a
+    } else {
+        0xFF8b949e
+    };
+
+    draw_text_at_center(buffer, width, height, width / 2, 35, title, title_color);
+    draw_text_at_center(buffer, width, height, width / 2, 53, subtitle, sub_color);
+
+    let max_cols = if width >= 1400 {
+        6
+    } else if width >= 1000 {
+        5
+    } else {
+        4
+    };
+    let cols = max_cols.min(total).max(1);
+    let card_w = 160.0f32;
+    let card_h = 90.0f32;
+    let gap_x = 16.0f32;
+    let gap_y = 16.0f32;
+
+    let total_grid_w = (cols as f32) * card_w + ((cols.saturating_sub(1)) as f32) * gap_x;
+    let start_x = ((width as f32 - total_grid_w) / 2.0).max(20.0);
+    let start_y = 85.0f32;
+
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let col = idx % cols;
+        let row = idx / cols;
+        let x = start_x + (col as f32) * (card_w + gap_x);
+        let y = start_y + (row as f32) * (card_h + gap_y);
+
+        if (y + card_h) as usize >= height.saturating_sub(30) {
+            break;
+        }
+
+        let rect = Rect::new(x, y, card_w, card_h);
+        click_rects.push((idx, rect));
+
+        let is_current = idx == current_idx;
+        let is_hovered = hovered_idx == Some(idx);
+
+        let (card_bg_r, card_bg_g, card_bg_b, border_color) = if is_current {
+            if theme.is_light() {
+                (220u32, 240u32, 255u32, 0xFF0969da)
+            } else {
+                (31u32, 45u32, 61u32, 0xFF388bfd)
+            }
+        } else if is_hovered {
+            if theme.is_light() {
+                (246u32, 248u32, 250u32, 0xFF54aeff)
+            } else {
+                (33u32, 38u32, 45u32, 0xFF58a6ff)
+            }
+        } else if theme.is_light() {
+            (255u32, 255u32, 255u32, 0xFFd0d7de)
+        } else {
+            (22u32, 27u32, 34u32, 0xFF30363d)
+        };
+
+        let xi = x as usize;
+        let yi = y as usize;
+        let wi = card_w as usize;
+        let hi = card_h as usize;
+
+        // Card fill
+        for cy in yi..(yi.saturating_add(hi)).min(height) {
+            let row_offset = cy.saturating_mul(width);
+            for cx in xi..(xi.saturating_add(wi)).min(width) {
+                let idx_px = row_offset.saturating_add(cx);
+                if let Some(px) = buffer.get_mut(idx_px) {
+                    *px = (0xFF << 24) | (card_bg_r << 16) | (card_bg_g << 8) | card_bg_b;
+                }
+            }
+        }
+
+        // Card border
+        for cx in xi..(xi.saturating_add(wi)).min(width) {
+            let top_i = yi.saturating_mul(width).saturating_add(cx);
+            if let Some(px) = buffer.get_mut(top_i) {
+                *px = border_color;
+            }
+            let bot_y = (yi.saturating_add(hi).saturating_sub(1)).min(height.saturating_sub(1));
+            let bot_i = bot_y.saturating_mul(width).saturating_add(cx);
+            if let Some(px) = buffer.get_mut(bot_i) {
+                *px = border_color;
+            }
+        }
+        for cy in yi..(yi.saturating_add(hi)).min(height) {
+            let left_i = cy.saturating_mul(width).saturating_add(xi);
+            if let Some(px) = buffer.get_mut(left_i) {
+                *px = border_color;
+            }
+            let right_x = (xi.saturating_add(wi).saturating_sub(1)).min(width.saturating_sub(1));
+            let right_i = cy.saturating_mul(width).saturating_add(right_x);
+            if let Some(px) = buffer.get_mut(right_i) {
+                *px = border_color;
+            }
+        }
+
+        let p_badge = format!("SLIDE {}", idx.saturating_add(1));
+        let badge_color = if is_current {
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
+        } else if theme.is_light() {
+            0xFF57606a
+        } else {
+            0xFF8b949e
+        };
+        draw_text(
+            buffer,
+            width,
+            height,
+            xi.saturating_add(10),
+            yi.saturating_add(10),
+            &p_badge,
+            badge_color,
+        );
+
+        let title_hint = extract_slide_title_preview(&slide.svg_data)
+            .unwrap_or_else(|| format!("Page {}", idx.saturating_add(1)));
+        let title_clipped =
+            truncate_text_to_width(&title_hint, (card_w as usize).saturating_sub(20));
+        let title_text_color = if theme.is_light() {
+            0xFF1f2328
+        } else {
+            0xFFf0f6fc
+        };
+        draw_text_clipped(
+            buffer,
+            width,
+            height,
+            xi.saturating_add(10),
+            yi.saturating_add(32),
+            &title_clipped,
+            title_text_color,
+            xi.saturating_add(wi).saturating_sub(10),
+        );
+
+        if slide.has_notes() {
+            let note_indicator = "[NOTES]";
+            let note_color = if theme.is_light() {
+                0xFF1a7f37
+            } else {
+                0xFF3fb950
+            };
+            draw_text(
+                buffer,
+                width,
+                height,
+                xi.saturating_add(10),
+                yi.saturating_add(hi).saturating_sub(20),
+                note_indicator,
+                note_color,
+            );
+        }
+    }
+
+    click_rects
+}
+
+/// Draw speaker notes card in presentation mode
+pub fn draw_speaker_notes_overlay(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    current_slide: usize,
+    total_slides: usize,
+    notes: Option<&str>,
+    theme: HudTheme,
+) {
+    let max_w = width.saturating_sub(40);
+    let max_h = height.saturating_sub(100);
+    let wi = 420usize.min(max_w);
+    let hi = 200usize.min(max_h);
+    let xi = width.saturating_sub(wi).saturating_sub(20);
+    let yi = height.saturating_sub(hi).saturating_sub(60);
+
+    let (bg_r, bg_g, bg_b, border_color, text_color, title_color) = if theme.is_light() {
+        (255u32, 255u32, 255u32, 0xFFd0d7de, 0xFF24292f, 0xFF0969da)
+    } else {
+        (22u32, 27u32, 34u32, 0xFF30363d, 0xFFc9d1d9, 0xFF58a6ff)
+    };
+
+    // Draw background
+    for cy in yi..(yi.saturating_add(hi)).min(height) {
+        let row_offset = cy.saturating_mul(width);
+        for cx in xi..(xi.saturating_add(wi)).min(width) {
+            let idx_px = row_offset.saturating_add(cx);
+            if let Some(px) = buffer.get_mut(idx_px) {
+                let bg = *px;
+                let r = (((bg >> 16) & 0xFF) * 10 + bg_r * 90) / 100;
+                let g = (((bg >> 8) & 0xFF) * 10 + bg_g * 90) / 100;
+                let b = ((bg & 0xFF) * 10 + bg_b * 90) / 100;
+                *px = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    // Border
+    for cx in xi..(xi.saturating_add(wi)).min(width) {
+        let top_i = yi.saturating_mul(width).saturating_add(cx);
+        if let Some(px) = buffer.get_mut(top_i) {
+            *px = border_color;
+        }
+        let bot_y = (yi.saturating_add(hi).saturating_sub(1)).min(height.saturating_sub(1));
+        let bot_i = bot_y.saturating_mul(width).saturating_add(cx);
+        if let Some(px) = buffer.get_mut(bot_i) {
+            *px = border_color;
+        }
+    }
+    for cy in yi..(yi.saturating_add(hi)).min(height) {
+        let left_i = cy.saturating_mul(width).saturating_add(xi);
+        if let Some(px) = buffer.get_mut(left_i) {
+            *px = border_color;
+        }
+        let right_x = (xi.saturating_add(wi).saturating_sub(1)).min(width.saturating_sub(1));
+        let right_i = cy.saturating_mul(width).saturating_add(right_x);
+        if let Some(px) = buffer.get_mut(right_i) {
+            *px = border_color;
+        }
+    }
+
+    let header = format!("SPEAKER NOTES • SLIDE {}/{}", current_slide, total_slides);
+    draw_text(
+        buffer,
+        width,
+        height,
+        xi.saturating_add(12),
+        yi.saturating_add(12),
+        &header,
+        title_color,
+    );
+
+    let div_y = yi.saturating_add(28);
+    for x in xi.saturating_add(8)..(xi.saturating_add(wi)).saturating_sub(8) {
+        if div_y < height {
+            let idx = div_y.saturating_mul(width).saturating_add(x);
+            if let Some(px) = buffer.get_mut(idx) {
+                *px = border_color;
+            }
+        }
+    }
+
+    let notes_content = notes.unwrap_or(
+        "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)",
+    );
+    let max_line_w = wi.saturating_sub(24);
+    let char_w = 7;
+    let chars_per_line = (max_line_w / char_w).max(10);
+
+    let mut line_y = yi.saturating_add(36);
+    for raw_line in notes_content.lines() {
+        if line_y.saturating_add(14) >= yi.saturating_add(hi) {
+            draw_text(
+                buffer,
+                width,
+                height,
+                xi.saturating_add(12),
+                line_y,
+                "...",
+                text_color,
+            );
+            break;
+        }
+        let words: Vec<&str> = raw_line.split_whitespace().collect();
+        let mut cur_buf = String::new();
+        for word in words {
+            if cur_buf.len().saturating_add(word.len()).saturating_add(1) > chars_per_line {
+                draw_text(
+                    buffer,
+                    width,
+                    height,
+                    xi.saturating_add(12),
+                    line_y,
+                    &cur_buf,
+                    text_color,
+                );
+                line_y = line_y.saturating_add(16);
+                if line_y.saturating_add(14) >= yi.saturating_add(hi) {
+                    break;
+                }
+                cur_buf = word.to_string();
+            } else {
+                if !cur_buf.is_empty() {
+                    cur_buf.push(' ');
+                }
+                cur_buf.push_str(word);
+            }
+        }
+        if !cur_buf.is_empty() && line_y.saturating_add(14) < yi.saturating_add(hi) {
+            draw_text(
+                buffer,
+                width,
+                height,
+                xi.saturating_add(12),
+                line_y,
+                &cur_buf,
+                text_color,
+            );
+            line_y = line_y.saturating_add(16);
+        }
+    }
+}
+
+/// Fill buffer with pure black or white screen with a subtle resume tip
+pub fn draw_blank_screen(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    is_white: bool,
+) {
+    let fill_color = if is_white {
+        0xFFFFFFFF
+    } else {
+        0xFF000000
+    };
+    buffer.fill(fill_color);
+
+    let tip = if is_white {
+        "Screen blanked (White) • Press 'W' or Space to resume"
+    } else {
+        "Screen blanked (Black) • Press 'B' or Space to resume"
+    };
+    let text_color = if is_white {
+        0xFF888888
+    } else {
+        0xFF555555
+    };
+    draw_text_at_center(
+        buffer,
+        width,
+        height,
+        width / 2,
+        height.saturating_sub(40),
+        tip,
+        text_color,
+    );
+}
+
 /// Draw a presenter shortcut help overlay in the center of the screen
 pub fn draw_help_overlay(
     buffer: &mut [u32],
@@ -1767,6 +2275,12 @@ pub fn draw_help_overlay(
         "F11 / F              : Toggle Fullscreen / Windowed",
         "1 .. 9               : Jump to slide",
         "Home / End           : First / Last slide",
+        "O / Dock [TIM]       : Toggle Presenter Timer & Clock",
+        "G / Tab / Dock [GRD] : Toggle Slide Navigator Grid",
+        "N / Dock [NOT]       : Toggle Speaker Notes Card",
+        "B / . / Dock [BLK]   : Toggle Blackout screen",
+        "W                    : Toggle Whiteout screen",
+        "A                    : Toggle Kiosk auto-advance (10s)",
         "L                    : Toggle Laser pointer (with trail)",
         "P                    : Toggle Whiteboard Pen",
         "K / Dock [COL]       : Open Color Palette (1..7 keys)",

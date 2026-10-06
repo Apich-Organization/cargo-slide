@@ -273,3 +273,51 @@ This is updated slide 2.
     // Test clear_render_cache
     SlideCompiler::clear_render_cache(&typst_file);
 }
+
+#[test]
+fn test_speaker_notes_extraction_and_health_check() {
+    use slide_core::compiler::check_presentation_health;
+
+    let compiler = match SlideCompiler::new() {
+        | Ok(c) => c,
+        | Err(_) => return,
+    };
+
+    let dir = tempdir().expect("tempdir");
+    let typst_file = dir.path().join("notes.typ");
+    let content = r#"
+#set page(width: 16cm, height: 9cm)
+= Slide 1
+Welcome to testing!
+// [note]: Remember to introduce the project vision and goals
+
+#pagebreak()
+
+= Slide 2
+Second slide with notes.
+// Note: Discuss the architecture details with the audience
+"#;
+    write(&typst_file, content).expect("write notes typst file");
+
+    let deck = compiler
+        .compile_file(&typst_file)
+        .expect("Failed to compile typst deck");
+    assert_eq!(deck.total_slides(), 2);
+    assert!(deck.has_any_notes());
+    assert!(deck.slides[0].has_notes());
+    assert!(
+        deck.slides[0]
+            .notes_text()
+            .contains("introduce the project")
+    );
+    assert!(deck.slides[1].has_notes());
+    assert!(deck.slides[1].notes_text().contains("architecture details"));
+    assert!(deck.total_speaking_seconds() > 0);
+
+    let issues = check_presentation_health(&deck, content, None);
+    assert!(
+        issues
+            .iter()
+            .all(|i| i.severity != slide_core::compiler::HealthSeverity::Error)
+    );
+}

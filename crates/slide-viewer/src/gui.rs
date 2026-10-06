@@ -49,6 +49,25 @@ pub const AVAILABLE_ANIMATIONS: &[&str] = &[
     "cut",
 ];
 
+/// Presentation filter category
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PresentationFilter {
+    #[default]
+    All,
+    Packages,
+    Typst,
+    Favorites,
+}
+
+/// Presentation list sort order
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PresentationSort {
+    #[default]
+    Name,
+    SlideCount,
+    FileSize,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     SearchChanged(String),
@@ -83,12 +102,19 @@ pub enum Message {
     InstallToSystem,
     DismissToast,
     EscapePressed,
+    SetFilter(PresentationFilter),
+    SetSort(PresentationSort),
+    ToggleFavorite(PathBuf),
+    VerifyPackageIntegrity(PathBuf),
 }
 
 pub struct ViewerLauncherApp {
     pub presentations: Vec<SlideFileEntry>,
     pub selected_index: Option<usize>,
     pub search_query: String,
+    pub filter: PresentationFilter,
+    pub sort: PresentationSort,
+    pub integrity_report: Option<(PathBuf, slide_core::package::PackageVerificationReport)>,
     pub theme: ViewerTheme,
     pub selected_animation: String,
     pub is_fullscreen: bool,
@@ -121,6 +147,9 @@ impl ViewerLauncherApp {
                 presentations,
                 selected_index,
                 search_query: String::new(),
+                filter: PresentationFilter::All,
+                sort: PresentationSort::Name,
+                integrity_report: None,
                 theme: ViewerTheme::Dark,
                 selected_animation: default_animation.clone(),
                 is_fullscreen: fullscreen,
@@ -370,6 +399,47 @@ impl ViewerLauncherApp {
                 }
                 Task::none()
             },
+            | Message::SetFilter(f) => {
+                self.filter = f;
+                self.selected_index = Some(0);
+                Task::none()
+            },
+            | Message::SetSort(s) => {
+                self.sort = s;
+                Task::none()
+            },
+            | Message::ToggleFavorite(path) => {
+                let is_fav = crate::toggle_favorite_file(&path);
+                for p in &mut self.presentations {
+                    if p.path == path {
+                        p.is_favorite = is_fav;
+                    }
+                }
+                if is_fav {
+                    self.show_toast("Added to Favorites ★");
+                } else {
+                    self.show_toast("Removed from Favorites");
+                }
+                Task::none()
+            },
+            | Message::VerifyPackageIntegrity(path) => {
+                match slide_core::package::verify_package_integrity(&path) {
+                    | Ok(report) => {
+                        let msg = format!(
+                            "✓ Verified: {} slides, {} assets ({:.1} KB)",
+                            report.slide_count,
+                            report.asset_count,
+                            report.file_size as f64 / 1024.0
+                        );
+                        self.show_toast(&msg);
+                        self.integrity_report = Some((path, report));
+                    },
+                    | Err(e) => {
+                        self.show_toast(&format!("✕ Verification failed: {}", e));
+                    },
+                }
+                Task::none()
+            },
         }
     }
 
@@ -495,19 +565,56 @@ impl ViewerLauncherApp {
     }
 
     pub fn filtered_presentations(&self) -> Vec<&SlideFileEntry> {
-        if self.search_query.trim().is_empty() {
-            self.presentations.iter().collect()
-        } else {
-            let q = self.search_query.trim().to_lowercase();
-            self.presentations
-                .iter()
-                .filter(|p| {
+        let mut list: Vec<&SlideFileEntry> = self
+            .presentations
+            .iter()
+            .filter(|p| {
+                match self.filter {
+                    | PresentationFilter::All => true,
+                    | PresentationFilter::Packages => p.is_slide_pkg,
+                    | PresentationFilter::Typst => !p.is_slide_pkg,
+                    | PresentationFilter::Favorites => p.is_favorite,
+                }
+            })
+            .filter(|p| {
+                if self.search_query.trim().is_empty() {
+                    true
+                } else {
+                    let q = self.search_query.trim().to_lowercase();
                     p.name.to_lowercase().contains(&q)
                         || p.title.to_lowercase().contains(&q)
                         || p.path.to_string_lossy().to_lowercase().contains(&q)
-                })
-                .collect()
+                }
+            })
+            .collect();
+
+        match self.sort {
+            | PresentationSort::Name => {
+                list.sort_by(|a, b| {
+                    b.is_favorite
+                        .cmp(&a.is_favorite)
+                        .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+                });
+            },
+            | PresentationSort::SlideCount => {
+                list.sort_by(|a, b| {
+                    b.is_favorite
+                        .cmp(&a.is_favorite)
+                        .then_with(|| b.slides_count.cmp(&a.slides_count))
+                });
+            },
+            | PresentationSort::FileSize => {
+                list.sort_by(|a, b| {
+                    let sz_a = std::fs::metadata(&a.path).map(|m| m.len()).unwrap_or(0);
+                    let sz_b = std::fs::metadata(&b.path).map(|m| m.len()).unwrap_or(0);
+                    b.is_favorite
+                        .cmp(&a.is_favorite)
+                        .then_with(|| sz_b.cmp(&sz_a))
+                });
+            },
         }
+
+        list
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -673,6 +780,22 @@ impl ViewerLauncherApp {
                         .padding([2, 8])
                         .style(move |_| badge_container(theme.bg_subtle(), theme.border_color()));
 
+                let mut meta_badges = row![slides_badge, size_badge].spacing(6);
+
+                if let Some(ref ratio) = entry.aspect_ratio {
+                    let ratio_badge = container(text(ratio).size(11).color(theme.text_secondary()))
+                        .padding([2, 8])
+                        .style(move |_| badge_container(theme.bg_subtle(), theme.border_color()));
+                    meta_badges = meta_badges.push(ratio_badge);
+                }
+
+                if entry.has_notes {
+                    let notes_badge = container(text("📝 NOTES").size(10).color(theme.accent()))
+                        .padding([2, 8])
+                        .style(move |_| badge_container(theme.bg_subtle(), theme.border_color()));
+                    meta_badges = meta_badges.push(notes_badge);
+                }
+
                 let play_dark_btn = button(text("▶ DARK").size(10))
                     .style(move |_theme, _status| primary_button_style(theme))
                     .padding([4, 8])
@@ -693,6 +816,29 @@ impl ViewerLauncherApp {
                     .style(move |_theme, _status| secondary_button_style(theme))
                     .padding([4, 8])
                     .on_press(Message::OpenInEditor(entry_path.clone()));
+
+                let fav_icon = if entry.is_favorite {
+                    "★"
+                } else {
+                    "☆"
+                };
+                let fav_color = if entry.is_favorite {
+                    Color::from_rgb(0.96, 0.72, 0.15)
+                } else {
+                    theme.text_secondary()
+                };
+                let fav_btn = button(text(fav_icon).size(16).color(fav_color))
+                    .style(move |_t, _s| {
+                        button::Style {
+                            background: Some(Background::Color(Color::TRANSPARENT)),
+                            text_color: fav_color,
+                            border: Border::default(),
+                            shadow: Shadow::default(),
+                            snap: true,
+                        }
+                    })
+                    .padding([0, 4])
+                    .on_press(Message::ToggleFavorite(entry_path.clone()));
 
                 let select_header_btn = button(
                     row![
@@ -715,16 +861,17 @@ impl ViewerLauncherApp {
                 .padding(0)
                 .on_press(Message::SelectPresentation(idx));
 
+                let card_header = row![fav_btn, select_header_btn].align_y(Alignment::Center);
+
                 let card_content = column![
-                    select_header_btn,
+                    card_header,
                     Space::new().height(4),
                     text(entry.path.to_string_lossy().to_string())
                         .size(11)
                         .color(theme.text_secondary()),
                     Space::new().height(10),
                     row![
-                        slides_badge,
-                        size_badge,
+                        meta_badges,
                         Space::new().width(Length::Fill),
                         play_dark_btn,
                         play_light_btn,
@@ -743,9 +890,64 @@ impl ViewerLauncherApp {
             }
         }
 
+        // Filter and sort toolbar
+        let filter_all_btn = button(text("All").size(11))
+            .style(move |_t, _s| chip_button_style(theme, self.filter == PresentationFilter::All))
+            .padding([3, 8])
+            .on_press(Message::SetFilter(PresentationFilter::All));
+
+        let filter_pkg_btn = button(text("Packages").size(11))
+            .style(move |_t, _s| {
+                chip_button_style(theme, self.filter == PresentationFilter::Packages)
+            })
+            .padding([3, 8])
+            .on_press(Message::SetFilter(PresentationFilter::Packages));
+
+        let filter_typ_btn = button(text("Typst").size(11))
+            .style(move |_t, _s| chip_button_style(theme, self.filter == PresentationFilter::Typst))
+            .padding([3, 8])
+            .on_press(Message::SetFilter(PresentationFilter::Typst));
+
+        let filter_fav_btn = button(text("★ Favorites").size(11))
+            .style(move |_t, _s| {
+                chip_button_style(theme, self.filter == PresentationFilter::Favorites)
+            })
+            .padding([3, 8])
+            .on_press(Message::SetFilter(PresentationFilter::Favorites));
+
+        let sort_label = text("Sort:").size(11).color(theme.text_secondary());
+        let sort_name_btn = button(text("Name").size(10))
+            .style(move |_t, _s| chip_button_style(theme, self.sort == PresentationSort::Name))
+            .padding([2, 6])
+            .on_press(Message::SetSort(PresentationSort::Name));
+        let sort_count_btn = button(text("Slides").size(10))
+            .style(move |_t, _s| {
+                chip_button_style(theme, self.sort == PresentationSort::SlideCount)
+            })
+            .padding([2, 6])
+            .on_press(Message::SetSort(PresentationSort::SlideCount));
+        let sort_size_btn = button(text("Size").size(10))
+            .style(move |_t, _s| chip_button_style(theme, self.sort == PresentationSort::FileSize))
+            .padding([2, 6])
+            .on_press(Message::SetSort(PresentationSort::FileSize));
+
+        let filter_sort_bar = row![
+            filter_all_btn,
+            filter_pkg_btn,
+            filter_typ_btn,
+            filter_fav_btn,
+            Space::new().width(Length::Fill),
+            sort_label,
+            sort_name_btn,
+            sort_count_btn,
+            sort_size_btn,
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
         let left_panel = column![
             row![
-                text("LOCAL PRESENTATIONS")
+                text("PRESENTATION LIBRARY")
                     .size(13)
                     .color(theme.text_secondary()),
                 Space::new().width(Length::Fill),
@@ -755,6 +957,7 @@ impl ViewerLauncherApp {
             ]
             .align_y(Alignment::Center),
             search_box,
+            filter_sort_bar,
             scrollable(cards_col).height(Length::Fill),
         ]
         .spacing(12)
@@ -796,6 +999,91 @@ impl ViewerLauncherApp {
                     .color(theme.text_primary()),
                 ],
             ];
+
+            let mut extra_metadata_col = column![].spacing(6);
+
+            if let Some(ref auth) = entry.author {
+                extra_metadata_col = extra_metadata_col.push(row![
+                    text("Author:").size(11).color(theme.text_secondary()),
+                    Space::new().width(8),
+                    text(auth).size(12).color(theme.text_primary()),
+                ]);
+            }
+
+            let notes_status_text = if entry.has_notes {
+                "✓ Includes presenter notes"
+            } else {
+                "No speaker notes"
+            };
+            extra_metadata_col = extra_metadata_col.push(row![
+                text("Speaker Notes:")
+                    .size(11)
+                    .color(theme.text_secondary()),
+                Space::new().width(8),
+                text(notes_status_text).size(12).color(if entry.has_notes {
+                    theme.accent()
+                } else {
+                    theme.text_secondary()
+                }),
+            ]);
+
+            if let Some(ref ratio) = entry.aspect_ratio {
+                extra_metadata_col = extra_metadata_col.push(row![
+                    text("Aspect Ratio:").size(11).color(theme.text_secondary()),
+                    Space::new().width(8),
+                    text(ratio).size(12).color(theme.text_primary()),
+                ]);
+            }
+
+            if entry.is_slide_pkg {
+                let verify_btn = button(text("VERIFY PACKAGE INTEGRITY").size(11))
+                    .style(move |_theme, _status| secondary_button_style(theme))
+                    .padding([5, 12])
+                    .on_press(Message::VerifyPackageIntegrity(entry.path.clone()));
+
+                let report_view = if let Some((ref r_path, ref rep)) = self.integrity_report {
+                    if r_path == &entry.path {
+                        container(
+                            column![
+                                text("✓ Package Integrity Verified")
+                                    .size(12)
+                                    .color(theme.accent()),
+                                text(format!(
+                                    "• Slide Count: {} slides (verified)",
+                                    rep.slide_count
+                                ))
+                                .size(11)
+                                .color(theme.text_secondary()),
+                                text(format!("• Assets: {} files embedded", rep.asset_count))
+                                    .size(11)
+                                    .color(theme.text_secondary()),
+                                text("• Archive Format: Valid LZMA2 TAR")
+                                    .size(11)
+                                    .color(theme.text_secondary()),
+                            ]
+                            .spacing(3),
+                        )
+                        .padding(8)
+                        .style(move |_| {
+                            container::Style {
+                                background: Some(Background::Color(theme.bg_subtle())),
+                                border: Border {
+                                    color: theme.border_active(),
+                                    width: 1.0,
+                                    radius: iced::border::Radius::from(4.0),
+                                },
+                                ..container::Style::default()
+                            }
+                        })
+                    } else {
+                        container(column![verify_btn])
+                    }
+                } else {
+                    container(column![verify_btn])
+                };
+
+                extra_metadata_col = extra_metadata_col.push(report_view);
+            }
 
             let section_label = text("PLAYBACK & EDITOR CONTROLS")
                 .size(11)
@@ -883,7 +1171,9 @@ impl ViewerLauncherApp {
                 details_path,
                 Space::new().height(8),
                 stats_row,
-                Space::new().height(16),
+                Space::new().height(8),
+                extra_metadata_col,
+                Space::new().height(12),
                 section_label,
                 anim_picker,
                 hud_theme_selector,

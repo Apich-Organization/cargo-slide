@@ -8,6 +8,7 @@ use std::path::Path;
 pub fn execute(
     target_path: &Path,
     include_rust: bool,
+    template: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let project_dir = if target_path == Path::new(".") {
         std::env::current_dir()?
@@ -26,23 +27,25 @@ pub fn execute(
     log_event(
         "info",
         &format!(
-            "✨ Initializing cargo-slide presentation workspace in: {}",
+            "✨ Initializing cargo-slide presentation workspace ({template} template) in: {}",
             project_dir.display()
         ),
         Some(serde_json::json!({
             "event": "init_start",
             "path": project_dir.display().to_string(),
             "rust_extensions": include_rust,
+            "template": template,
         })),
     );
 
     let assets_dir = project_dir.join("assets");
     create_dir_all(&assets_dir)?;
 
-    // 1. Write slides.typ
+    // 1. Write slides.typ based on selected template
     let slides_path = project_dir.join("slides.typ");
     if !slides_path.exists() {
-        write(&slides_path, slide_theme::DEFAULT_PRESENTATION)?;
+        let content = get_template_slides(template);
+        write(&slides_path, content)?;
     }
 
     // 2. Write theme.typ & slide.typ
@@ -194,4 +197,225 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn get_template_slides(template: &str) -> &'static str {
+    match template.to_lowercase().as_str() {
+        | "geek" => {
+            r#"#import "theme.typ": *
+
+#show: slide-theme.with(
+  aspect-ratio: "16-9",
+  theme: "dark",
+)
+
+#title-slide(
+  title: "High Performance Computing in Rust",
+  subtitle: "Zero-Cost Abstractions, SIMD, and Embedded Graphics",
+  author: "Systems Architecture Team",
+  date: "October 2026",
+)
+
+#slide(title: "Architecture Overview")[
+  == Core Tenets
+
+  - *Memory Safety*: Compile-time borrow checking with zero GC overhead
+  - *Data Parallelism*: Rayon work-stealing threadpool with automatic chunking
+  - *Vector Graphics*: Tiny-Skia software rasterizer paired with WGPU hardware acceleration
+
+  ```rust
+  pub fn compute_vector_field(data: &[f64]) -> Vec<f64> {
+      data.par_iter().map(|&x| x.sin() * 2.0).collect()
+  }
+  ```
+]
+
+#slide(title: "Performance Benchmark")[
+  == Runtime Latency Profile
+
+  #cols(
+    [
+      === Frame Pacing
+      - Target: *60 FPS* (< 16.6 ms/frame)
+      - P99 Latency: *2.4 ms*
+      - Memory Baseline: *18 MB* RSS
+    ],
+    [
+      #chart(source: "assets/data.csv", type: "bar", title: "Framework Memory & FPS")
+    ]
+  )
+]
+
+#slide(title: "Closing & Q&A")[
+  = Thank You!
+  
+  Documentation & Source: `github.com/cargo-slide/cargo-slide`
+]
+"#
+        },
+        | "academic" => {
+            r#"#import "theme.typ": *
+
+#show: slide-theme.with(
+  aspect-ratio: "16-9",
+  theme: "light",
+)
+
+#title-slide(
+  title: "Empirical Analysis of Deep Learning Compilation",
+  subtitle: "Formal Verification and Optimization Pipelines",
+  author: "Department of Computer Science",
+  date: "Academic Year 2026",
+)
+
+#slide(title: "Problem Formulation")[
+  == Theoretical Foundations
+
+  Given a directed computation graph $G = (V, E)$, we seek an optimal operator fusion schedule:
+
+  $ min_(S in cal(S)) sum_(v in V) "Cost"(v, S) quad "subject to" quad "Memory"(S) <= M_"cap" $
+
+  #callout(kind: "info", title: "Theorem 1 (Optimal Substructure)")[
+    The subproblems exhibit optimal substructure under topological ordering constraints.
+  ]
+]
+
+#slide(title: "Experimental Results")[
+  == Quantitative Evaluation
+
+  #cols(
+    [
+      === Benchmark Methodology
+      - Standard MLPerf benchmark suites
+      - 5 iterations with warm-up cache
+      - Evaluated across 4 GPU architectures
+    ],
+    [
+      #chart(source: "assets/data.csv", type: "line", title: "Compilation Speedup vs Memory")
+    ]
+  )
+]
+
+#slide(title: "Conclusion & Future Work")[
+  == Summary of Findings
+  - Up to *3.4x* throughput improvement with kernel fusion
+  - Formally verified memory bounds across all execution stages
+]
+"#
+        },
+        | "pitch" => {
+            r#"#import "theme.typ": *
+
+#show: slide-theme.with(
+  aspect-ratio: "16-9",
+  theme: "dark",
+)
+
+#title-slide(
+  title: "Cargo Slide",
+  subtitle: "The Presentation Engine Built for Engineers & Designers",
+  author: "Founder Team",
+  date: "Seed Round 2026",
+)
+
+#slide(title: "The Problem")[
+  == Why Traditional Slide Tools Fail Developers
+
+  - *Bloated & Slow*: Web-based tools take seconds to load and consume gigabytes of RAM
+  - *Hard to Version*: Binary formats break Git workflows and code review
+  - *Clunky Code*: Screenshots of code snippets instead of live syntax-highlighted blocks
+]
+
+#slide(title: "The Solution: Code-Driven Slides")[
+  == Typst Expressiveness + Native Rust Speed
+
+  #cols(
+    [
+      === ⚡ 60 FPS Native
+      Zero-latency rendering powered by Rust and Tiny-Skia.
+    ],
+    [
+      === 📝 Typst Syntax
+      Clean, declarative syntax with full math and macro support.
+    ],
+    [
+      === 📦 One-Click Share
+      Self-contained `.slide` bundles with embedded media.
+    ]
+  )
+]
+
+#slide(title: "Traction & Market Opportunity")[
+  == Growth Metrics
+
+  #cols(
+    [
+      - *50k+* Presentations rendered
+      - *98%* User retention among engineering teams
+      - Open-source ecosystem with growing plugin registry
+    ],
+    [
+      #chart(source: "assets/data.csv", type: "bar", title: "Adoption & Performance Metrics")
+    ]
+  )
+]
+
+#slide(title: "Join Us")[
+  = Let's Build the Future of Technical Presentations
+
+  Contact: `founders@cargo-slide.dev`
+]
+"#
+        },
+        | "business" => {
+            r#"#import "theme.typ": *
+
+#show: slide-theme.with(
+  aspect-ratio: "16-9",
+  theme: "light",
+)
+
+#title-slide(
+  title: "Quarterly Business Review",
+  subtitle: "Performance Metrics, Strategic Priorities & Roadmap",
+  author: "Executive Leadership",
+  date: "Q3 2026",
+)
+
+#slide(title: "Executive Summary")[
+  == Key Highlights
+
+  - *Revenue Growth*: Outperformed forecast by +18% QoQ
+  - *Operational Efficiency*: Reduced infrastructure costs by 24%
+  - *Product Milestone*: Delivered cargo-slide 2.0 release on schedule
+]
+
+#slide(title: "Key Performance Indicators")[
+  == Metrics Dashboard
+
+  #cols(
+    [
+      === Operational Scorecard
+      - Customer Satisfaction (CSAT): *94%*
+      - Platform Uptime: *99.98%*
+      - Net Retention Rate: *122%*
+    ],
+    [
+      #chart(source: "assets/data.csv", type: "bar", title: "QoQ Growth Indicators")
+    ]
+  )
+]
+
+#slide(title: "Strategic Priorities")[
+  == Next Quarter Objectives
+
+  1. Expand enterprise collaboration features
+  2. Launch cross-platform cloud asset synchronization
+  3. Accelerate developer community ecosystem programs
+]
+"#
+        },
+        | _ => slide_theme::DEFAULT_PRESENTATION,
+    }
 }

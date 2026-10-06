@@ -19,6 +19,7 @@ use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
 use iced::widget::text_input;
+use std::path::Path;
 
 /// Render the Export modal dialog
 #[allow(clippy::too_many_arguments)]
@@ -240,6 +241,7 @@ pub fn view_open_modal<'a>(
     theme: AppTheme,
     input_path: &'a str,
     error_msg: Option<&'a str>,
+    recent_files: &'a [String],
 ) -> Element<'a, Message> {
     let title = text("Open Presentation or Document")
         .size(18)
@@ -261,6 +263,46 @@ pub fn view_open_modal<'a>(
     let path_row = row![path_input, browse_btn]
         .spacing(8)
         .align_y(Alignment::Center);
+
+    let mut recents_widget: Element<'a, Message> = Space::new().height(0).into();
+    if !recent_files.is_empty() {
+        let mut recents_col = column![
+            text("Recent Presentations:")
+                .size(11)
+                .color(theme.text_secondary()),
+        ]
+        .spacing(4);
+        for rf in recent_files.iter().take(5) {
+            let rf_clone = rf.clone();
+            let display_name = Path::new(rf)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(rf);
+            let btn = button(
+                row![
+                    text("📄").size(11),
+                    text(display_name).size(12).color(theme.accent()),
+                    text(rf).size(10).color(theme.text_muted()),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            )
+            .padding([4, 8])
+            .style(move |_t, _s| theme::subtle_button_style(theme, false))
+            .on_press(Message::OpenRecentFile(rf_clone));
+            recents_col = recents_col.push(btn);
+        }
+        recents_widget = container(recents_col)
+            .padding(8)
+            .style(move |_| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.bg_subtle())),
+                    border: iced::border::rounded(6.0),
+                    ..container::Style::default()
+                }
+            })
+            .into();
+    }
 
     let err_widget: Element<'a, Message> = if let Some(e) = error_msg {
         text(e).size(12).color(theme.danger()).into()
@@ -292,13 +334,14 @@ pub fn view_open_modal<'a>(
         subtitle,
         Space::new().height(10),
         path_row,
-        Space::new().height(14),
+        recents_widget,
+        Space::new().height(10),
         actions
     ]
     .spacing(8);
 
     let dialog_card = container(dialog_content)
-        .width(Length::Fixed(520.0))
+        .width(Length::Fixed(560.0))
         .padding(24)
         .style(move |_| theme::modal_dialog_style(theme));
 
@@ -352,6 +395,40 @@ pub fn view_error_details_modal<'a>(
         }
     });
 
+    let quick_fix_widget: Element<'a, Message> = if let Some(ref qf) = diagnostic.quick_fix {
+        let qf_clone = qf.clone();
+        container(
+            row![
+                text("💡").size(15),
+                column![
+                    text("Automated Quick Fix Available")
+                        .size(11)
+                        .color(theme.accent()),
+                    text(&qf.label).size(12).color(theme.text_primary()),
+                ]
+                .spacing(2),
+                Space::new().width(Length::Fill),
+                button(text("Apply Quick Fix").size(12))
+                    .style(move |_t, _s| theme::primary_button_style(theme))
+                    .padding([6, 14])
+                    .on_press(Message::ApplyQuickFix(qf_clone)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        )
+        .padding(10)
+        .style(move |_| {
+            container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(6.0),
+                ..container::Style::default()
+            }
+        })
+        .into()
+    } else {
+        Space::new().height(0).into()
+    };
+
     let close_btn = button(text("Close").size(13))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
         .padding([8, 18])
@@ -363,6 +440,7 @@ pub fn view_error_details_modal<'a>(
         title,
         loc_text,
         msg_text,
+        quick_fix_widget,
         Space::new().height(6),
         stderr_box,
         Space::new().height(10),
@@ -1301,6 +1379,355 @@ pub fn view_header_footer_modal<'a>(
         .style(move |_| theme::modal_dialog_style(theme));
 
     container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}
+
+/// Render the Template Gallery modal dialog offering modern pre-designed slides
+#[must_use]
+pub fn view_template_library_modal<'a>(theme: AppTheme) -> Element<'a, Message> {
+    let title = text("Slide Template Library")
+        .size(18)
+        .color(theme.text_primary());
+
+    let subtitle =
+        text("Choose a professionally crafted layout to instantly insert into your deck.")
+            .size(13)
+            .color(theme.text_muted());
+
+    let templates = [
+        (
+            "Title Hero",
+            "Hero title slide with subtitle, presenter name, and date badge",
+            "HERO",
+            0usize,
+        ),
+        (
+            "2-Column Comparison",
+            "Side-by-side comparison with colored callout blocks",
+            "COLUMNS",
+            1usize,
+        ),
+        (
+            "3-Column Feature Pillars",
+            "Three architectural pillars with distinct border accents",
+            "GRID",
+            2usize,
+        ),
+        (
+            "Code & Commentary",
+            "Split view with syntax-highlighted code block and explanation",
+            "CODE",
+            3usize,
+        ),
+        (
+            "Metric KPI Showcase",
+            "Highlight three key quantitative performance metrics",
+            "METRICS",
+            4usize,
+        ),
+        (
+            "Quote Spotlight",
+            "Centered elegant quotation with author attribution",
+            "QUOTE",
+            5usize,
+        ),
+        (
+            "Roadmap Timeline",
+            "Sequential checklist of project milestones and progress",
+            "TIMELINE",
+            6usize,
+        ),
+        (
+            "Closing Q&A",
+            "Clean contact, repository links, and thank you card",
+            "CLOSING",
+            7usize,
+        ),
+    ];
+
+    let mut grid_col = column![].spacing(10);
+    let mut current_row = row![].spacing(10);
+    let mut row_count = 0;
+
+    for (i, (t_title, t_desc, t_tag, t_idx)) in templates.iter().enumerate() {
+        let tag_badge = container(text(*t_tag).size(9).color(theme.accent()))
+            .padding([2, 6])
+            .style(move |_| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.bg_subtle())),
+                    border: iced::border::rounded(theme::RADIUS_FULL),
+                    ..container::Style::default()
+                }
+            });
+
+        let card_header = row![
+            text(*t_title).size(13).color(theme.text_primary()),
+            Space::new().width(Length::Fill),
+            tag_badge,
+        ]
+        .align_y(Alignment::Center);
+
+        let desc_text = text(*t_desc).size(11).color(theme.text_secondary());
+
+        let insert_btn = button(text("Insert Slide").size(11))
+            .style(move |_t, _s| theme::primary_button_style(theme))
+            .padding([5, 12])
+            .on_press(Message::InsertTemplateSlide(*t_idx));
+
+        let card_content = column![
+            card_header,
+            desc_text,
+            Space::new().height(4),
+            row![Space::new().width(Length::Fill), insert_btn],
+        ]
+        .spacing(6);
+
+        let card = container(card_content)
+            .width(Length::Fixed(290.0))
+            .padding(12)
+            .style(move |_| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.bg_surface_solid())),
+                    border: iced::border::Border {
+                        color: theme.border_color(),
+                        width: 1.0,
+                        radius: iced::border::Radius::from(theme::RADIUS_MD),
+                    },
+                    ..container::Style::default()
+                }
+            });
+
+        current_row = current_row.push(card);
+        row_count += 1;
+
+        if (i + 1) % 2 == 0 {
+            grid_col = grid_col.push(current_row);
+            current_row = row![].spacing(10);
+            row_count = 0;
+        }
+    }
+
+    if row_count > 0 {
+        grid_col = grid_col.push(current_row);
+    }
+
+    let close_btn = button(text("Close").size(13))
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .padding([8, 18])
+        .on_press(Message::CloseModal);
+
+    let dialog_content = column![
+        title,
+        subtitle,
+        Space::new().height(8),
+        scrollable(grid_col).height(Length::Fixed(360.0)),
+        Space::new().height(8),
+        row![Space::new().width(Length::Fill), close_btn],
+    ]
+    .spacing(8);
+
+    let dialog_card = container(dialog_content)
+        .width(Length::Fixed(640.0))
+        .padding(24)
+        .style(move |_| theme::modal_dialog_style(theme));
+
+    container(dialog_card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}
+
+/// Render the Presentation Health & Pacing Inspector modal dialog
+#[must_use]
+pub fn view_presentation_health_modal<'a>(
+    theme: AppTheme,
+    issues: &'a [slide_core::compiler::PresentationHealthIssue],
+    word_count: usize,
+    total_slides: usize,
+) -> Element<'a, Message> {
+    let title = row![
+        text("Presentation Health & Pacing Inspector")
+            .size(18)
+            .color(theme.text_primary()),
+    ]
+    .align_y(Alignment::Center);
+
+    let est_minutes = ((word_count as f32) / 130.0).max(1.0).ceil() as usize;
+    let avg_words = word_count.checked_div(total_slides).unwrap_or(0);
+
+    let pacing_card = container(
+        row![
+            column![
+                text("ESTIMATED TALK TIME")
+                    .size(10)
+                    .color(theme.text_muted()),
+                text(format!("~{est_minutes} min"))
+                    .size(16)
+                    .color(theme.accent()),
+            ]
+            .spacing(2),
+            container(
+                Space::new()
+                    .width(Length::Fixed(1.0))
+                    .height(Length::Fixed(30.0))
+            )
+            .style(move |_| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.border_color())),
+                    ..container::Style::default()
+                }
+            }),
+            column![
+                text("TOTAL SLIDES").size(10).color(theme.text_muted()),
+                text(format!("{total_slides}"))
+                    .size(16)
+                    .color(theme.text_primary()),
+            ]
+            .spacing(2),
+            container(
+                Space::new()
+                    .width(Length::Fixed(1.0))
+                    .height(Length::Fixed(30.0))
+            )
+            .style(move |_| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.border_color())),
+                    ..container::Style::default()
+                }
+            }),
+            column![
+                text("PACING DENSITY").size(10).color(theme.text_muted()),
+                text(format!("{avg_words} words / slide"))
+                    .size(16)
+                    .color(theme.text_primary()),
+            ]
+            .spacing(2),
+        ]
+        .spacing(16)
+        .align_y(Alignment::Center),
+    )
+    .padding(12)
+    .style(move |_| {
+        container::Style {
+            background: Some(iced::Background::Color(theme.bg_subtle())),
+            border: iced::border::rounded(6.0),
+            ..container::Style::default()
+        }
+    });
+
+    let mut issues_col = column![].spacing(8);
+
+    if issues.is_empty() {
+        let healthy_card = container(
+            row![
+                text("✓").size(18).color(theme.success()),
+                column![
+                    text("Deck is healthy!").size(13).color(theme.success()),
+                    text("No excessive text density, missing media, or macro issues detected.")
+                        .size(11)
+                        .color(theme.text_muted()),
+                ]
+                .spacing(2),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        )
+        .padding(14)
+        .width(Length::Fill)
+        .style(move |_| {
+            container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(6.0),
+                ..container::Style::default()
+            }
+        });
+        issues_col = issues_col.push(healthy_card);
+    } else {
+        for issue in issues {
+            let (badge_color, badge_text) = match issue.severity {
+                | slide_core::compiler::HealthSeverity::Error => (theme.danger(), "ERROR"),
+                | slide_core::compiler::HealthSeverity::Warning => (theme.warning(), "WARNING"),
+                | slide_core::compiler::HealthSeverity::Info => (theme.accent(), "INFO"),
+            };
+
+            let sev_badge = container(text(badge_text).size(9).color(iced::Color::WHITE))
+                .padding([2, 6])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(badge_color)),
+                        border: iced::border::rounded(theme::RADIUS_FULL),
+                        ..container::Style::default()
+                    }
+                });
+
+            let mut header_row = row![sev_badge].spacing(8).align_y(Alignment::Center);
+
+            if let Some(s_idx) = issue.slide_index {
+                let jump_btn = button(text(format!("Slide {}", s_idx.saturating_add(1))).size(11))
+                    .style(move |_t, _s| theme::subtle_button_style(theme, false))
+                    .padding([2, 8])
+                    .on_press(Message::SelectSlide(s_idx));
+                header_row = header_row.push(jump_btn);
+            }
+
+            let desc = text(&issue.message).size(12).color(theme.text_primary());
+            let rec = text(
+                issue
+                    .suggestion
+                    .as_deref()
+                    .unwrap_or("No specific recommendation."),
+            )
+            .size(11)
+            .color(theme.text_muted());
+
+            let issue_card = container(column![header_row, desc, rec].spacing(4))
+                .padding(10)
+                .width(Length::Fill)
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(6.0),
+                        ..container::Style::default()
+                    }
+                });
+
+            issues_col = issues_col.push(issue_card);
+        }
+    }
+
+    let close_btn = button(text("Close").size(13))
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .padding([8, 18])
+        .on_press(Message::CloseModal);
+
+    let dialog_content = column![
+        title,
+        Space::new().height(4),
+        pacing_card,
+        Space::new().height(6),
+        text(format!("Diagnostic Issues ({})", issues.len()))
+            .size(12)
+            .color(theme.text_secondary()),
+        scrollable(issues_col).height(Length::Fixed(240.0)),
+        Space::new().height(8),
+        row![Space::new().width(Length::Fill), close_btn],
+    ]
+    .spacing(8);
+
+    let dialog_card = container(dialog_content)
+        .width(Length::Fixed(600.0))
+        .padding(24)
+        .style(move |_| theme::modal_dialog_style(theme));
+
+    container(dialog_card)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)

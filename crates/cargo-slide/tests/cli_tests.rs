@@ -364,3 +364,61 @@ fn test_cli_serve_web_server() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[test]
+fn test_cli_template_info_and_check() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let dir = tempdir().expect("tempdir");
+
+    // Test new with --template geek
+    let new_res = Command::new(bin)
+        .arg("new")
+        .arg("geek_pres")
+        .arg("--template")
+        .arg("geek")
+        .current_dir(dir.path())
+        .output()
+        .expect("Execute cargo-slide new --template geek");
+    assert!(new_res.status.success());
+
+    let proj_dir = dir.path().join("geek_pres");
+    let slides_content = std::fs::read_to_string(proj_dir.join("slides.typ")).unwrap();
+    assert!(slides_content.contains("High Performance Computing in Rust"));
+
+    // Test check command
+    let check_res = Command::new(bin)
+        .arg("check")
+        .arg("slides.typ")
+        .current_dir(&proj_dir)
+        .output()
+        .expect("Execute cargo-slide check");
+    let check_stdout = String::from_utf8_lossy(&check_res.stdout);
+    let check_stderr = String::from_utf8_lossy(&check_res.stderr);
+    assert!(
+        check_res.status.success(),
+        "Check failed: stdout: {check_stdout}, stderr: {check_stderr}"
+    );
+    assert!(check_stdout.contains("Cargo Slide Presentation Health Audit"));
+
+    // Test pack and info command
+    let pack_res = Command::new(bin)
+        .arg("pack")
+        .arg("slides.typ")
+        .arg("-o")
+        .arg("geek_pres.slide")
+        .current_dir(&proj_dir)
+        .output()
+        .expect("Execute cargo-slide pack");
+    assert!(pack_res.status.success());
+
+    let info_res = Command::new(bin)
+        .arg("info")
+        .arg("geek_pres.slide")
+        .current_dir(&proj_dir)
+        .output()
+        .expect("Execute cargo-slide info");
+    assert!(info_res.status.success());
+    let info_stdout = String::from_utf8_lossy(&info_res.stdout);
+    assert!(info_stdout.contains("Cargo Slide Presentation Inspector"));
+    assert!(info_stdout.contains("Integrity:      PASSED"));
+}

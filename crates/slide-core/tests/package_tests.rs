@@ -20,6 +20,7 @@ fn test_pack_and_unpack_lzma2() {
         hotspots: Vec::new(),
         animation: Some("zoom".to_string()),
         steps: Vec::new(),
+        notes: None,
     };
     let slide2 = Slide {
         page_number: 2,
@@ -28,6 +29,7 @@ fn test_pack_and_unpack_lzma2() {
         hotspots: Vec::new(),
         animation: None,
         steps: Vec::new(),
+        notes: Some("Key speaker notes for slide 2".to_string()),
     };
     deck.slides.push(slide1);
     deck.slides.push(slide2);
@@ -81,6 +83,7 @@ fn test_pack_and_unpack_editable_origin_package() {
         hotspots: Vec::new(),
         animation: None,
         steps: Vec::new(),
+        notes: None,
     });
 
     let pkg_path = dir.path().join("editable.slide");
@@ -101,4 +104,10 @@ fn test_pack_and_unpack_editable_origin_package() {
     assert!(content.contains("= Editable Presentation"));
     assert!(unpack_out.join("slide.typ").is_file());
     assert!(unpack_out.join("source.typ").is_file());
+
+    let report = slide_core::package::verify_package_integrity(&pkg_path)
+        .expect("Failed to verify package integrity");
+    assert!(report.is_valid);
+    assert_eq!(report.slide_count, 1);
+    assert!(report.file_size > 0);
 }

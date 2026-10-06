@@ -184,6 +184,7 @@ fn test_slide_app_builder_registration() {
         hotspots: Vec::new(),
         animation: Some("curtain-split".to_string()),
         steps: Vec::new(),
+        notes: None,
     });
 
     // Verify builder chaining with external animations

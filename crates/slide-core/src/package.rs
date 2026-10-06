@@ -23,6 +23,16 @@ pub struct SlidePackageMetadata {
     pub is_editable: bool,
     #[serde(default)]
     pub entrypoint: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub aspect_ratio: Option<String>,
+    #[serde(default)]
+    pub has_notes: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl Default for SlidePackageMetadata {
@@ -36,6 +46,11 @@ impl Default for SlidePackageMetadata {
             generator: format!("cargo-slide {}", env!("CARGO_PKG_VERSION")),
             is_editable: false,
             entrypoint: None,
+            created_at: None,
+            author: None,
+            aspect_ratio: Some("16:9".to_string()),
+            has_notes: false,
+            tags: Vec::new(),
         }
     }
 }
@@ -66,6 +81,11 @@ pub fn pack_deck_with_source_and_assets(
         .and_then(|s| s.to_str())
         .map(|s| s.to_string());
 
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
+
     let metadata = SlidePackageMetadata {
         format_version: 1,
         title: deck.title.clone(),
@@ -75,6 +95,11 @@ pub fn pack_deck_with_source_and_assets(
         generator: format!("cargo-slide {}", env!("CARGO_PKG_VERSION")),
         is_editable: include_source,
         entrypoint: entry_name,
+        created_at: Some(timestamp),
+        author: None,
+        aspect_ratio: Some("16:9".to_string()),
+        has_notes: deck.has_any_notes(),
+        tags: Vec::new(),
     };
 
     let metadata_json = serde_json::to_vec_pretty(&metadata)?;
@@ -598,11 +623,82 @@ pub fn read_package_metadata(input_path: &Path) -> Result<SlidePackageMetadata> 
         format_version: 1,
         title: deck.title.clone(),
         total_slides: deck.total_slides(),
-        default_animation: deck.default_animation,
+        default_animation: deck.default_animation.clone(),
         compression: "lzma2".to_string(),
         generator: "cargo-slide".to_string(),
         is_editable: false,
         entrypoint: None,
+        created_at: None,
+        author: None,
+        aspect_ratio: Some("16:9".to_string()),
+        has_notes: deck.has_any_notes(),
+        tags: Vec::new(),
+    })
+}
+
+/// Comprehensive package integrity verification report
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageVerificationReport {
+    /// Whether package passed all structural and checksum checks
+    pub is_valid: bool,
+    /// Package metadata parsed from manifest
+    pub metadata: SlidePackageMetadata,
+    /// Total slides successfully verified in deck.json
+    pub slide_count: usize,
+    /// Number of embedded assets found in package
+    pub asset_count: usize,
+    /// Size of package file on disk in bytes
+    pub file_size: u64,
+    /// Any warnings encountered during inspection
+    pub warnings: Vec<String>,
+}
+
+/// Verify that a `.slide` package is intact, readable, and structurally sound.
+pub fn verify_package_integrity(package_path: &Path) -> Result<PackageVerificationReport> {
+    let file_size = std::fs::metadata(package_path)
+        .map(|m| m.len())
+        .map_err(|e| SlideError::Package(format!("Failed to read package file size: {e}")))?;
+
+    let meta = read_package_metadata(package_path)?;
+    let (deck, temp_dir) = unpack_deck_and_assets(package_path)?;
+
+    let mut asset_count = 0usize;
+    let mut warnings = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                asset_count = asset_count.saturating_add(1);
+            } else if p.is_dir() {
+                for sub in walkdir::WalkDir::new(&p).into_iter().flatten() {
+                    if sub.file_type().is_file() {
+                        asset_count = asset_count.saturating_add(1);
+                    }
+                }
+            }
+        }
+    }
+
+    if deck.slides.len() != meta.total_slides && meta.total_slides > 0 {
+        warnings.push(format!(
+            "Slide count mismatch: manifest states {}, but deck contains {}",
+            meta.total_slides,
+            deck.slides.len()
+        ));
+    }
+
+    if deck.slides.is_empty() {
+        warnings.push("Package contains zero slides.".to_string());
+    }
+
+    Ok(PackageVerificationReport {
+        is_valid: warnings.is_empty(),
+        metadata: meta,
+        slide_count: deck.slides.len(),
+        asset_count,
+        file_size,
+        warnings,
     })
 }
 

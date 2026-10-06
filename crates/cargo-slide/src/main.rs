@@ -78,16 +78,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     dispatch_command(cli.command, cli.file)
 }
 
+#[allow(clippy::too_many_lines)]
 fn dispatch_command(
     command: Option<Commands>,
     default_file: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        | Some(Commands::Init { path, rust }) => {
-            commands::init::execute(&path, rust)?;
+        | Some(Commands::Init { path, rust, template }) => {
+            commands::init::execute(&path, rust, &template)?;
         },
-        | Some(Commands::New { name, rust }) => {
-            commands::new::execute(&name, rust)?;
+        | Some(Commands::New { name, rust, template }) => {
+            commands::new::execute(&name, rust, &template)?;
         },
         | Some(Commands::Run {
             file,
@@ -141,8 +142,15 @@ fn dispatch_command(
             ip,
             dir,
             open,
+            watch,
         }) => {
-            commands::serve::execute(&file, port, &ip, dir, open)?;
+            commands::serve::execute(&file, port, &ip, dir, open, watch)?;
+        },
+        | Some(Commands::Info { file }) => {
+            commands::info::execute(&file)?;
+        },
+        | Some(Commands::Check { file }) => {
+            commands::check::execute(&file)?;
         },
         | Some(Commands::Export { file, format, output }) => {
             commands::export::execute(&file, &format, output)?;

@@ -9,6 +9,17 @@ use slide_core::package::pack_deck_with_assets;
 use std::path::Path;
 use std::path::PathBuf;
 
+/// An automated, 1-click quick-fix recommendation for a compiler diagnostic
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuickFix {
+    /// Human-friendly button label
+    pub label: String,
+    /// Code snippet to insert at document beginning if applicable
+    pub prepend_text: Option<String>,
+    /// Replacement target and string if applicable
+    pub replace_pair: Option<(String, String)>,
+}
+
 /// Diagnostic error report from Typst compilation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerDiagnostic {
@@ -20,6 +31,8 @@ pub struct CompilerDiagnostic {
     pub column: Option<usize>,
     /// Full stderr text
     pub full_stderr: String,
+    /// Optional automated 1-click quick fix recommendation
+    pub quick_fix: Option<QuickFix>,
 }
 
 impl std::fmt::Display for CompilerDiagnostic {
@@ -85,6 +98,7 @@ impl CompilerBridge {
     }
 
     /// Compile document source text into a SlideDeck
+    #[allow(clippy::result_large_err)]
     pub fn compile_source(
         &self,
         source_text: &str,
@@ -130,6 +144,7 @@ impl CompilerBridge {
                     line: None,
                     column: None,
                     full_stderr: String::new(),
+                    quick_fix: None,
                 }
             })?;
             (tmp.clone(), Cleanup::File(tmp))
@@ -140,6 +155,7 @@ impl CompilerBridge {
                     line: None,
                     column: None,
                     full_stderr: String::new(),
+                    quick_fix: None,
                 }
             })?;
             let slide_typ = temp_dir.path().join("slide.typ");
@@ -153,6 +169,7 @@ impl CompilerBridge {
                     line: None,
                     column: None,
                     full_stderr: String::new(),
+                    quick_fix: None,
                 }
             })?;
             (tmp, Cleanup::Dir(temp_dir))
@@ -163,7 +180,7 @@ impl CompilerBridge {
             | Ok(deck) => Ok(deck),
             | Err(e) => {
                 let err_str = e.to_string();
-                let mut diagnostic = Self::parse_typst_diagnostic(&err_str);
+                let mut diagnostic = Self::parse_typst_diagnostic(&err_str, source_text);
                 if prepended_import {
                     diagnostic.line = diagnostic.line.map(|l| l.saturating_sub(1).max(1));
                 }
@@ -173,7 +190,10 @@ impl CompilerBridge {
     }
 
     /// Parse Typst CLI stderr output for file, line, and column details
-    fn parse_typst_diagnostic(stderr: &str) -> CompilerDiagnostic {
+    fn parse_typst_diagnostic(
+        stderr: &str,
+        source_text: &str,
+    ) -> CompilerDiagnostic {
         let mut line_num = None;
         let mut col_num = None;
         let mut main_msg = String::new();
@@ -214,11 +234,45 @@ impl CompilerBridge {
                 .to_string();
         }
 
+        let mut quick_fix = None;
+        let lower_err = stderr.to_lowercase();
+        if lower_err.contains("unknown variable: slide")
+            || lower_err.contains("unknown variable: title-slide")
+            || lower_err.contains("unknown variable: cols")
+            || lower_err.contains("unknown variable: callout")
+            || lower_err.contains("unknown variable: metric")
+        {
+            quick_fix = Some(QuickFix {
+                label: "Import slide macros (#import \"slide.typ\": *)".to_string(),
+                prepend_text: Some("#import \"slide.typ\": *\n".to_string()),
+                replace_pair: None,
+            });
+        } else if source_text.contains("#col(") && !source_text.contains("#cols(") {
+            quick_fix = Some(QuickFix {
+                label: "Fix typo: Replace '#col(' with '#cols('".to_string(),
+                prepend_text: None,
+                replace_pair: Some(("#col(".to_string(), "#cols(".to_string())),
+            });
+        } else if source_text.contains("#pagebrak(") {
+            quick_fix = Some(QuickFix {
+                label: "Fix typo: Replace '#pagebrak()' with '#pagebreak()' delayed".to_string(),
+                prepend_text: None,
+                replace_pair: Some(("#pagebrak()".to_string(), "#pagebreak()".to_string())),
+            });
+        } else if lower_err.contains("unclosed delimiter") || lower_err.contains("expected ']'") {
+            quick_fix = Some(QuickFix {
+                label: "Append missing closing bracket ']'".to_string(),
+                prepend_text: None,
+                replace_pair: None,
+            });
+        }
+
         CompilerDiagnostic {
             message: main_msg,
             line: line_num,
             column: col_num,
             full_stderr: stderr.to_string(),
+            quick_fix,
         }
     }
 

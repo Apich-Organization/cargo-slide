@@ -18,6 +18,8 @@ pub enum SlideError {
     Overflow(String),
     #[error("Watcher error: {0}")]
     Watcher(String),
+    #[error("Package error: {0}")]
+    Package(String),
 }
 
 impl From<notify::Error> for SlideError {
