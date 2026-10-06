@@ -75,7 +75,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let log_format = slide_core::logger::LogFormat::from_str(&cli.log_format);
     slide_core::logger::init_logger(log_format);
 
-    match cli.command {
+    dispatch_command(cli.command, cli.file)
+}
+
+fn dispatch_command(
+    command: Option<Commands>,
+    default_file: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
         | Some(Commands::Init { path, rust }) => {
             commands::init::execute(&path, rust)?;
         },
@@ -165,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         | None => {
-            let file = cli.file.unwrap_or_else(|| PathBuf::from("slides.typ"));
+            let file = default_file.unwrap_or_else(|| PathBuf::from("slides.typ"));
             commands::run::execute(&file, "fade", false, false)?;
         },
     }
