@@ -60,6 +60,7 @@ pub enum PresenterMode {
     Normal,
     Laser,
     Pen,
+    Spotlight,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +114,7 @@ pub enum DockAction {
     ModeNormal,
     ModeLaser,
     ModePen,
+    ModeSpotlight,
     TogglePalette,
     ClearInk,
     ToggleMute,
@@ -295,6 +297,54 @@ pub fn render_laser_pointer(
             let out_b = ((1.0 - alpha) * bg_b as f32 + alpha * lb as f32).min(255.0) as u32;
 
             buffer[row_offset + px_u] = (0xFF << 24) | (out_r << 16) | (out_g << 8) | out_b;
+        }
+    }
+}
+
+/// Draw presentation spotlight focusing audience attention around the cursor
+pub fn render_spotlight(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    cx: usize,
+    cy: usize,
+    radius: usize,
+) {
+    let r_inner = radius as f32;
+    let r_outer = r_inner + 28.0;
+    let r_inner_sq = r_inner * r_inner;
+    let r_outer_sq = r_outer * r_outer;
+
+    const DARK_ALPHA: f32 = 0.68;
+
+    for y in 0..height {
+        let dy = (y as f32) - (cy as f32);
+        let dy_sq = dy * dy;
+        let row = y * width;
+        for x in 0..width {
+            let dx = (x as f32) - (cx as f32);
+            let dist_sq = dx * dx + dy_sq;
+
+            let dim_factor = if dist_sq <= r_inner_sq {
+                0.0
+            } else if dist_sq >= r_outer_sq {
+                DARK_ALPHA
+            } else {
+                let dist = dist_sq.sqrt();
+                let t = (dist - r_inner) / (r_outer - r_inner);
+                DARK_ALPHA * t.clamp(0.0, 1.0)
+            };
+
+            if dim_factor > 0.005 {
+                let idx = row + x;
+                if let Some(px) = buffer.get_mut(idx) {
+                    let cur = *px;
+                    let r = ((cur >> 16) & 0xFF) as f32 * (1.0 - dim_factor);
+                    let g = ((cur >> 8) & 0xFF) as f32 * (1.0 - dim_factor);
+                    let b = (cur & 0xFF) as f32 * (1.0 - dim_factor);
+                    *px = (0xFF << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+                }
+            }
         }
     }
 }
@@ -721,7 +771,7 @@ pub fn get_dock_rects(
     is_fullscreen: bool,
     theme: HudTheme,
 ) -> (Rect, Vec<(DockAction, Rect, &'static str)>) {
-    let dock_w = 680.0f32.min((screen_w as f32 - 40.0).max(400.0));
+    let dock_w = 710.0f32.min((screen_w as f32 - 40.0).max(400.0));
     let dock_h = 36.0f32;
     let dock_x = ((screen_w as f32) - dock_w) / 2.0;
     let dock_y = (screen_h as f32) - 48.0;
@@ -740,6 +790,7 @@ pub fn get_dock_rects(
         (DockAction::ModeNormal, "PTR"),
         (DockAction::ModeLaser, "LSR"),
         (DockAction::ModePen, "PEN"),
+        (DockAction::ModeSpotlight, "SPOT"),
         (DockAction::TogglePalette, "COL"),
         (DockAction::ClearInk, "CLR"),
         (DockAction::ToggleMute, "VOL"),
@@ -871,6 +922,7 @@ pub fn render_dock(
             | DockAction::ModeNormal => mode == PresenterMode::Normal,
             | DockAction::ModeLaser => mode == PresenterMode::Laser,
             | DockAction::ModePen => mode == PresenterMode::Pen,
+            | DockAction::ModeSpotlight => mode == PresenterMode::Spotlight,
             | DockAction::TogglePalette => palette_open,
             | DockAction::ToggleTheme => theme.is_light(),
             | DockAction::ToggleTimer => timer_active,
@@ -1793,6 +1845,7 @@ pub fn draw_presenter_clock(
     height: usize,
     elapsed_secs: u64,
     theme: HudTheme,
+    target_duration_secs: Option<u64>,
 ) {
     let mins = elapsed_secs / 60;
     let secs = elapsed_secs % 60;
@@ -1812,7 +1865,34 @@ pub fn draw_presenter_clock(
         (time, tz_str)
     };
 
-    let clock_text = format!("TIMER: {elapsed_str} • CLOCK: {system_time_str} [{tz_display}]");
+    let (pace_ratio, timer_segment, alert_state) = if let Some(target) = target_duration_secs {
+        let ratio = if target > 0 {
+            elapsed_secs as f32 / target as f32
+        } else {
+            1.0
+        };
+        let target_str = format!("{:02}:{:02}", target / 60, target % 60);
+        if elapsed_secs > target {
+            let over = elapsed_secs - target;
+            (
+                1.0f32,
+                format!(
+                    "TIMER: {elapsed_str} / {target_str} [OVER +{:02}:{:02}]",
+                    over / 60,
+                    over % 60
+                ),
+                2,
+            )
+        } else if ratio >= 0.8 {
+            (ratio, format!("TIMER: {elapsed_str} / {target_str}"), 1)
+        } else {
+            (ratio, format!("TIMER: {elapsed_str} / {target_str}"), 0)
+        }
+    } else {
+        (0.0f32, format!("TIMER: {elapsed_str}"), 0)
+    };
+
+    let clock_text = format!("{timer_segment} • CLOCK: {system_time_str} [{tz_display}]");
 
     let char_w = 6usize;
     let char_h = 8usize;
@@ -1824,11 +1904,19 @@ pub fn draw_presenter_clock(
     let start_x = width.saturating_sub(box_w.saturating_add(16));
     let start_y = 16usize;
 
-    let (bg_r, bg_g, bg_b, text_color, border_color) = if theme.is_light() {
+    let (bg_r, bg_g, bg_b, mut text_color, mut border_color) = if theme.is_light() {
         (0xf4, 0xf6, 0xf8, 0xFF0969da, 0xFFd0d7de)
     } else {
         (0x16, 0x1b, 0x22, 0xFF58a6ff, 0xFF30363d)
     };
+
+    if alert_state == 2 {
+        text_color = 0xFFf85149;
+        border_color = 0xFFf85149;
+    } else if alert_state == 1 {
+        text_color = 0xFFf0883e;
+        border_color = 0xFFf0883e;
+    }
 
     for y in start_y..(start_y.saturating_add(box_h)).min(height) {
         let row_start = y.saturating_mul(width);
@@ -1868,12 +1956,78 @@ pub fn draw_presenter_clock(
         }
     }
 
+    // Bottom pace progress bar
+    if target_duration_secs.is_some() {
+        let bar_len = ((box_w as f32) * pace_ratio.clamp(0.0, 1.0)).round() as usize;
+        let bar_y1 = start_y
+            .saturating_add(box_h)
+            .saturating_sub(2)
+            .min(height.saturating_sub(1));
+        let bar_y2 = start_y
+            .saturating_add(box_h)
+            .saturating_sub(1)
+            .min(height.saturating_sub(1));
+        for by in bar_y1..=bar_y2 {
+            let row = by.saturating_mul(width);
+            for bx in start_x..(start_x.saturating_add(bar_len)).min(width) {
+                if let Some(px) = buffer.get_mut(row.saturating_add(bx)) {
+                    *px = border_color;
+                }
+            }
+        }
+    }
+
     let mut cur_x = start_x.saturating_add(padding);
     let cur_y = start_y.saturating_add(padding);
     for ch in clock_text.chars() {
         draw_char(buffer, width, height, cur_x, cur_y, ch, text_color);
         cur_x = cur_x.saturating_add(char_w.saturating_add(1));
     }
+}
+
+/// Draw interactive slide jump prompt dialog
+pub fn draw_slide_jump_dialog(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    input_str: &str,
+    current_slide: usize,
+    total_slides: usize,
+    theme: HudTheme,
+) {
+    let dialog_w = 340usize;
+    let dialog_h = 76usize;
+    let x = (width.saturating_sub(dialog_w)) / 2;
+    let y = (height.saturating_sub(dialog_h)) / 2;
+
+    let (bg, border, text_col, sub_col) = if theme.is_light() {
+        (0xFFf6f8fa, 0xFF0969da, 0xFF1f2328, 0xFF57606a)
+    } else {
+        (0xFF161b22, 0xFF58a6ff, 0xFFf0f6fc, 0xFF8b949e)
+    };
+
+    fill_rect(buffer, width, height, x, y, dialog_w, dialog_h, bg);
+    draw_rect_outline(buffer, width, height, x, y, dialog_w, dialog_h, border);
+
+    let title = format!(
+        "JUMP TO SLIDE  (Current: {} / {})",
+        current_slide + 1,
+        total_slides
+    );
+    draw_text(buffer, width, height, x + 16, y + 14, &title, border);
+
+    let prompt = format!(
+        "Slide Number: [ {}_ ]",
+        if input_str.is_empty() {
+            " "
+        } else {
+            input_str
+        }
+    );
+    draw_text(buffer, width, height, x + 16, y + 36, &prompt, text_col);
+
+    let hint = "Enter to jump  •  Esc to cancel";
+    draw_text(buffer, width, height, x + 16, y + 54, hint, sub_col);
 }
 
 /// Draw interactive slide navigator grid overlay
@@ -2275,7 +2429,8 @@ pub fn draw_help_overlay(
         "Space / Right / Left-Click: Next step / slide",
         "Backspace / Left / Right-Click: Prev step / slide",
         "F11 / F              : Toggle Fullscreen / Windowed",
-        "1 .. 9               : Jump to slide",
+        "1 .. 9               : Jump to slide 1..9",
+        "J                    : Enter slide jump number dialog",
         "Home / End           : First / Last slide",
         "O / Dock [TIM]       : Toggle Presenter Timer & Clock",
         "G / Tab / Dock [GRD] : Toggle Slide Navigator Grid",
@@ -2283,8 +2438,10 @@ pub fn draw_help_overlay(
         "B / . / Dock [BLK]   : Toggle Blackout screen",
         "W                    : Toggle Whiteout screen",
         "A                    : Toggle Kiosk auto-advance (10s)",
+        "S / Dock [SPOT]      : Toggle Presentation Spotlight",
         "L                    : Toggle Laser pointer (with trail)",
         "P                    : Toggle Whiteboard Pen",
+        "[ / ]                : Adjust Pen / Spotlight radius",
         "K / Dock [COL]       : Open Color Palette (1..7 keys)",
         "C / X                : Clear ink strokes",
         "T / Dock [THM]       : Toggle Light / Dark HUD theme",
@@ -4540,11 +4697,12 @@ pub fn draw_chart_visualizer(
                 (n, v)
             };
 
-            let total: f64 = values.iter().sum();
+            let sanitized_values: Vec<f64> = values.iter().map(|&v| v.max(0.0)).collect();
+            let total: f64 = sanitized_values.iter().sum();
             if total > 0.0 {
                 let mut slice_angles = Vec::new();
                 let mut current_ang = 0.0f32;
-                for (i, &v) in values.iter().enumerate() {
+                for (i, &v) in sanitized_values.iter().enumerate() {
                     let frac = (v / total) as f32;
                     let slice_ang = frac * std::f32::consts::TAU;
                     let col = parse_hex_color(DEFAULT_CHART_COLORS[i % DEFAULT_CHART_COLORS.len()]);
@@ -4605,6 +4763,16 @@ pub fn draw_chart_visualizer(
                     (cy + 4) as usize,
                     &chart_data.format_number(total),
                     0xFFFFFFFF,
+                );
+            } else {
+                draw_text_at_center(
+                    buffer,
+                    width,
+                    height,
+                    (cx as usize).min(width.saturating_sub(1)),
+                    (cy as usize).min(height.saturating_sub(1)),
+                    "No positive values to display",
+                    0xFF8b949e,
                 );
             }
 
@@ -6237,6 +6405,67 @@ mod tests {
         assert_eq!(
             dot_count, 1,
             "Unmapped character fallback should be a single dot"
+        );
+    }
+
+    #[test]
+    fn test_spotlight_rendering_and_attenuation() {
+        let width = 200;
+        let height = 200;
+        let mut buffer = vec![0xFFFFFFFFu32; width * height];
+
+        render_spotlight(&mut buffer, width, height, 100, 100, 40);
+
+        // Center pixel should remain un-attenuated (full brightness white)
+        let center_pixel = buffer[100 * width + 100];
+        assert_eq!(
+            center_pixel, 0xFFFFFFFF,
+            "Spotlight center should remain bright"
+        );
+
+        // Corner pixel should be darkened
+        let corner_pixel = buffer[0];
+        assert_ne!(
+            corner_pixel, 0xFFFFFFFF,
+            "Corner pixel must be dimmed by spotlight mask"
+        );
+    }
+
+    #[test]
+    fn test_presenter_clock_pacing_and_target_duration() {
+        let width = 300;
+        let height = 100;
+        let mut buffer = vec![0u32; width * height];
+
+        // Draw with a 10 min (600s) target duration at 5 min (300s) elapsed (50%)
+        draw_presenter_clock(&mut buffer, width, height, 300, HudTheme::Dark, Some(600));
+        let pixels_drawn = buffer.iter().filter(|&&p| p != 0).count();
+        assert!(pixels_drawn > 0, "Presenter clock should render pixels");
+
+        // Draw overtime at 700s with 600s target
+        let mut overtime_buf = vec![0u32; width * height];
+        draw_presenter_clock(
+            &mut overtime_buf,
+            width,
+            height,
+            700,
+            HudTheme::Dark,
+            Some(600),
+        );
+        assert!(overtime_buf.iter().filter(|&&p| p != 0).count() > 0);
+    }
+
+    #[test]
+    fn test_slide_jump_dialog_rendering() {
+        let width = 400;
+        let height = 200;
+        let mut buffer = vec![0u32; width * height];
+
+        draw_slide_jump_dialog(&mut buffer, width, height, "12", 5, 20, HudTheme::Dark);
+        let drawn_count = buffer.iter().filter(|&&p| p != 0).count();
+        assert!(
+            drawn_count > 100,
+            "Jump dialog must render border, background, and text"
         );
     }
 }

@@ -422,3 +422,76 @@ fn test_cli_template_info_and_check() {
     assert!(info_stdout.contains("Cargo Slide Presentation Inspector"));
     assert!(info_stdout.contains("Integrity:      PASSED"));
 }
+
+#[test]
+fn test_cli_stats_command() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let dir = tempdir().expect("tempdir");
+
+    let init_res = Command::new(bin)
+        .arg("init")
+        .arg("--template")
+        .arg("geek")
+        .current_dir(dir.path())
+        .output()
+        .expect("Init");
+    assert!(init_res.status.success());
+
+    // Test text stats
+    let stats_res = Command::new(bin)
+        .arg("stats")
+        .arg("slides.typ")
+        .current_dir(dir.path())
+        .output()
+        .expect("Execute stats");
+    assert!(stats_res.status.success());
+    let stdout = String::from_utf8_lossy(&stats_res.stdout);
+    assert!(stdout.contains("Cargo Slide Deck Analytics & Pacing Report"));
+    assert!(stdout.contains("Total Slides:"));
+    assert!(stdout.contains("Estimated Presentation Pacing"));
+
+    // Test JSON stats
+    let json_res = Command::new(bin)
+        .arg("stats")
+        .arg("slides.typ")
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .expect("Execute stats --json");
+    assert!(json_res.status.success());
+    let json_str = String::from_utf8_lossy(&json_res.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("Valid JSON report");
+    assert!(parsed.get("total_slides").is_some());
+    assert!(parsed.get("total_words").is_some());
+    assert!(parsed.get("calibrated_wpm").is_some());
+}
+
+#[test]
+fn test_cli_check_target_duration_and_json() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let dir = tempdir().expect("tempdir");
+
+    let init_res = Command::new(bin)
+        .arg("init")
+        .current_dir(dir.path())
+        .output()
+        .expect("Init");
+    assert!(init_res.status.success());
+
+    // Run check with --json and --target 10
+    let check_json = Command::new(bin)
+        .arg("check")
+        .arg("slides.typ")
+        .arg("--target")
+        .arg("10")
+        .arg("--json")
+        .current_dir(dir.path())
+        .output()
+        .expect("Check --json");
+    assert!(check_json.status.success());
+    let json_str = String::from_utf8_lossy(&check_json.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).expect("Valid JSON check output");
+    assert_eq!(parsed.get("target_minutes").unwrap(), 10);
+    assert!(parsed.get("estimated_minutes").is_some());
+}

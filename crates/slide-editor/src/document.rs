@@ -491,6 +491,18 @@ impl EditorDocument {
         self.is_dirty = true;
     }
 
+    /// Insert a custom slide chunk at a specific position
+    pub fn insert_custom_slide_chunk_at(
+        &mut self,
+        target_idx: usize,
+        chunk: &str,
+    ) {
+        let idx = target_idx.min(self.slide_chunks.len());
+        self.slide_chunks.insert(idx, chunk.to_string());
+        self.rebuild_source_from_chunks();
+        self.is_dirty = true;
+    }
+
     /// Duplicate a slide at index
     pub fn duplicate_slide(
         &mut self,

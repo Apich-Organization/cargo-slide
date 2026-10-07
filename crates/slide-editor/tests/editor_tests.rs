@@ -4945,3 +4945,58 @@ fn test_responsive_window_scaling_and_proportional_layout() {
         let _ = app.view();
     }
 }
+
+#[test]
+fn test_command_palette_modal_and_agenda_generation() {
+    let mut app = SlideEditorApp::new(None, false);
+
+    // 1. Zoom and Pace cycling
+    app.zoom_percent = 150;
+    let _ = app.update(Message::ResetZoom);
+    assert_eq!(app.zoom_percent, 100);
+
+    assert_eq!(app.speaking_wpm, 130);
+    let _ = app.update(Message::CycleSpeakingPace);
+    assert_eq!(app.speaking_wpm, 160);
+    let _ = app.update(Message::CycleSpeakingPace);
+    assert_eq!(app.speaking_wpm, 100);
+    let _ = app.update(Message::CycleSpeakingPace);
+    assert_eq!(app.speaking_wpm, 130);
+
+    // 2. Command Palette lifecycle & filtering
+    let _ = app.update(Message::OpenCommandPalette);
+    assert!(matches!(
+        app.active_modal,
+        Some(ActiveModal::CommandPalette { .. })
+    ));
+
+    // View rendering with Command Palette open
+    let _ = app.view();
+
+    let _ = app.update(Message::CommandPaletteQueryChanged("zoom".to_string()));
+    if let Some(ActiveModal::CommandPalette {
+        ref query,
+        selected_idx,
+    }) = app.active_modal
+    {
+        assert_eq!(query, "zoom");
+        assert_eq!(selected_idx, 0);
+    } else {
+        panic!("Command palette should be active");
+    }
+
+    // Execute selected command (Reset Zoom)
+    let _ = app.update(Message::CommandPaletteExecute);
+    assert!(app.active_modal.is_none());
+
+    // 3. Generate Agenda Slide
+    let initial_slides = app.doc.total_slides();
+    let _ = app.update(Message::GenerateAgendaSlide);
+    assert!(app.doc.total_slides() > initial_slides);
+    let current_source = &app.doc.source_text;
+    assert!(current_source.contains("Agenda"));
+
+    // 4. Delete slide protection
+    let _ = app.update(Message::DeleteActiveSlide);
+    assert_eq!(app.doc.total_slides(), initial_slides);
+}

@@ -120,8 +120,12 @@ impl CompilerBridge {
         let (processed_source, prepended_import) =
             Self::prepare_typst_source_with_macros(source_text);
 
+        static TMP_FILE_COUNTER: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
         let (temp_file, _cleanup) = if let Some(root) = project_root.filter(|p| p.is_dir()) {
-            let tmp = root.join(".slide_preview_tmp.typ");
+            let counter = TMP_FILE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let pid = std::process::id();
+            let tmp = root.join(format!(".slide_preview_tmp_{pid}_{counter}.typ"));
             let slide_typ = root.join("slide.typ");
             if !slide_typ.exists() {
                 let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);

@@ -45,6 +45,13 @@ pub const AVAILABLE_ANIMATIONS: &[&str] = &[
     "zoom",
     "slide-left",
     "slide-right",
+    "slide-up",
+    "slide-down",
+    "wipe-left",
+    "wipe-right",
+    "iris",
+    "glitch",
+    "cube",
     "particles",
     "cut",
 ];
@@ -74,6 +81,8 @@ pub enum Message {
     SelectPresentation(usize),
     SelectNext,
     SelectPrevious,
+    SelectFirst,
+    SelectLast,
     PlaySelected,
     PlaySelectedWithTheme(HudTheme),
     PlayEntry(PathBuf),
@@ -93,6 +102,7 @@ pub enum Message {
     OpenSelectedInEditor,
     Refresh,
     ToggleTheme,
+    ToggleHelpModal,
     SetAnimation(String),
     ToggleFullscreen(bool),
     ToggleFullscreenShortcut,
@@ -127,6 +137,7 @@ pub struct ViewerLauncherApp {
     pub custom_open_animation: String,
     pub custom_open_fullscreen: bool,
     pub custom_open_hud_theme: HudTheme,
+    pub is_help_modal_open: bool,
 }
 
 impl ViewerLauncherApp {
@@ -161,6 +172,7 @@ impl ViewerLauncherApp {
                 custom_open_animation: default_animation,
                 custom_open_fullscreen: fullscreen,
                 custom_open_hud_theme: HudTheme::Dark,
+                is_help_modal_open: false,
             },
             Task::none(),
         )
@@ -216,6 +228,20 @@ impl ViewerLauncherApp {
                         | Some(i) => i - 1,
                     };
                     self.selected_index = Some(prev);
+                }
+                Task::none()
+            },
+            | Message::SelectFirst => {
+                let total = self.filtered_presentations().len();
+                if total > 0 {
+                    self.selected_index = Some(0);
+                }
+                Task::none()
+            },
+            | Message::SelectLast => {
+                let total = self.filtered_presentations().len();
+                if total > 0 {
+                    self.selected_index = Some(total.saturating_sub(1));
                 }
                 Task::none()
             },
@@ -357,6 +383,10 @@ impl ViewerLauncherApp {
                 self.theme = self.theme.toggle();
                 Task::none()
             },
+            | Message::ToggleHelpModal => {
+                self.is_help_modal_open = !self.is_help_modal_open;
+                Task::none()
+            },
             | Message::SetAnimation(anim) => {
                 self.selected_animation = anim;
                 Task::none()
@@ -402,7 +432,9 @@ impl ViewerLauncherApp {
                 Task::none()
             },
             | Message::EscapePressed => {
-                if self.is_custom_open_open {
+                if self.is_help_modal_open {
+                    self.is_help_modal_open = false;
+                } else if self.is_custom_open_open {
                     self.is_custom_open_open = false;
                 } else {
                     self.toast_message = None;
@@ -523,7 +555,10 @@ impl ViewerLauncherApp {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        iced::event::listen_with(|event, _status, _id| {
+        iced::event::listen_with(|event, status, _id| {
+            if status == iced::event::Status::Captured {
+                return None;
+            }
             if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) = event {
                 match key.as_ref() {
                     | iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter)
@@ -536,9 +571,18 @@ impl ViewerLauncherApp {
                     | iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => {
                         Some(Message::SelectPrevious)
                     },
+                    | iced::keyboard::Key::Named(iced::keyboard::key::Named::Home) => {
+                        Some(Message::SelectFirst)
+                    },
+                    | iced::keyboard::Key::Named(iced::keyboard::key::Named::End) => {
+                        Some(Message::SelectLast)
+                    },
                     | iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => {
                         Some(Message::EscapePressed)
                     },
+                    | iced::keyboard::Key::Named(iced::keyboard::key::Named::F5)
+                    | iced::keyboard::Key::Character("r")
+                    | iced::keyboard::Key::Character("R") => Some(Message::Refresh),
                     | iced::keyboard::Key::Character("o") | iced::keyboard::Key::Character("O") => {
                         Some(Message::OpenCustomOpenModal)
                     },
@@ -554,6 +598,9 @@ impl ViewerLauncherApp {
                     | iced::keyboard::Key::Character("l") | iced::keyboard::Key::Character("L") => {
                         Some(Message::ToggleTheme)
                     },
+                    | iced::keyboard::Key::Character("h")
+                    | iced::keyboard::Key::Character("H")
+                    | iced::keyboard::Key::Character("?") => Some(Message::ToggleHelpModal),
                     | iced::keyboard::Key::Named(iced::keyboard::key::Named::F11)
                     | iced::keyboard::Key::Character("f")
                     | iced::keyboard::Key::Character("F") => {
@@ -1281,14 +1328,15 @@ impl ViewerLauncherApp {
         let shortcuts_guide = row![
             shortcut_item("Enter/Space", "Start"),
             shortcut_item("O", "Custom Open"),
-            shortcut_item("E", "Edit in Slide Editor"),
+            shortcut_item("E", "Edit"),
             shortcut_item("D", "Demo"),
+            shortcut_item("R", "Refresh"),
             shortcut_item("F", "Fullscreen"),
-            shortcut_item("L", "Launcher Theme"),
-            shortcut_item("I", "Install"),
+            shortcut_item("L", "Theme"),
+            shortcut_item("H/?", "Help"),
             shortcut_item("Esc", "Exit"),
         ]
-        .spacing(12)
+        .spacing(10)
         .align_y(Alignment::Center);
 
         let footer_left = text(format!("Dir: {}", self.current_dir.display()))
@@ -1315,7 +1363,83 @@ impl ViewerLauncherApp {
                 .style(move |_| canvas_container(theme))
                 .into();
 
-        if self.is_custom_open_open {
+        if self.is_help_modal_open {
+            let shortcut_row = |key_str: &'static str,
+                                desc: &'static str|
+             -> Element<'_, Message> {
+                row![
+                    container(text(key_str).size(11).color(theme.accent()))
+                        .padding([3, 8])
+                        .style(move |_| badge_container(theme.bg_subtle(), theme.border_color())),
+                    Space::new().width(12),
+                    text(desc).size(12).color(theme.text_primary()),
+                ]
+                .align_y(Alignment::Center)
+                .into()
+            };
+
+            let help_card = container(column![
+                row![
+                    text("KEYBOARD SHORTCUTS REFERENCE")
+                        .size(15)
+                        .color(theme.accent()),
+                    Space::new().width(Length::Fill),
+                    button(text("X").size(12))
+                        .style(move |_theme, _status| secondary_button_style(theme))
+                        .padding([2, 8])
+                        .on_press(Message::ToggleHelpModal),
+                ]
+                .align_y(Alignment::Center),
+                Space::new().height(16),
+                text("PLAYBACK & ACTIONS")
+                    .size(11)
+                    .color(theme.text_secondary()),
+                Space::new().height(6),
+                shortcut_row("Enter / Space", "Launch selected presentation"),
+                shortcut_row("O", "Open custom file or package dialog"),
+                shortcut_row("E", "Open selected file in Slide Editor"),
+                shortcut_row("D", "Launch Geek Demo showcase"),
+                shortcut_row("F / F11", "Toggle fullscreen mode"),
+                Space::new().height(14),
+                text("LIST NAVIGATION")
+                    .size(11)
+                    .color(theme.text_secondary()),
+                Space::new().height(6),
+                shortcut_row("Up / Down", "Select previous / next presentation"),
+                shortcut_row("Home / End", "Jump to first / last presentation"),
+                shortcut_row("R / F5", "Refresh presentation scan list"),
+                shortcut_row("Esc", "Close dialogs or clear notifications"),
+                Space::new().height(14),
+                text("SYSTEM & APPEARANCE")
+                    .size(11)
+                    .color(theme.text_secondary()),
+                Space::new().height(6),
+                shortcut_row("L", "Toggle Launcher Dark / Light theme"),
+                shortcut_row("I", "Install desktop launcher and file associations"),
+                shortcut_row("H / ?", "Toggle this keyboard shortcuts dialog"),
+                Space::new().height(22),
+                row![
+                    Space::new().width(Length::Fill),
+                    button(text("CLOSE (ESC)").size(12))
+                        .style(move |_theme, _status| primary_button_style(theme))
+                        .padding([8, 18])
+                        .on_press(Message::ToggleHelpModal),
+                ],
+            ])
+            .padding(24)
+            .width(Length::Fixed(560.0))
+            .style(move |_| modal_dialog_style(theme));
+
+            let modal_overlay: Element<'_, Message> = container(help_card)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .style(move |_| modal_backdrop_style(theme))
+                .into();
+
+            iced::widget::stack![base_content, modal_overlay].into()
+        } else if self.is_custom_open_open {
             let modal_card = container(
                 column![
                     row![

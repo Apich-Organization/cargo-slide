@@ -84,26 +84,40 @@ fn dispatch_command(
     default_file: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        | Some(Commands::Init { path, rust, template }) => {
-            commands::init::execute(&path, rust, &template)?;
+        | Some(Commands::Init {
+            path,
+            rust,
+            template,
+            aspect,
+        }) => {
+            commands::init::execute(&path, rust, &template, &aspect)?;
         },
-        | Some(Commands::New { name, rust, template }) => {
-            commands::new::execute(&name, rust, &template)?;
+        | Some(Commands::New {
+            name,
+            rust,
+            template,
+            aspect,
+        }) => {
+            commands::new::execute(&name, rust, &template, &aspect)?;
         },
         | Some(Commands::Run {
             file,
             animation,
             watch,
             fullscreen,
+            target,
+            light,
         }) => {
-            commands::run::execute(&file, &animation, watch, fullscreen)?;
+            commands::run::execute(&file, &animation, watch, fullscreen, target, light)?;
         },
         | Some(Commands::Dev {
             file,
             animation,
             fullscreen,
+            target,
+            light,
         }) => {
-            commands::run::execute(&file, &animation, true, fullscreen)?;
+            commands::run::execute(&file, &animation, true, fullscreen, target, light)?;
         },
         | Some(Commands::Edit { file, dark }) => {
             commands::edit::execute(file.as_deref(), dark)?;
@@ -149,8 +163,11 @@ fn dispatch_command(
         | Some(Commands::Info { file }) => {
             commands::info::execute(&file)?;
         },
-        | Some(Commands::Check { file }) => {
-            commands::check::execute(&file)?;
+        | Some(Commands::Check { file, target, json }) => {
+            commands::check::execute(&file, target, json)?;
+        },
+        | Some(Commands::Stats { file, json, wpm }) => {
+            commands::stats::execute(&file, json, wpm)?;
         },
         | Some(Commands::Export { file, format, output }) => {
             commands::export::execute(&file, &format, output)?;
@@ -181,7 +198,7 @@ fn dispatch_command(
         },
         | None => {
             let file = default_file.unwrap_or_else(|| PathBuf::from("slides.typ"));
-            commands::run::execute(&file, "fade", false, false)?;
+            commands::run::execute(&file, "fade", false, false, None, false)?;
         },
     }
 

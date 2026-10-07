@@ -414,6 +414,28 @@ pub fn get_package_cache_dir(input_path: &Path) -> std::path::PathBuf {
         .join(format!("{stem}_{hash:016x}"))
 }
 
+/// Validate and sanitize relative archive paths against zip-slip / directory traversal
+pub fn sanitize_archive_path(
+    base_dir: &Path,
+    rel_path: &str,
+) -> Option<std::path::PathBuf> {
+    let clean = rel_path.trim_start_matches('/').trim_start_matches('\\');
+    let path = Path::new(clean);
+    for component in path.components() {
+        match component {
+            | std::path::Component::ParentDir => return None,
+            | std::path::Component::RootDir | std::path::Component::Prefix(_) => return None,
+            | _ => {},
+        }
+    }
+    let target = base_dir.join(path);
+    if target.starts_with(base_dir) {
+        Some(target)
+    } else {
+        None
+    }
+}
+
 /// Unpack a `SlideDeck` and its assets from a standalone `.slide` file.
 /// Returns the `SlideDeck` and the directory containing extracted assets.
 pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path::PathBuf)> {
@@ -441,8 +463,10 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
                 let mut content = Vec::new();
                 entry.read_to_end(&mut content)?;
                 deck_data = Some(content);
-            } else if path_str != "manifest.json" && !path_str.ends_with("/manifest.json") {
-                let dest = cache_dir.join(&path_str);
+            } else if path_str != "manifest.json"
+                && !path_str.ends_with("/manifest.json")
+                && let Some(dest) = sanitize_archive_path(&cache_dir, &path_str)
+            {
                 if let Some(parent) = dest.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
@@ -474,8 +498,8 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
             } else if name != "manifest.json"
                 && !name.ends_with("/manifest.json")
                 && !entry.is_dir()
+                && let Some(dest) = sanitize_archive_path(&cache_dir, &name)
             {
-                let dest = cache_dir.join(&name);
                 if let Some(parent) = dest.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
@@ -512,8 +536,10 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
                     let mut content = Vec::new();
                     entry.read_to_end(&mut content)?;
                     deck_data = Some(content);
-                } else if path_str != "manifest.json" && !path_str.ends_with("/manifest.json") {
-                    let dest = cache_dir.join(&path_str);
+                } else if path_str != "manifest.json"
+                    && !path_str.ends_with("/manifest.json")
+                    && let Some(dest) = sanitize_archive_path(&cache_dir, &path_str)
+                {
                     if let Some(parent) = dest.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }

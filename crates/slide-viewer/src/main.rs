@@ -34,7 +34,7 @@ struct Args {
     /// Path to .slide package file, .typ source file, or deck.json (optional)
     file: Option<PathBuf>,
 
-    /// Default transition animation (fade, zoom, slide-left, slide-right, particles, cut)
+    /// Default transition animation (fade, zoom, slide-left, slide-right, slide-up, slide-down, wipe-left, wipe-right, iris, glitch, cube, particles, cut)
     #[arg(short, long, default_value = "fade")]
     animation: String,
 

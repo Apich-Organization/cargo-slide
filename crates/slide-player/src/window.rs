@@ -18,6 +18,7 @@ use crate::hud::draw_hotspot_highlight;
 use crate::hud::draw_page_badge;
 use crate::hud::draw_presenter_clock;
 use crate::hud::draw_slide_grid_overlay;
+use crate::hud::draw_slide_jump_dialog;
 use crate::hud::draw_speaker_notes_overlay;
 use crate::hud::draw_volume_toast;
 use crate::hud::get_chart_quick_action_rects;
@@ -35,6 +36,7 @@ use crate::hud::render_ink_strokes;
 use crate::hud::render_laser_pointer;
 use crate::hud::render_laser_trail;
 use crate::hud::render_palette_popup;
+use crate::hud::render_spotlight;
 use crate::hud::render_volume_slider_popup;
 use crate::media::MediaPlayer;
 use crate::renderer::RenderMetrics;
@@ -75,6 +77,7 @@ pub struct PlayerConfig {
     pub default_animation: String,
     pub watch: bool,
     pub hud_theme: HudTheme,
+    pub target_duration_secs: Option<u64>,
 }
 
 impl Default for PlayerConfig {
@@ -87,6 +90,7 @@ impl Default for PlayerConfig {
             default_animation: "fade".to_string(),
             watch: false,
             hud_theme: HudTheme::Dark,
+            target_duration_secs: None,
         }
     }
 }
@@ -193,6 +197,14 @@ impl SlideApp {
         } else {
             HudTheme::Dark
         };
+        self
+    }
+
+    pub fn target_duration_secs(
+        mut self,
+        secs: u64,
+    ) -> Self {
+        self.config.target_duration_secs = Some(secs);
         self
     }
 
@@ -1162,6 +1174,9 @@ impl SlidePlayer {
         let mut active_pen_stroke: Option<InkStroke> = None;
         let mut laser_trail: VecDeque<(usize, usize, Instant)> = VecDeque::new();
         let mut laser_trail_scratch: Vec<(usize, usize, f32)> = Vec::with_capacity(64);
+        let mut spotlight_radius: usize = 110;
+        let mut jump_dialog_active: bool = false;
+        let mut jump_dialog_input: String = String::new();
 
         // In-slide component step state
         let get_max_step = |deck: &SlideDeck, idx: usize| -> usize {
@@ -1811,6 +1826,7 @@ impl SlidePlayer {
                         | DockAction::ModeNormal => presenter_mode = PresenterMode::Normal,
                         | DockAction::ModeLaser => presenter_mode = PresenterMode::Laser,
                         | DockAction::ModePen => presenter_mode = PresenterMode::Pen,
+                        | DockAction::ModeSpotlight => presenter_mode = PresenterMode::Spotlight,
                         | DockAction::TogglePalette => palette_open = !palette_open,
                         | DockAction::ClearInk => {
                             slide_ink.remove(&current_idx);
@@ -2327,8 +2343,51 @@ impl SlidePlayer {
                                 | _ => {},
                             }
                         }
+                    } else if jump_dialog_active {
+                        match key {
+                            | Key::NumPad0 | Key::Key0 => jump_dialog_input.push('0'),
+                            | Key::NumPad1 | Key::Key1 => jump_dialog_input.push('1'),
+                            | Key::NumPad2 | Key::Key2 => jump_dialog_input.push('2'),
+                            | Key::NumPad3 | Key::Key3 => jump_dialog_input.push('3'),
+                            | Key::NumPad4 | Key::Key4 => jump_dialog_input.push('4'),
+                            | Key::NumPad5 | Key::Key5 => jump_dialog_input.push('5'),
+                            | Key::NumPad6 | Key::Key6 => jump_dialog_input.push('6'),
+                            | Key::NumPad7 | Key::Key7 => jump_dialog_input.push('7'),
+                            | Key::NumPad8 | Key::Key8 => jump_dialog_input.push('8'),
+                            | Key::NumPad9 | Key::Key9 => jump_dialog_input.push('9'),
+                            | Key::Backspace => {
+                                jump_dialog_input.pop();
+                            },
+                            | Key::Enter => {
+                                if let Ok(num) = jump_dialog_input.parse::<usize>()
+                                    && num >= 1
+                                {
+                                    jump_target = Some(
+                                        (num.saturating_sub(1)).min(total_slides.saturating_sub(1)),
+                                    );
+                                }
+                                jump_dialog_active = false;
+                                jump_dialog_input.clear();
+                            },
+                            | Key::Escape => {
+                                jump_dialog_active = false;
+                                jump_dialog_input.clear();
+                            },
+                            | _ => {},
+                        }
                     } else {
                         match key {
+                            | Key::J => {
+                                jump_dialog_active = true;
+                                jump_dialog_input.clear();
+                            },
+                            | Key::S => {
+                                presenter_mode = if presenter_mode == PresenterMode::Spotlight {
+                                    PresenterMode::Normal
+                                } else {
+                                    PresenterMode::Spotlight
+                                };
+                            },
                             | Key::Right | Key::Down | Key::Space | Key::PageDown | Key::Enter => {
                                 if blank_mode.is_some() {
                                     blank_mode = None;
@@ -2457,10 +2516,19 @@ impl SlidePlayer {
                                 last_kiosk_advance = Instant::now();
                             },
                             | Key::LeftBracket => {
-                                active_brush_width = active_brush_width.saturating_sub(2).max(1);
+                                if presenter_mode == PresenterMode::Spotlight {
+                                    spotlight_radius = spotlight_radius.saturating_sub(20).max(40);
+                                } else {
+                                    active_brush_width =
+                                        active_brush_width.saturating_sub(2).max(1);
+                                }
                             },
                             | Key::RightBracket => {
-                                active_brush_width = (active_brush_width + 2).min(24);
+                                if presenter_mode == PresenterMode::Spotlight {
+                                    spotlight_radius = (spotlight_radius + 20).min(260);
+                                } else {
+                                    active_brush_width = (active_brush_width + 2).min(24);
+                                }
                             },
                             | Key::U => {
                                 if let Some(strokes) = slide_ink.get_mut(&current_idx) {
@@ -2759,6 +2827,21 @@ impl SlidePlayer {
                 }
             }
 
+            // Presenter Spotlight overlay
+            if presenter_mode == PresenterMode::Spotlight {
+                let (cx, cy) = if let Some((mx, my)) = mouse_pos
+                    && mx >= 0.0
+                    && my >= 0.0
+                    && (mx as usize) < width
+                    && (my as usize) < height
+                {
+                    (mx as usize, my as usize)
+                } else {
+                    (width / 2, height / 2)
+                };
+                render_spotlight(&mut buffer, width, height, cx, cy, spotlight_radius);
+            }
+
             // Draw floating interactive dock
             render_dock(
                 &mut buffer,
@@ -2853,7 +2936,14 @@ impl SlidePlayer {
             // Presenter timer & wall clock HUD
             if show_timer {
                 let elapsed = presentation_start_time.elapsed().as_secs();
-                draw_presenter_clock(&mut buffer, width, height, elapsed, hud_theme);
+                draw_presenter_clock(
+                    &mut buffer,
+                    width,
+                    height,
+                    elapsed,
+                    hud_theme,
+                    self.config.target_duration_secs,
+                );
             }
 
             // Speaker notes overlay
@@ -2882,6 +2972,19 @@ impl SlidePlayer {
                     &self.deck,
                     current_idx,
                     hovered_grid_idx,
+                    hud_theme,
+                );
+            }
+
+            // Interactive slide jump dialog overlay
+            if jump_dialog_active {
+                draw_slide_jump_dialog(
+                    &mut buffer,
+                    width,
+                    height,
+                    &jump_dialog_input,
+                    current_idx + 1,
+                    total_slides,
                     hud_theme,
                 );
             }

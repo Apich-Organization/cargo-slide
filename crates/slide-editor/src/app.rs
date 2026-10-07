@@ -157,6 +157,10 @@ pub enum ActiveModal {
         Vec<slide_core::compiler::PresentationHealthIssue>,
         slide_core::pacing::DeckPacingReport,
     ),
+    CommandPalette {
+        query: String,
+        selected_idx: usize,
+    },
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -192,6 +196,7 @@ pub struct SlideEditorApp {
     pub sidebar_visible: bool,
     pub sidebar_view_mode: SidebarViewMode,
     pub zoom_percent: u32,
+    pub speaking_wpm: u32,
     pub compiler: CompilerBridge,
     pub compilation_status: CompilationStatus,
     pub active_modal: Option<ActiveModal>,
@@ -616,6 +621,17 @@ pub enum Message {
     MoveActiveSlideDown,
     DuplicateActiveSlide,
     InsertSlideAfterActive,
+    DeleteActiveSlide,
+    // Zoom & Pacing management
+    ResetZoom,
+    CycleSpeakingPace,
+    // Command Palette
+    OpenCommandPalette,
+    CommandPaletteQueryChanged(String),
+    CommandPaletteSelectIndex(usize),
+    CommandPaletteExecute,
+    // Agenda slide generation
+    GenerateAgendaSlide,
 }
 
 impl SlideEditorApp {
@@ -697,6 +713,7 @@ impl SlideEditorApp {
             sidebar_visible: true,
             sidebar_view_mode: SidebarViewMode::default(),
             zoom_percent: 100,
+            speaking_wpm: 130,
             compiler,
             compilation_status: status,
             active_modal: None,
@@ -2724,6 +2741,16 @@ impl SlideEditorApp {
                     self.zoom_percent = self.zoom_percent.saturating_sub(10);
                 }
             },
+            | Message::ResetZoom => {
+                self.zoom_percent = 100;
+            },
+            | Message::CycleSpeakingPace => {
+                self.speaking_wpm = match self.speaking_wpm {
+                    | 100 => 130,
+                    | 130 => 160,
+                    | _ => 100,
+                };
+            },
             | Message::NewDocument => {
                 self.commit_active_block();
                 self.doc = EditorDocument::new_presentation("Untitled Presentation");
@@ -3945,6 +3972,120 @@ impl SlideEditorApp {
                 #[cfg(target_os = "linux")]
                 let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
             },
+            | Message::DeleteActiveSlide => {
+                let current_idx = self.active_slide;
+                if self.doc.total_slides() > 1 {
+                    self.push_undo_snapshot();
+                    self.commit_active_block();
+                    self.doc.delete_slide(current_idx);
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.active_slide = current_idx.min(self.doc.total_slides().saturating_sub(1));
+                    self.sync_editors_from_doc();
+                    task = self.trigger_recompile_task();
+                }
+            },
+            | Message::OpenCommandPalette => {
+                self.active_modal = Some(ActiveModal::CommandPalette {
+                    query: String::new(),
+                    selected_idx: 0,
+                });
+            },
+            | Message::CommandPaletteQueryChanged(q) => {
+                if let Some(ActiveModal::CommandPalette {
+                    ref mut query,
+                    ref mut selected_idx,
+                }) = self.active_modal
+                {
+                    *query = q;
+                    *selected_idx = 0;
+                }
+            },
+            | Message::CommandPaletteSelectIndex(idx) => {
+                if let Some(ActiveModal::CommandPalette {
+                    ref mut selected_idx, ..
+                }) = self.active_modal
+                {
+                    *selected_idx = idx;
+                }
+            },
+            | Message::CommandPaletteExecute => {
+                if let Some(ActiveModal::CommandPalette {
+                    ref query,
+                    selected_idx,
+                }) = self.active_modal
+                {
+                    let actions = crate::ui::modals::get_palette_actions();
+                    let q_lower = query.trim().to_lowercase();
+                    let filtered: Vec<_> = actions
+                        .into_iter()
+                        .filter(|a| {
+                            if q_lower.is_empty() {
+                                true
+                            } else {
+                                a.title.to_lowercase().contains(&q_lower)
+                                    || a.category.to_lowercase().contains(&q_lower)
+                                    || a.shortcut.to_lowercase().contains(&q_lower)
+                            }
+                        })
+                        .collect();
+
+                    if let Some(act) = filtered.get(selected_idx) {
+                        let target_msg = act.message.clone();
+                        self.active_modal = None;
+                        return self.update(target_msg);
+                    }
+                }
+                self.active_modal = None;
+            },
+            | Message::GenerateAgendaSlide => {
+                let mut titles = Vec::new();
+                for slide in &self.engine.slides {
+                    let trim = slide.title.trim();
+                    if !trim.is_empty()
+                        && !trim.eq_ignore_ascii_case("agenda")
+                        && !trim.eq_ignore_ascii_case("table of contents")
+                        && !trim.eq_ignore_ascii_case("outline")
+                    {
+                        titles.push(trim.to_string());
+                    }
+                }
+                if titles.is_empty() {
+                    titles = vec![
+                        "Executive Summary & Objectives".to_string(),
+                        "System Architecture & Core Engine".to_string(),
+                        "Benchmark Results & Metrics".to_string(),
+                        "Future Roadmap & Q&A".to_string(),
+                    ];
+                }
+
+                let items_str = titles
+                    .iter()
+                    .map(|t| format!("    \"{}\",", t.replace('"', "\\\"")))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let agenda_chunk = format!(
+                    "#slide(title: [Agenda & Overview])[\n  == Presentation Outline\n\n  #agenda(\n{}\n  )\n]",
+                    items_str
+                );
+
+                self.push_undo_snapshot();
+                self.commit_active_block();
+                let insert_pos = if self.doc.total_slides() > 1 {
+                    1
+                } else {
+                    self.doc.total_slides()
+                };
+                self.doc
+                    .insert_custom_slide_chunk_at(insert_pos, &agenda_chunk);
+                self.engine.source_text = self.doc.source_text.clone();
+                self.engine.reparse();
+                self.active_slide = insert_pos;
+                self.active_modal = None;
+                self.sync_editors_from_doc();
+                task = self.trigger_recompile_task();
+            },
         }
 
         task
@@ -4170,6 +4311,7 @@ impl SlideEditorApp {
             chars,
             words,
             self.zoom_percent,
+            self.speaking_wpm,
             win_w,
         );
 
@@ -4320,6 +4462,9 @@ impl SlideEditorApp {
                 | ActiveModal::PresentationHealth(issues, pacing) => {
                     view_presentation_health_modal(self.theme, issues, pacing)
                 },
+                | ActiveModal::CommandPalette { query, selected_idx } => {
+                    crate::ui::modals::view_command_palette_modal(self.theme, query, *selected_idx)
+                },
             };
 
             // Overlay modal on top of base content
@@ -4398,6 +4543,73 @@ fn handle_global_drag_event(
         }) if (c == "d" || c == "D") && (modifiers.control() || modifiers.command()) => {
             Some(Message::DuplicateActiveSlide)
         },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "k" || c == "K" || c == "p" || c == "P")
+            && (modifiers.control() || modifiers.command()) =>
+        {
+            Some(Message::OpenCommandPalette)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "0") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::ResetZoom)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "=" || c == "+") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::ZoomIn)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "-") && (modifiers.control() || modifiers.command()) => Some(Message::ZoomOut),
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "b" || c == "B") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::ToggleSidebar)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "e" || c == "E") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::OpenExportDialog)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "o" || c == "O") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::OpenDocumentDialog)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "n" || c == "N") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::NewDocument)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "h" || c == "H") && modifiers.alt() => {
+            Some(Message::OpenPresentationHealthModal)
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::F5),
+            ..
+        }) => Some(Message::PlayPresentation),
         | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
             key: iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp),
             modifiers,

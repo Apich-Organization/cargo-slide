@@ -804,8 +804,14 @@
   )
 }
 
-/// High-impact metric card for stats & benchmarks
-#let metric(value, label, change: none, color: slide-colors.accent) = {
+/// High-impact metric card for stats & benchmarks (supports both positional & named arguments)
+#let metric(..args) = {
+  let named = args.named()
+  let pos = args.pos()
+  let val = if "value" in named { named.value } else if pos.len() > 0 { pos.at(0) } else { "" }
+  let lbl = if "title" in named { named.title } else if "label" in named { named.label } else if pos.len() > 1 { pos.at(1) } else { "" }
+  let chg = if "delta" in named { named.delta } else if "change" in named { named.change } else if pos.len() > 2 { pos.at(2) } else { none }
+  let col = if "color" in named { named.color } else { slide-colors.accent }
   rect(
     fill: slide-colors.card-bg,
     stroke: 1pt + slide-colors.card-border,
@@ -813,14 +819,112 @@
     inset: 10pt,
     width: 100%,
     [
-      #text(size: 22pt, weight: "bold", fill: color)[#value]
+      #text(size: 22pt, weight: "bold", fill: col)[#val]
       #v(2pt)
-      #text(size: 10.5pt, fill: slide-colors.fg)[#label]
-      #if change != none [
+      #text(size: 10.5pt, fill: slide-colors.fg)[#lbl]
+      #if chg != none [
         #v(3pt)
-        #text(size: 9pt, weight: "bold", fill: slide-colors.accent-cyan)[#change]
+        #text(size: 9pt, weight: "bold", fill: slide-colors.accent-cyan)[#chg]
       ]
     ]
+  )
+}
+
+/// Tag chip alias for topic categorization
+#let tag(label, fill: rgb("1f6feb"), text-color: rgb("ffffff")) = badge(label, fill: fill, text-color: text-color)
+
+/// Key takeaway / highlight takeaway card
+#let key-point(title, text-body, color: slide-colors.accent) = {
+  rect(
+    width: 100%,
+    fill: slide-colors.card-bg,
+    stroke: (left: 4pt + color, rest: 1pt + slide-colors.card-border),
+    radius: (right: 6pt),
+    inset: (x: 12pt, y: 10pt),
+    [
+      #text(weight: "bold", size: 12pt, fill: color)[#title]
+      #v(3pt)
+      #text(size: 10.5pt, fill: slide-colors.fg)[#text-body]
+    ]
+  )
+}
+
+/// Styled quote card with attribution
+#let quote-box(body, author: none, affiliation: none) = {
+  rect(
+    width: 100%,
+    fill: slide-colors.card-bg,
+    stroke: 1pt + slide-colors.card-border,
+    radius: 6pt,
+    inset: 12pt,
+    [
+      #text(size: 12pt, style: "italic", fill: slide-colors.fg)[“#body”]
+      #if author != none [
+        #v(6pt)
+        #align(right)[
+          #text(size: 10pt, weight: "bold", fill: slide-colors.accent)[— #author]
+          #if affiliation != none [
+            #text(size: 9pt, fill: slide-colors.secondary)[, #affiliation]
+          ]
+        ]
+      ]
+    ]
+  )
+}
+
+/// Structured agenda / table-of-contents list
+#let agenda(..items) = {
+  let list_items = items.pos()
+  stack(
+    dir: ttb,
+    spacing: 8pt,
+    ..list_items.enumerate().map(it => {
+      let (idx, content) = it
+      rect(
+        width: 100%,
+        fill: slide-colors.card-bg,
+        stroke: 1pt + slide-colors.card-border,
+        radius: 4pt,
+        inset: (x: 10pt, y: 8pt),
+        [
+          #grid(
+            columns: (auto, 1fr),
+            gutter: 10pt,
+            align: (horizon, horizon),
+            [
+              #box(
+                fill: slide-colors.accent,
+                radius: 3pt,
+                inset: (x: 6pt, y: 2pt),
+                text(size: 9pt, weight: "bold", fill: rgb("ffffff"))[#str(idx + 1)]
+              )
+            ],
+            [
+              #text(size: 11.5pt, weight: "medium", fill: slide-colors.fg)[#content]
+            ]
+          )
+        ]
+      )
+    })
+  )
+}
+
+/// Milestone presentation timeline component
+#let timeline(..milestones) = {
+  let pos = milestones.pos()
+  stack(
+    dir: ttb,
+    spacing: 12pt,
+    ..pos.map(item => {
+      rect(
+        width: 100%,
+        fill: slide-colors.card-bg,
+        stroke: (left: 3pt + slide-colors.accent, rest: 1pt + slide-colors.card-border),
+        radius: (right: 4pt),
+        inset: (x: 10pt, y: 7pt),
+        [#item]
+      )
+    })
   )
 }
 

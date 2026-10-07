@@ -2069,3 +2069,311 @@ pub fn view_presentation_health_modal<'a>(
         .style(move |_| theme::modal_backdrop_style(theme))
         .into()
 }
+
+/// An executable command palette action entry
+#[derive(Debug, Clone)]
+pub struct CommandPaletteAction {
+    pub icon: &'static str,
+    pub title: &'static str,
+    pub shortcut: &'static str,
+    pub category: &'static str,
+    pub message: Message,
+}
+
+/// Return all available actions registered in the Command Palette
+#[must_use]
+pub fn get_palette_actions() -> Vec<CommandPaletteAction> {
+    vec![
+        CommandPaletteAction {
+            icon: "▶",
+            title: "Present Slides",
+            shortcut: "F5",
+            category: "Presentation",
+            message: Message::PlayPresentation,
+        },
+        CommandPaletteAction {
+            icon: "📋",
+            title: "Generate Agenda / TOC Slide",
+            shortcut: "",
+            category: "Content",
+            message: Message::GenerateAgendaSlide,
+        },
+        CommandPaletteAction {
+            icon: "🩺",
+            title: "Audit Deck Health & Pacing",
+            shortcut: "Alt+H",
+            category: "Diagnostics",
+            message: Message::OpenPresentationHealthModal,
+        },
+        CommandPaletteAction {
+            icon: "📤",
+            title: "Export Presentation...",
+            shortcut: "Ctrl+E",
+            category: "File",
+            message: Message::OpenExportDialog,
+        },
+        CommandPaletteAction {
+            icon: "📁",
+            title: "Open Presentation...",
+            shortcut: "Ctrl+O",
+            category: "File",
+            message: Message::OpenDocumentDialog,
+        },
+        CommandPaletteAction {
+            icon: "📄",
+            title: "New Presentation",
+            shortcut: "Ctrl+N",
+            category: "File",
+            message: Message::NewDocument,
+        },
+        CommandPaletteAction {
+            icon: "💾",
+            title: "Save Presentation",
+            shortcut: "Ctrl+S",
+            category: "File",
+            message: Message::SaveDocument,
+        },
+        CommandPaletteAction {
+            icon: "🔍",
+            title: "Search and Replace",
+            shortcut: "Ctrl+F",
+            category: "Edit",
+            message: Message::OpenSearchModal,
+        },
+        CommandPaletteAction {
+            icon: "🌓",
+            title: "Toggle Editor Dark / Light Theme",
+            shortcut: "",
+            category: "View",
+            message: Message::ToggleTheme,
+        },
+        CommandPaletteAction {
+            icon: "📂",
+            title: "Toggle Outline Sidebar",
+            shortcut: "Ctrl+B",
+            category: "View",
+            message: Message::ToggleSidebar,
+        },
+        CommandPaletteAction {
+            icon: "🔍",
+            title: "Reset Zoom to 100%",
+            shortcut: "Ctrl+0",
+            category: "View",
+            message: Message::ResetZoom,
+        },
+        CommandPaletteAction {
+            icon: "➕",
+            title: "Zoom In",
+            shortcut: "Ctrl+=",
+            category: "View",
+            message: Message::ZoomIn,
+        },
+        CommandPaletteAction {
+            icon: "➖",
+            title: "Zoom Out",
+            shortcut: "Ctrl+-",
+            category: "View",
+            message: Message::ZoomOut,
+        },
+        CommandPaletteAction {
+            icon: "⏱️",
+            title: "Cycle Speaking Pace (100 / 130 / 160 WPM)",
+            shortcut: "",
+            category: "Pacing",
+            message: Message::CycleSpeakingPace,
+        },
+        CommandPaletteAction {
+            icon: "➕",
+            title: "Insert New Slide",
+            shortcut: "",
+            category: "Content",
+            message: Message::InsertSlide,
+        },
+        CommandPaletteAction {
+            icon: "📄",
+            title: "Duplicate Current Slide",
+            shortcut: "Ctrl+D",
+            category: "Content",
+            message: Message::DuplicateActiveSlide,
+        },
+        CommandPaletteAction {
+            icon: "🗑️",
+            title: "Delete Current Slide",
+            shortcut: "",
+            category: "Content",
+            message: Message::DeleteActiveSlide,
+        },
+        CommandPaletteAction {
+            icon: "🎨",
+            title: "Open Template Library",
+            shortcut: "",
+            category: "Insert",
+            message: Message::OpenTemplateLibraryModal,
+        },
+        CommandPaletteAction {
+            icon: "🔤",
+            title: "Font Selector",
+            shortcut: "",
+            category: "Format",
+            message: Message::OpenFontModal,
+        },
+        CommandPaletteAction {
+            icon: "📐",
+            title: "Configure Header & Footer",
+            shortcut: "",
+            category: "Format",
+            message: Message::OpenHeaderFooterModal,
+        },
+    ]
+}
+
+/// Render the Command Palette modal with instant fuzzy search
+#[must_use]
+pub fn view_command_palette_modal<'a>(
+    theme: AppTheme,
+    query: &'a str,
+    selected_idx: usize,
+) -> Element<'a, Message> {
+    let all_actions = get_palette_actions();
+    let q_lower = query.trim().to_lowercase();
+    let filtered_actions: Vec<&CommandPaletteAction> = all_actions
+        .iter()
+        .filter(|a| {
+            if q_lower.is_empty() {
+                true
+            } else {
+                a.title.to_lowercase().contains(&q_lower)
+                    || a.category.to_lowercase().contains(&q_lower)
+                    || a.shortcut.to_lowercase().contains(&q_lower)
+            }
+        })
+        .collect();
+
+    let search_bar = text_input("Type a command or search action (ESC to cancel)...", query)
+        .on_input(Message::CommandPaletteQueryChanged)
+        .on_submit(Message::CommandPaletteExecute)
+        .padding(10)
+        .size(13);
+
+    let mut action_rows = column![].spacing(4);
+
+    if filtered_actions.is_empty() {
+        action_rows = action_rows.push(
+            container(
+                text("No matching commands found.")
+                    .size(12)
+                    .color(theme.text_muted()),
+            )
+            .padding(16),
+        );
+    } else {
+        for (i, action) in filtered_actions.iter().enumerate() {
+            let is_selected = i == selected_idx.min(filtered_actions.len().saturating_sub(1));
+            let category_badge = container(text(action.category).size(9).color(theme.text_muted()))
+                .padding([2, 5])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(3.0),
+                        ..container::Style::default()
+                    }
+                });
+
+            let shortcut_badge = if action.shortcut.is_empty() {
+                Element::from(Space::new())
+            } else {
+                container(text(action.shortcut).size(10).color(theme.text_secondary()))
+                    .padding([2, 6])
+                    .style(move |_| {
+                        container::Style {
+                            background: Some(iced::Background::Color(theme.bg_subtle())),
+                            border: iced::border::rounded(3.0),
+                            ..container::Style::default()
+                        }
+                    })
+                    .into()
+            };
+
+            let item_row = row![
+                text(action.icon).size(13).color(theme.accent()),
+                Space::new().width(8),
+                text(action.title).size(12).color(if is_selected {
+                    theme.accent()
+                } else {
+                    theme.text_primary()
+                }),
+                Space::new().width(8),
+                category_badge,
+                Space::new().width(Length::Fill),
+                shortcut_badge,
+            ]
+            .align_y(Alignment::Center)
+            .padding([8, 12]);
+
+            let act_msg = action.message.clone();
+            let action_btn = button(item_row)
+                .width(Length::Fill)
+                .style(move |_t, _s| {
+                    if is_selected {
+                        button::Style {
+                            background: Some(iced::Background::Color(
+                                theme.accent().scale_alpha(0.14),
+                            )),
+                            border: iced::Border {
+                                color: theme.accent().scale_alpha(0.6),
+                                width: 1.0,
+                                radius: iced::border::Radius::from(6.0),
+                            },
+                            ..button::Style::default()
+                        }
+                    } else {
+                        button::Style {
+                            background: Some(iced::Background::Color(theme.bg_card())),
+                            border: iced::Border {
+                                color: theme.border_color().scale_alpha(0.3),
+                                width: 1.0,
+                                radius: iced::border::Radius::from(6.0),
+                            },
+                            ..button::Style::default()
+                        }
+                    }
+                })
+                .on_press(act_msg);
+
+            action_rows = action_rows.push(action_btn);
+        }
+    }
+
+    let dialog_content = column![
+        row![
+            text("COMMAND PALETTE")
+                .size(13)
+                .color(theme.accent())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::DEFAULT
+                }),
+            Space::new().width(Length::Fill),
+            text("Ctrl+K / Ctrl+P").size(11).color(theme.text_muted()),
+        ]
+        .align_y(Alignment::Center),
+        Space::new().height(6),
+        search_bar,
+        Space::new().height(8),
+        scrollable(action_rows).height(Length::Fixed(320.0)),
+    ]
+    .spacing(4);
+
+    let dialog_card = container(dialog_content)
+        .width(Length::Fixed(600.0))
+        .padding(18)
+        .style(move |_| theme::modal_dialog_style(theme));
+
+    container(dialog_card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}

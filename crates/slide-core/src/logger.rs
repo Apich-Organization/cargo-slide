@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
 static JSON_MODE: AtomicBool = AtomicBool::new(false);
+static SILENT_MODE: AtomicBool = AtomicBool::new(false);
 
 /// Log output format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,16 @@ pub fn init_logger(format: LogFormat) {
     JSON_MODE.store(format == LogFormat::Json, Ordering::SeqCst);
 }
 
+/// Set silent mode on or off
+pub fn set_silent(silent: bool) {
+    SILENT_MODE.store(silent, Ordering::SeqCst);
+}
+
+/// Check if silent mode is active
+pub fn is_silent() -> bool {
+    SILENT_MODE.load(Ordering::SeqCst)
+}
+
 /// Check if currently in JSON logging mode
 pub fn is_json_mode() -> bool {
     if let Ok(val) = std::env::var("CARGO_SLIDE_LOG_FORMAT")
@@ -39,6 +50,9 @@ pub fn is_json_mode() -> bool {
 
 /// Emit an info log
 pub fn log_info(msg: &str) {
+    if is_silent() {
+        return;
+    }
     if is_json_mode() {
         emit_json("info", msg, None);
     } else {
@@ -48,6 +62,9 @@ pub fn log_info(msg: &str) {
 
 /// Emit a success log
 pub fn log_success(msg: &str) {
+    if is_silent() {
+        return;
+    }
     if is_json_mode() {
         emit_json("success", msg, None);
     } else {
@@ -57,6 +74,9 @@ pub fn log_success(msg: &str) {
 
 /// Emit a warning log
 pub fn log_warn(msg: &str) {
+    if is_silent() {
+        return;
+    }
     if is_json_mode() {
         emit_json("warn", msg, None);
     } else {
@@ -79,6 +99,9 @@ pub fn log_event(
     msg: &str,
     data: Option<serde_json::Value>,
 ) {
+    if is_silent() && level != "error" {
+        return;
+    }
     if is_json_mode() {
         emit_json(level, msg, data);
     } else if level == "error" || level == "warn" {

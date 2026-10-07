@@ -37,6 +37,10 @@ pub enum Commands {
         /// Starter presentation template (minimal, geek, academic, pitch, business)
         #[arg(short, long, default_value = "minimal")]
         template: String,
+
+        /// Slide aspect ratio: 16:9 (default), 4:3, 16:10
+        #[arg(long, default_value = "16:9")]
+        aspect: String,
     },
     /// Create a new presentation project directory
     New {
@@ -50,6 +54,10 @@ pub enum Commands {
         /// Starter presentation template (minimal, geek, academic, pitch, business)
         #[arg(short, long, default_value = "minimal")]
         template: String,
+
+        /// Slide aspect ratio: 16:9 (default), 4:3, 16:10
+        #[arg(long, default_value = "16:9")]
+        aspect: String,
     },
     /// Run presentation with interactive GUI player
     Run {
@@ -68,6 +76,14 @@ pub enum Commands {
         /// Start directly in fullscreen mode
         #[arg(long)]
         fullscreen: bool,
+
+        /// Target talk duration in minutes for pacing alert clock
+        #[arg(short = 't', long)]
+        target: Option<u64>,
+
+        /// Start presentation player with light HUD theme
+        #[arg(long)]
+        light: bool,
     },
     /// Alias for run --watch
     Dev {
@@ -82,6 +98,14 @@ pub enum Commands {
         /// Start directly in fullscreen mode
         #[arg(long)]
         fullscreen: bool,
+
+        /// Target talk duration in minutes for pacing alert clock
+        #[arg(short = 't', long)]
+        target: Option<u64>,
+
+        /// Start presentation player with light HUD theme
+        #[arg(long)]
+        light: bool,
     },
     /// Launch the Typora-style WYSIWYG desktop editor for presentations and documents
     Edit {
@@ -185,6 +209,28 @@ pub enum Commands {
         /// Path to .typ slide file (default: slides.typ)
         #[arg(default_value = "slides.typ")]
         file: PathBuf,
+
+        /// Target talk duration in minutes to verify deck pacing against
+        #[arg(short = 't', long)]
+        target: Option<u64>,
+
+        /// Output report in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Calculate comprehensive slide deck statistics, speaking duration, and notes coverage
+    Stats {
+        /// Path to .typ slide file or .slide package (default: slides.typ)
+        #[arg(default_value = "slides.typ")]
+        file: PathBuf,
+
+        /// Output stats in JSON format for automated analysis
+        #[arg(long)]
+        json: bool,
+
+        /// Words per minute speaking pace calibration (default: 130)
+        #[arg(long, default_value_t = 130)]
+        wpm: u32,
     },
     /// Export presentation to PDF, SVG, .slide, or WASM CSR
     Export {

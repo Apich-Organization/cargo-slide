@@ -13,6 +13,8 @@ pub fn execute(
     animation: &str,
     watch: bool,
     fullscreen: bool,
+    target_minutes: Option<u64>,
+    light: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     if !file.exists() {
         return Err(format!("File does not exist: {}", file.display()).into());
@@ -64,11 +66,19 @@ pub fn execute(
         })),
     );
 
+    let hud_theme = if light {
+        slide_player::hud::HudTheme::Light
+    } else {
+        slide_player::hud::HudTheme::Dark
+    };
+
     let config = PlayerConfig {
         title: deck.title.clone(),
         default_animation: animation.to_string(),
         fullscreen,
         watch: watch && !is_slide_pkg,
+        hud_theme,
+        target_duration_secs: target_minutes.map(|m| m.saturating_mul(60)),
         ..Default::default()
     };
 

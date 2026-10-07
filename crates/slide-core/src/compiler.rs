@@ -858,35 +858,75 @@ pub fn extract_speaker_notes_by_slide(source: &str) -> Vec<Option<String>> {
             .or_else(|| trimmed.strip_prefix("// [notes]:"))
             .or_else(|| trimmed.strip_prefix("// [note]"))
             .or_else(|| trimmed.strip_prefix("// [notes]"))
+            .or_else(|| trimmed.strip_prefix("// [NOTE]:"))
+            .or_else(|| trimmed.strip_prefix("// [NOTES]:"))
+            .or_else(|| trimmed.strip_prefix("// [NOTE]"))
+            .or_else(|| trimmed.strip_prefix("// [NOTES]"))
             .or_else(|| trimmed.strip_prefix("// Note:"))
             .or_else(|| trimmed.strip_prefix("// note:"))
+            .or_else(|| trimmed.strip_prefix("// NOTE:"))
             .or_else(|| trimmed.strip_prefix("// Notes:"))
             .or_else(|| trimmed.strip_prefix("// notes:"))
+            .or_else(|| trimmed.strip_prefix("// NOTES:"))
             .or_else(|| trimmed.strip_prefix("// Speaker:"))
             .or_else(|| trimmed.strip_prefix("// speaker:"))
+            .or_else(|| trimmed.strip_prefix("// SPEAKER:"))
+            .or_else(|| trimmed.strip_prefix("// Speaker Note:"))
+            .or_else(|| trimmed.strip_prefix("// speaker note:"))
+            .or_else(|| trimmed.strip_prefix("// SPEAKER NOTE:"))
             .or_else(|| trimmed.strip_prefix("// [speaker]:"))
             .or_else(|| trimmed.strip_prefix("// [speaker]"))
+            .or_else(|| trimmed.strip_prefix("// [SPEAKER]:"))
+            .or_else(|| trimmed.strip_prefix("// [SPEAKER]"))
+            .or_else(|| trimmed.strip_prefix("// [speaker note]:"))
+            .or_else(|| trimmed.strip_prefix("// [SPEAKER NOTE]:"))
+            .or_else(|| trimmed.strip_prefix("// [speaker_note]:"))
+            .or_else(|| trimmed.strip_prefix("// [SPEAKER_NOTE]:"))
         {
             let n = rest.trim();
             if !n.is_empty() {
                 current_notes.push(n.to_string());
             }
-        } else if trimmed.starts_with("/* [note]:") && trimmed.ends_with("*/") {
+        } else if (trimmed.starts_with("/* [note]:")
+            || trimmed.starts_with("/* [NOTE]:")
+            || trimmed.starts_with("/* NOTE:")
+            || trimmed.starts_with("/* Note:"))
+            && trimmed.ends_with("*/")
+        {
             let inner = trimmed
                 .trim_start_matches("/* [note]:")
+                .trim_start_matches("/* [NOTE]:")
+                .trim_start_matches("/* NOTE:")
+                .trim_start_matches("/* Note:")
                 .trim_end_matches("*/")
+                .trim();
+            if !inner.is_empty() {
+                current_notes.push(inner.to_string());
+            }
+        } else if (trimmed.starts_with("<!-- note:")
+            || trimmed.starts_with("<!-- notes:")
+            || trimmed.starts_with("<!-- speaker note:"))
+            && trimmed.ends_with("-->")
+        {
+            let inner = trimmed
+                .trim_start_matches("<!-- note:")
+                .trim_start_matches("<!-- notes:")
+                .trim_start_matches("<!-- speaker note:")
+                .trim_end_matches("-->")
                 .trim();
             if !inner.is_empty() {
                 current_notes.push(inner.to_string());
             }
         } else if (trimmed.starts_with("#note[") && trimmed.ends_with(']'))
             || (trimmed.starts_with("#speaker-note[") && trimmed.ends_with(']'))
+            || (trimmed.starts_with("#speaker_note[") && trimmed.ends_with(']'))
         {
-            let prefix_len = if trimmed.starts_with("#speaker-note[") {
-                14
-            } else {
-                6
-            };
+            let prefix_len =
+                if trimmed.starts_with("#speaker-note[") || trimmed.starts_with("#speaker_note[") {
+                    14
+                } else {
+                    6
+                };
             let inner = trimmed
                 .get(prefix_len..trimmed.len().saturating_sub(1))
                 .unwrap_or("")
@@ -895,9 +935,12 @@ pub fn extract_speaker_notes_by_slide(source: &str) -> Vec<Option<String>> {
                 current_notes.push(inner.to_string());
             }
         } else if (trimmed.starts_with("#speaker-note(\"") && trimmed.ends_with("\")"))
+            || (trimmed.starts_with("#speaker_note(\"") && trimmed.ends_with("\")"))
             || (trimmed.starts_with("#note(\"") && trimmed.ends_with("\")"))
         {
-            let prefix_len = if trimmed.starts_with("#speaker-note(\"") {
+            let prefix_len = if trimmed.starts_with("#speaker-note(\"")
+                || trimmed.starts_with("#speaker_note(\"")
+            {
                 15
             } else {
                 7
@@ -988,7 +1031,39 @@ pub fn check_presentation_health(
             });
         }
 
-        // Check for media file hotspots
+        // Check for empty / content-less slide
+        if text_in_svg == 0 && slide.hotspots.is_empty() {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Warning,
+                slide_index: Some(idx),
+                message: format!(
+                    "Slide {} appears to be blank or has no rendered text/hotspots.",
+                    idx.saturating_add(1)
+                ),
+                suggestion: Some("Add slide content or remove unnecessary pagebreaks.".to_string()),
+            });
+        }
+
+        // Pacing bottleneck check (slides > 4 minutes / 240 seconds)
+        let est_sec = slide.estimated_speaking_seconds();
+        if est_sec > 240 {
+            let est_min = (est_sec as f32 / 60.0).round();
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Warning,
+                slide_index: Some(idx),
+                message: format!(
+                    "Slide {} has an estimated speaking duration of ~{est_min:.0} minutes (density: {} words/chars).",
+                    idx.saturating_add(1),
+                    slide.notes_word_count()
+                ),
+                suggestion: Some(
+                    "Consider breaking this slide into multiple sequential slides to keep pacing dynamic."
+                        .to_string(),
+                ),
+            });
+        }
+
+        // Check for media and chart file hotspots
         for hs in &slide.hotspots {
             match hs {
                 | crate::model::Hotspot::Video {
@@ -1021,12 +1096,44 @@ pub fn check_presentation_health(
                         }
                     }
                 },
+                | crate::model::Hotspot::Chart { data, .. } => {
+                    if data.categories.is_empty() && data.series.is_empty() {
+                        issues.push(PresentationHealthIssue {
+                            severity: HealthSeverity::Info,
+                            slide_index: Some(idx),
+                            message: format!(
+                                "Slide {}: Interactive chart has empty data categories and series.",
+                                idx.saturating_add(1)
+                            ),
+                            suggestion: Some(
+                                "Provide a dataset (.csv, .json, or .db) or inline series values."
+                                    .to_string(),
+                            ),
+                        });
+                    }
+                },
                 | _ => {},
             }
         }
     }
 
-    // 3. Check source text for common Typst slide issues
+    // 3. Speaker notes coverage check across entire deck
+    if deck.slides.len() >= 3 && !deck.has_any_notes() {
+        issues.push(PresentationHealthIssue {
+            severity: HealthSeverity::Info,
+            slide_index: None,
+            message: format!(
+                "Deck has {} slides, but no speaker notes were detected.",
+                deck.slides.len()
+            ),
+            suggestion: Some(
+                "Adding presenter talking notes (using '// Note: ...' or '#speaker-note[...]') helps ensure smooth timing."
+                    .to_string(),
+            ),
+        });
+    }
+
+    // 4. Check source text for common Typst slide issues
     if !source.contains("#import \"slide.typ\"")
         && !source.contains("#import \"theme.typ\"")
         && source.contains("#slide(")

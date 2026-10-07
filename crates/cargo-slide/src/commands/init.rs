@@ -9,6 +9,7 @@ pub fn execute(
     target_path: &Path,
     include_rust: bool,
     template: &str,
+    aspect: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let project_dir = if target_path == Path::new(".") {
         std::env::current_dir()?
@@ -27,7 +28,7 @@ pub fn execute(
     log_event(
         "info",
         &format!(
-            "[INIT] Initializing cargo-slide presentation workspace ({template} template) in: {}",
+            "[INIT] Initializing cargo-slide presentation workspace ({template} template, {aspect} aspect) in: {}",
             project_dir.display()
         ),
         Some(serde_json::json!({
@@ -35,17 +36,23 @@ pub fn execute(
             "path": project_dir.display().to_string(),
             "rust_extensions": include_rust,
             "template": template,
+            "aspect": aspect,
         })),
     );
 
     let assets_dir = project_dir.join("assets");
     create_dir_all(&assets_dir)?;
 
-    // 1. Write slides.typ based on selected template
+    // 1. Write slides.typ based on selected template and aspect ratio
     let slides_path = project_dir.join("slides.typ");
     if !slides_path.exists() {
         let content = get_template_slides(template);
-        write(&slides_path, content)?;
+        let normalized_aspect = aspect.replace(':', "-");
+        let formatted_content = content.replace(
+            "aspect-ratio: \"16-9\"",
+            &format!("aspect-ratio: \"{normalized_aspect}\""),
+        );
+        write(&slides_path, formatted_content)?;
     }
 
     // 2. Write theme.typ & slide.typ

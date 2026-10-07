@@ -37,6 +37,7 @@ pub fn view_statusbar<'a>(
     char_count: usize,
     word_count: usize,
     zoom_percent: u32,
+    speaking_wpm: u32,
     window_width: f32,
 ) -> Element<'a, Message> {
     let is_narrow = window_width < 850.0;
@@ -54,10 +55,16 @@ pub fn view_statusbar<'a>(
         .size(11)
         .color(theme.text_muted());
 
-    let talk_mins = ((word_count as f32) / 130.0).max(1.0).ceil() as usize;
-    let pacing_info = text(format!("~{talk_mins} min talk"))
-        .size(11)
-        .color(theme.accent());
+    let safe_wpm = (speaking_wpm as f32).max(50.0);
+    let talk_mins = ((word_count as f32) / safe_wpm).max(1.0).ceil() as usize;
+    let pacing_btn = button(
+        text(format!("~{talk_mins} min ({speaking_wpm} WPM)"))
+            .size(11)
+            .color(theme.accent()),
+    )
+    .padding([2, 6])
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .on_press(Message::CycleSpeakingPace);
 
     let health_btn = button(text("Health").size(11).color(theme.text_secondary()))
         .padding([2, 6])
@@ -86,7 +93,7 @@ pub fn view_statusbar<'a>(
     }
     if !is_narrow {
         left_info = left_info.push(divider_widget());
-        left_info = left_info.push(pacing_info);
+        left_info = left_info.push(pacing_btn);
     }
     left_info = left_info.push(health_btn);
 
@@ -214,19 +221,14 @@ pub fn view_statusbar<'a>(
         .padding([2, 7])
         .on_press(Message::ZoomOut);
 
-    let zoom_val = container(
+    let zoom_val = button(
         text(format!("{zoom_percent}%"))
             .size(11)
             .color(theme.text_secondary()),
     )
     .padding([2, 6])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(RADIUS_XS),
-            ..container::Style::default()
-        }
-    });
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .on_press(Message::ResetZoom);
 
     let zoom_in = button(text("+").size(11))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))

@@ -120,3 +120,24 @@ fn test_compiler_auto_resolves_slide_typ_in_isolated_directory() {
     let macro_content = std::fs::read_to_string(&macro_path).unwrap();
     assert!(macro_content.contains("title-slide"));
 }
+
+#[test]
+fn test_viewer_help_lists_all_transitions() {
+    let bin = env!("CARGO_BIN_EXE_slide-viewer");
+    let output = Command::new(bin)
+        .arg("--help")
+        .output()
+        .expect("slide-viewer --help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("glitch"),
+        "Help must list glitch transition"
+    );
+    assert!(stdout.contains("cube"), "Help must list cube transition");
+    assert!(stdout.contains("iris"), "Help must list iris transition");
+    assert!(
+        stdout.contains("slide-up"),
+        "Help must list slide-up transition"
+    );
+}
