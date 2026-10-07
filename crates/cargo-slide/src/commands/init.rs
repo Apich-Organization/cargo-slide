@@ -94,8 +94,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-slide-core = {{ version = "0.1" }}
-slide-player = {{ version = "0.1" }}
+slide-core = {{ version = "0.3.0" }}
+slide-player = {{ version = "0.3.0" }}
 serde_json = "1.0"
 "#
             );

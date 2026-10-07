@@ -15,6 +15,7 @@ use crate::hud::draw_chart_inspector;
 use crate::hud::draw_chart_visualizer;
 use crate::hud::draw_help_overlay;
 use crate::hud::draw_hotspot_highlight;
+use crate::hud::draw_hud_toast;
 use crate::hud::draw_page_badge;
 use crate::hud::draw_presenter_clock;
 use crate::hud::draw_slide_grid_overlay;
@@ -78,6 +79,7 @@ pub struct PlayerConfig {
     pub watch: bool,
     pub hud_theme: HudTheme,
     pub target_duration_secs: Option<u64>,
+    pub kiosk_interval_secs: Option<u64>,
 }
 
 impl Default for PlayerConfig {
@@ -91,6 +93,7 @@ impl Default for PlayerConfig {
             watch: false,
             hud_theme: HudTheme::Dark,
             target_duration_secs: None,
+            kiosk_interval_secs: None,
         }
     }
 }
@@ -205,6 +208,14 @@ impl SlideApp {
         secs: u64,
     ) -> Self {
         self.config.target_duration_secs = Some(secs);
+        self
+    }
+
+    pub fn kiosk_interval(
+        mut self,
+        secs: u64,
+    ) -> Self {
+        self.config.kiosk_interval_secs = Some(secs);
         self
     }
 
@@ -1212,7 +1223,16 @@ impl SlidePlayer {
         let mut show_grid = false;
         let mut show_notes = false;
         let mut blank_mode: Option<bool> = None;
-        let mut kiosk_mode = false;
+        let mut kiosk_mode = self.config.kiosk_interval_secs.is_some();
+        let mut kiosk_interval_secs = self.config.kiosk_interval_secs.unwrap_or(10);
+        let mut hud_toast: Option<(String, Instant)> = if kiosk_mode {
+            Some((
+                format!("Kiosk Mode: Auto-Advance ({kiosk_interval_secs}s)"),
+                Instant::now(),
+            ))
+        } else {
+            None
+        };
         let mut last_kiosk_advance = Instant::now();
         let presentation_start_time = Instant::now();
         let mut grid_click_rects: Vec<(usize, slide_core::model::Rect)> = Vec::new();
@@ -1564,16 +1584,35 @@ impl SlidePlayer {
                 hotspot_hover_alpha = (hotspot_hover_alpha - dt * 10.0).max(0.0);
             }
 
+            // Track mouse activity for inactivity auto-hide
+            let is_any_mouse_down = window.get_mouse_down(MouseButton::Left)
+                || window.get_mouse_down(MouseButton::Right);
+            if mouse_pos != prev_mouse_pos || is_any_mouse_down {
+                last_mouse_activity = Instant::now();
+                prev_mouse_pos = mouse_pos;
+            }
+
+            let is_mouse_idle = last_mouse_activity.elapsed() >= Duration::from_millis(2500)
+                && active_chart_inspector.is_none()
+                && !jump_dialog_active
+                && !show_grid
+                && !show_help
+                && !mouse_in_dock;
+
             // Set cursor style based on mode and hover
-            if presenter_mode == PresenterMode::Laser {
+            if presenter_mode == PresenterMode::Laser || is_mouse_idle {
                 if !cursor_hidden {
                     window.set_cursor_visibility(false);
                     cursor_hidden = true;
                 }
-            } else if active_chart_inspector.is_some() {
-                window.set_cursor_style(CursorStyle::Arrow);
             } else {
-                if hovered_dock_action.is_some()
+                if cursor_hidden {
+                    window.set_cursor_visibility(true);
+                    cursor_hidden = false;
+                }
+                if active_chart_inspector.is_some() {
+                    window.set_cursor_style(CursorStyle::Arrow);
+                } else if hovered_dock_action.is_some()
                     || hovered_hotspot_idx.is_some()
                     || hovered_palette_action.is_some()
                     || mouse_in_slider
@@ -2381,6 +2420,33 @@ impl SlidePlayer {
                                 jump_dialog_active = true;
                                 jump_dialog_input.clear();
                             },
+                            | Key::F12 | Key::S
+                                if window.is_key_down(Key::LeftCtrl)
+                                    || window.is_key_down(Key::RightCtrl) =>
+                            {
+                                let filename = format!("slide_{:02}_snapshot.png", current_idx + 1);
+                                let mut rgba = Vec::with_capacity(width * height * 4);
+                                for &px in &buffer {
+                                    rgba.push(((px >> 16) & 0xFF) as u8);
+                                    rgba.push(((px >> 8) & 0xFF) as u8);
+                                    rgba.push((px & 0xFF) as u8);
+                                    rgba.push(((px >> 24) & 0xFF) as u8);
+                                }
+                                if image::save_buffer(
+                                    &filename,
+                                    &rgba,
+                                    width as u32,
+                                    height as u32,
+                                    image::ExtendedColorType::Rgba8,
+                                )
+                                .is_ok()
+                                {
+                                    hud_toast = Some((
+                                        format!("Snapshot saved: {filename}"),
+                                        Instant::now(),
+                                    ));
+                                }
+                            },
                             | Key::S => {
                                 presenter_mode = if presenter_mode == PresenterMode::Spotlight {
                                     PresenterMode::Normal
@@ -2476,6 +2542,15 @@ impl SlidePlayer {
                             },
                             | Key::T => {
                                 hud_theme = hud_theme.toggle();
+                                hud_toast = Some((
+                                    if hud_theme.is_light() {
+                                        "Theme: Light Mode"
+                                    } else {
+                                        "Theme: Dark Mode"
+                                    }
+                                    .to_string(),
+                                    Instant::now(),
+                                ));
                             },
                             | Key::B => {
                                 if presenter_mode == PresenterMode::Pen {
@@ -2504,30 +2579,94 @@ impl SlidePlayer {
                             },
                             | Key::O => {
                                 show_timer = !show_timer;
+                                hud_toast = Some((
+                                    if show_timer {
+                                        "Presenter Clock: ON"
+                                    } else {
+                                        "Presenter Clock: OFF"
+                                    }
+                                    .to_string(),
+                                    Instant::now(),
+                                ));
                             },
                             | Key::G | Key::Tab => {
                                 show_grid = !show_grid;
+                                if show_grid {
+                                    hud_toast =
+                                        Some(("Slide Grid Navigator".to_string(), Instant::now()));
+                                }
                             },
                             | Key::N => {
                                 show_notes = !show_notes;
+                                hud_toast = Some((
+                                    if show_notes {
+                                        "Speaker Notes: ON"
+                                    } else {
+                                        "Speaker Notes: OFF"
+                                    }
+                                    .to_string(),
+                                    Instant::now(),
+                                ));
                             },
                             | Key::A => {
                                 kiosk_mode = !kiosk_mode;
                                 last_kiosk_advance = Instant::now();
+                                let msg = if kiosk_mode {
+                                    format!("Kiosk Mode: ON ({kiosk_interval_secs}s)")
+                                } else {
+                                    "Kiosk Mode: Paused".to_string()
+                                };
+                                hud_toast = Some((msg, Instant::now()));
+                            },
+                            | Key::LeftBracket
+                                if window.is_key_down(Key::LeftShift)
+                                    || window.is_key_down(Key::RightShift) =>
+                            {
+                                kiosk_interval_secs = kiosk_interval_secs.saturating_sub(2).max(2);
+                                hud_toast = Some((
+                                    format!("Kiosk Interval: {kiosk_interval_secs}s"),
+                                    Instant::now(),
+                                ));
+                            },
+                            | Key::RightBracket
+                                if window.is_key_down(Key::LeftShift)
+                                    || window.is_key_down(Key::RightShift) =>
+                            {
+                                kiosk_interval_secs = (kiosk_interval_secs + 2).min(60);
+                                hud_toast = Some((
+                                    format!("Kiosk Interval: {kiosk_interval_secs}s"),
+                                    Instant::now(),
+                                ));
                             },
                             | Key::LeftBracket => {
                                 if presenter_mode == PresenterMode::Spotlight {
                                     spotlight_radius = spotlight_radius.saturating_sub(20).max(40);
+                                    hud_toast = Some((
+                                        format!("Spotlight Radius: {spotlight_radius}px"),
+                                        Instant::now(),
+                                    ));
                                 } else {
                                     active_brush_width =
                                         active_brush_width.saturating_sub(2).max(1);
+                                    hud_toast = Some((
+                                        format!("Pen Width: {active_brush_width}px"),
+                                        Instant::now(),
+                                    ));
                                 }
                             },
                             | Key::RightBracket => {
                                 if presenter_mode == PresenterMode::Spotlight {
                                     spotlight_radius = (spotlight_radius + 20).min(260);
+                                    hud_toast = Some((
+                                        format!("Spotlight Radius: {spotlight_radius}px"),
+                                        Instant::now(),
+                                    ));
                                 } else {
                                     active_brush_width = (active_brush_width + 2).min(24);
+                                    hud_toast = Some((
+                                        format!("Pen Width: {active_brush_width}px"),
+                                        Instant::now(),
+                                    ));
                                 }
                             },
                             | Key::U => {
@@ -2535,6 +2674,8 @@ impl SlidePlayer {
                                     strokes.pop();
                                 }
                                 active_pen_stroke = None;
+                                hud_toast =
+                                    Some(("Annotation Stroke Undone".to_string(), Instant::now()));
                             },
                             | Key::Z
                                 if window.is_key_down(Key::LeftCtrl)
@@ -2544,6 +2685,8 @@ impl SlidePlayer {
                                     strokes.pop();
                                 }
                                 active_pen_stroke = None;
+                                hud_toast =
+                                    Some(("Annotation Stroke Undone".to_string(), Instant::now()));
                             },
                             | Key::F11 | Key::F => {
                                 toggle_fullscreen_requested = true;
@@ -2554,6 +2697,15 @@ impl SlidePlayer {
                                 } else {
                                     PresenterMode::Laser
                                 };
+                                hud_toast = Some((
+                                    if presenter_mode == PresenterMode::Laser {
+                                        "Laser Pointer: Active"
+                                    } else {
+                                        "Presentation Mode"
+                                    }
+                                    .to_string(),
+                                    Instant::now(),
+                                ));
                             },
                             | Key::P => {
                                 presenter_mode = if presenter_mode == PresenterMode::Pen {
@@ -2561,6 +2713,15 @@ impl SlidePlayer {
                                 } else {
                                     PresenterMode::Pen
                                 };
+                                hud_toast = Some((
+                                    if presenter_mode == PresenterMode::Pen {
+                                        "Whiteboard Pen: Active"
+                                    } else {
+                                        "Presentation Mode"
+                                    }
+                                    .to_string(),
+                                    Instant::now(),
+                                ));
                             },
                             | Key::K => {
                                 palette_open = !palette_open;
@@ -2568,6 +2729,8 @@ impl SlidePlayer {
                             | Key::C | Key::X => {
                                 slide_ink.remove(&current_idx);
                                 active_pen_stroke = None;
+                                hud_toast =
+                                    Some(("Ink Annotations Cleared".to_string(), Instant::now()));
                             },
                             | Key::Equal | Key::NumPadPlus => {
                                 audio_engine.adjust_volume(0.05);
@@ -2682,8 +2845,10 @@ impl SlidePlayer {
             let max_substep = get_max_step(&self.deck, current_idx);
             let mut next_slide = false;
             let mut prev_slide = false;
-            // Automatic advance in kiosk mode (every 10s)
-            if kiosk_mode && last_kiosk_advance.elapsed() >= Duration::from_secs(10) {
+            // Automatic advance in kiosk mode
+            if kiosk_mode
+                && last_kiosk_advance.elapsed() >= Duration::from_secs(kiosk_interval_secs)
+            {
                 last_kiosk_advance = Instant::now();
                 if current_idx.saturating_add(1) >= total_slides && current_step >= max_substep {
                     jump_target = Some(0);
@@ -2992,6 +3157,15 @@ impl SlidePlayer {
             // Blank screen mode (blackout or whiteout)
             if let Some(is_white) = blank_mode {
                 draw_blank_screen(&mut buffer, width, height, is_white);
+            }
+
+            // Presenter HUD Toast Notification
+            if let Some((ref msg, timestamp)) = hud_toast {
+                if timestamp.elapsed() <= Duration::from_millis(2500) {
+                    draw_hud_toast(&mut buffer, width, height, msg, hud_theme);
+                } else {
+                    hud_toast = None;
+                }
             }
 
             window

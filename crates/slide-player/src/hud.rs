@@ -1750,6 +1750,76 @@ pub fn draw_volume_toast(
     }
 }
 
+/// Draw generic floating toast notification HUD overlay at top-center
+pub fn draw_hud_toast(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    message: &str,
+    theme: HudTheme,
+) {
+    if message.trim().is_empty() {
+        return;
+    }
+    let char_w = 7;
+    let padding_x = 24;
+    let toast_w =
+        (message.chars().count() * char_w + padding_x * 2).clamp(180, width.saturating_sub(40));
+    let toast_h = 32usize;
+    let toast_x = (width.saturating_sub(toast_w)) / 2;
+    let toast_y = 20usize;
+
+    let (bg_r, bg_g, bg_b, border_color, text_color) = if theme.is_light() {
+        (255u32, 255u32, 255u32, 0xFF0969da, 0xFF0969da)
+    } else {
+        (22u32, 27u32, 34u32, 0xFF58a6ff, 0xFFf0f6fc)
+    };
+
+    // Semi-transparent background
+    for cy in toast_y..(toast_y + toast_h).min(height) {
+        let row = cy * width;
+        for cx in toast_x..(toast_x + toast_w).min(width) {
+            let idx = row + cx;
+            if let Some(px) = buffer.get_mut(idx) {
+                let bg = *px;
+                let r = (((bg >> 16) & 0xFF) * 8 + bg_r * 92) / 100;
+                let g = (((bg >> 8) & 0xFF) * 8 + bg_g * 92) / 100;
+                let b = ((bg & 0xFF) * 8 + bg_b * 92) / 100;
+                *px = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    // Border
+    let end_x = (toast_x + toast_w).min(width.saturating_sub(1));
+    let end_y = (toast_y + toast_h).min(height.saturating_sub(1));
+    for x in toast_x..=end_x {
+        if let Some(px) = buffer.get_mut(toast_y * width + x) {
+            *px = border_color;
+        }
+        if let Some(px) = buffer.get_mut(end_y * width + x) {
+            *px = border_color;
+        }
+    }
+    for y in toast_y..=end_y {
+        if let Some(px) = buffer.get_mut(y * width + toast_x) {
+            *px = border_color;
+        }
+        if let Some(px) = buffer.get_mut(y * width + end_x) {
+            *px = border_color;
+        }
+    }
+
+    // Centered text
+    let toast_rect = slide_core::model::Rect::new(
+        toast_x as f32,
+        toast_y as f32,
+        toast_w as f32,
+        toast_h as f32,
+    );
+    draw_text_centered(buffer, width, height, toast_rect, message, text_color);
+}
+
 /// Simple pixel-based badge for slide index and substep counter
 pub fn draw_page_badge(
     buffer: &mut [u32],
@@ -1823,19 +1893,7 @@ pub fn draw_page_badge(
 /// Extract a human-readable title preview from SVG text elements
 #[must_use]
 pub fn extract_slide_title_preview(svg_data: &str) -> Option<String> {
-    for line in svg_data.lines() {
-        if let Some(start) = line.find("<text")
-            && let Some(content_start) = line.get(start..).and_then(|s| s.find('>'))
-            && let Some(tp) = line.get(start.saturating_add(content_start).saturating_add(1)..)
-            && let Some(content_end) = tp.find("</text>")
-        {
-            let raw = tp.get(..content_end).unwrap_or("").trim();
-            if !raw.is_empty() && raw.len() <= 60 {
-                return Some(raw.to_string());
-            }
-        }
-    }
-    None
+    slide_core::svg::extract_title_from_svg(svg_data)
 }
 
 /// Draw floating presenter timer & wall-clock HUD at the top right
@@ -2299,7 +2357,25 @@ pub fn draw_speaker_notes_overlay(
         }
     }
 
-    let header = format!("SPEAKER NOTES • SLIDE {}/{}", current_slide, total_slides);
+    let notes_content = notes.unwrap_or(
+        "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)",
+    );
+
+    let (n_words, n_cjk) = slide_core::pacing::count_words_and_cjk(notes_content);
+    let total_words = n_words.saturating_add((n_cjk.saturating_mul(10)) / 17);
+    let header = if notes.is_some() && total_words > 0 {
+        let est_sec = ((total_words as f32 / 130.0) * 60.0).round() as usize;
+        format!(
+            "SPEAKER NOTES • SLIDE {}/{} • ~{}s ({} words)",
+            current_slide,
+            total_slides,
+            est_sec.max(5),
+            total_words
+        )
+    } else {
+        format!("SPEAKER NOTES • SLIDE {}/{}", current_slide, total_slides)
+    };
+
     draw_text(
         buffer,
         width,
@@ -2319,10 +2395,6 @@ pub fn draw_speaker_notes_overlay(
             }
         }
     }
-
-    let notes_content = notes.unwrap_or(
-        "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)",
-    );
     let max_line_w = wi.saturating_sub(24);
     let char_w = 7;
     let chars_per_line = (max_line_w / char_w).max(10);
@@ -2426,30 +2498,30 @@ pub fn draw_help_overlay(
     let lines = [
         "CARGO SLIDE PRESENTER SHORTCUTS",
         "-----------------------------------------",
-        "Space / Right / Left-Click: Next step / slide",
-        "Backspace / Left / Right-Click: Prev step / slide",
-        "F11 / F              : Toggle Fullscreen / Windowed",
+        "Space / Right / Click: Next step / slide",
+        "Backspace / Left     : Prev step / slide",
+        "F11 / F              : Toggle Fullscreen",
         "1 .. 9               : Jump to slide 1..9",
-        "J                    : Enter slide jump number dialog",
+        "J                    : Numbered slide jump dialog",
         "Home / End           : First / Last slide",
         "O / Dock [TIM]       : Toggle Presenter Timer & Clock",
-        "G / Tab / Dock [GRD] : Toggle Slide Navigator Grid",
+        "G / Tab / Dock [GRD] : Toggle Slide Grid Navigator",
         "N / Dock [NOT]       : Toggle Speaker Notes Card",
         "B / . / Dock [BLK]   : Toggle Blackout screen",
         "W                    : Toggle Whiteout screen",
-        "A                    : Toggle Kiosk auto-advance (10s)",
+        "A                    : Toggle Kiosk auto-advance",
+        "Shift + [ / ]        : Adjust Kiosk interval (+/- 2s)",
+        "F12 / Ctrl+S         : Capture slide PNG snapshot",
         "S / Dock [SPOT]      : Toggle Presentation Spotlight",
         "L                    : Toggle Laser pointer (with trail)",
         "P                    : Toggle Whiteboard Pen",
         "[ / ]                : Adjust Pen / Spotlight radius",
         "K / Dock [COL]       : Open Color Palette (1..7 keys)",
-        "C / X                : Clear ink strokes",
+        "C / X / U            : Clear / Undo ink strokes",
         "T / Dock [THM]       : Toggle Light / Dark HUD theme",
-        "Mouse Wheel          : Adjust Volume (+/- 5%)",
-        "+ / = / Up           : Volume +5%",
-        "- / _ / Down         : Volume -5%",
+        "+ / - / Wheel        : Volume adjust (+/- 5%)",
         "M                    : Mute / Unmute audio",
-        "Bottom Dock          : Touch / Click presentation controls",
+        "Bottom Dock          : Interactive presentation controls",
         "R                    : Live reload slides",
         "H / ?                : Toggle this help",
         "Esc / Q              : Exit presentation",

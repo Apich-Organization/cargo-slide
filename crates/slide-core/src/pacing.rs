@@ -214,7 +214,7 @@ pub fn calculate_slide_pacing(
                 }
             })
             .filter(|t| !t.trim().is_empty())
-            .unwrap_or_else(|| format!("Slide {}", slide_index.saturating_add(1)));
+            .unwrap_or_else(|| slide.extract_title());
 
     let has_speaker_notes = slide.has_notes();
     let (notes_words, notes_cjk_chars) = count_words_and_cjk(slide.notes_text());
@@ -444,24 +444,10 @@ fn analyze_source_chunk_complexity(src: &str) -> (usize, usize, usize, usize, us
 }
 
 fn analyze_svg_complexity(svg: &str) -> (usize, usize, usize, usize, usize) {
-    let mut visual_text = String::new();
-    let mut text_elements = 0usize;
+    let clean = crate::svg::extract_text_from_svg(svg);
+    let (v_words, v_cjk) = count_words_and_cjk(&clean);
+    let text_elements = svg.lines().filter(|l| l.contains("<text")).count();
 
-    for line in svg.lines() {
-        if line.contains("<text") {
-            text_elements = text_elements.saturating_add(1);
-            // Extract inner text
-            if let Some(start) = line.find('>')
-                && let Some(end) = line.rfind("</text>")
-                && start < end
-            {
-                visual_text.push_str(&line[start.saturating_add(1)..end]);
-                visual_text.push(' ');
-            }
-        }
-    }
-
-    let (v_words, v_cjk) = count_words_and_cjk(&visual_text);
     let code_lines = if text_elements > 40 { 8 } else { 0 };
     let math_formulas = if svg.contains("<path") && text_elements > 30 {
         1
@@ -475,4 +461,129 @@ fn analyze_svg_complexity(svg: &str) -> (usize, usize, usize, usize, usize) {
     };
 
     (v_words, v_cjk, code_lines, math_formulas, charts_and_tables)
+}
+
+/// Rehearsal pace status for a slide
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RehearsalPaceStatus {
+    /// Delivered faster than budgeted (>25% faster)
+    Rushed,
+    /// Well-timed within acceptable range (+/- 25%)
+    Balanced,
+    /// Over budgeted duration (>25% slower)
+    Lagging,
+}
+
+/// Timing record for an individual slide during a rehearsal session
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RehearsalSlideTiming {
+    pub slide_index: usize,
+    pub title: String,
+    pub budgeted_seconds: usize,
+    pub actual_seconds: usize,
+    pub pace_ratio: f32,
+    pub status: RehearsalPaceStatus,
+}
+
+/// A complete presentation rehearsal run
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RehearsalSession {
+    pub session_id: String,
+    pub timestamp_unix: u64,
+    pub total_budgeted_seconds: usize,
+    pub total_actual_seconds: usize,
+    pub adherence_score: u32,
+    pub slide_timings: Vec<RehearsalSlideTiming>,
+    pub summary: String,
+}
+
+impl RehearsalSession {
+    #[must_use]
+    pub fn new(slide_timings: Vec<RehearsalSlideTiming>) -> Self {
+        let total_budgeted_seconds: usize = slide_timings.iter().map(|s| s.budgeted_seconds).sum();
+        let total_actual_seconds: usize = slide_timings.iter().map(|s| s.actual_seconds).sum();
+
+        let mut adherence_sum = 0.0f32;
+        let count = slide_timings.len().max(1) as f32;
+        for s in &slide_timings {
+            let budget = s.budgeted_seconds.max(5) as f32;
+            let actual = s.actual_seconds as f32;
+            let ratio = actual / budget;
+            let diff = (ratio - 1.0).abs();
+            let score = (1.0 - (diff * 0.5)).clamp(0.0, 1.0);
+            adherence_sum += score * 100.0;
+        }
+        let adherence_score = (adherence_sum / count).round() as u32;
+
+        let summary = if (total_actual_seconds as i64 - total_budgeted_seconds as i64).abs() <= 60 {
+            format!(
+                "Optimal rehearsal: delivered in {:.1} min (target {:.1} min, score: {}%)",
+                total_actual_seconds as f32 / 60.0,
+                total_budgeted_seconds as f32 / 60.0,
+                adherence_score
+            )
+        } else if total_actual_seconds > total_budgeted_seconds {
+            let over_sec = total_actual_seconds.saturating_sub(total_budgeted_seconds);
+            format!(
+                "Over-budget rehearsal: +{:.1} min over target (score: {}%)",
+                over_sec as f32 / 60.0,
+                adherence_score
+            )
+        } else {
+            let under_sec = total_budgeted_seconds.saturating_sub(total_actual_seconds);
+            format!(
+                "Fast rehearsal: {:.1} min under target (score: {}%)",
+                under_sec as f32 / 60.0,
+                adherence_score
+            )
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        Self {
+            session_id: format!("rehearsal-{now}"),
+            timestamp_unix: now,
+            total_budgeted_seconds,
+            total_actual_seconds,
+            adherence_score,
+            slide_timings,
+            summary,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rehearsal_session_evaluation() {
+        let timings = vec![
+            RehearsalSlideTiming {
+                slide_index: 1,
+                title: "Introduction".to_string(),
+                budgeted_seconds: 60,
+                actual_seconds: 58,
+                pace_ratio: 58.0 / 60.0,
+                status: RehearsalPaceStatus::Balanced,
+            },
+            RehearsalSlideTiming {
+                slide_index: 2,
+                title: "Architecture".to_string(),
+                budgeted_seconds: 90,
+                actual_seconds: 95,
+                pace_ratio: 95.0 / 90.0,
+                status: RehearsalPaceStatus::Balanced,
+            },
+        ];
+
+        let session = RehearsalSession::new(timings);
+        assert_eq!(session.total_budgeted_seconds, 150);
+        assert_eq!(session.total_actual_seconds, 153);
+        assert!(session.adherence_score >= 90);
+        assert!(session.summary.contains("Optimal rehearsal"));
+    }
 }

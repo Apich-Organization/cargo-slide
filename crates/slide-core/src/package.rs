@@ -33,6 +33,10 @@ pub struct SlidePackageMetadata {
     pub has_notes: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub checksum: Option<String>,
+    #[serde(default)]
+    pub uncompressed_size: Option<u64>,
 }
 
 impl Default for SlidePackageMetadata {
@@ -51,6 +55,8 @@ impl Default for SlidePackageMetadata {
             aspect_ratio: Some("16:9".to_string()),
             has_notes: false,
             tags: Vec::new(),
+            checksum: None,
+            uncompressed_size: None,
         }
     }
 }
@@ -86,6 +92,10 @@ pub fn pack_deck_with_source_and_assets(
         .map(|d| d.as_secs().to_string())
         .unwrap_or_default();
 
+    let deck_json = serde_json::to_vec(deck)?;
+    let deck_hash = crate::compiler::compute_source_hash(&deck_json);
+    let checksum = format!("{deck_hash:016x}");
+
     let metadata = SlidePackageMetadata {
         format_version: 1,
         title: deck.title.clone(),
@@ -100,10 +110,11 @@ pub fn pack_deck_with_source_and_assets(
         aspect_ratio: Some("16:9".to_string()),
         has_notes: deck.has_any_notes(),
         tags: Vec::new(),
+        checksum: Some(checksum),
+        uncompressed_size: Some(deck_json.len() as u64),
     };
 
     let metadata_json = serde_json::to_vec_pretty(&metadata)?;
-    let deck_json = serde_json::to_vec(deck)?;
 
     // Create an in-memory TAR archive
     let mut tar_builder = tar::Builder::new(Vec::new());
@@ -659,6 +670,8 @@ pub fn read_package_metadata(input_path: &Path) -> Result<SlidePackageMetadata> 
         aspect_ratio: Some("16:9".to_string()),
         has_notes: deck.has_any_notes(),
         tags: Vec::new(),
+        checksum: None,
+        uncompressed_size: None,
     })
 }
 
@@ -712,6 +725,19 @@ pub fn verify_package_integrity(package_path: &Path) -> Result<PackageVerificati
             meta.total_slides,
             deck.slides.len()
         ));
+    }
+
+    if let Some(ref expected_checksum) = meta.checksum {
+        let actual_deck_json = serde_json::to_vec(&deck).map_err(|e| {
+            SlideError::Package(format!("Failed to serialize deck for checksum: {e}"))
+        })?;
+        let actual_hash = crate::compiler::compute_source_hash(&actual_deck_json);
+        let actual_checksum = format!("{actual_hash:016x}");
+        if expected_checksum != &actual_checksum {
+            warnings.push(format!(
+                "Integrity checksum mismatch: manifest expected {expected_checksum}, found {actual_checksum}"
+            ));
+        }
     }
 
     if deck.slides.is_empty() {

@@ -51,8 +51,7 @@ pub fn analyze_deck_stats(
     let mut slides_with_notes = 0usize;
 
     for (idx, slide) in deck.slides.iter().enumerate() {
-        // Strip SVG tags roughly to count plain words in slide
-        let clean_text = strip_svg_markup(&slide.svg_data);
+        let clean_text = slide.extract_plain_text();
         let words = clean_text.split_whitespace().count();
         let chars = clean_text.chars().filter(|c| !c.is_whitespace()).count();
         total_words = total_words.saturating_add(words);
@@ -74,14 +73,7 @@ pub fn analyze_deck_stats(
 
         slides_stats.push(SlideStatEntry {
             slide_index: idx + 1,
-            title: slide
-                .notes
-                .as_deref()
-                .and_then(|n| n.lines().next())
-                .unwrap_or("Slide")
-                .chars()
-                .take(30)
-                .collect(),
+            title: slide.extract_title().chars().take(40).collect(),
             word_count: words,
             char_count: chars,
             estimated_seconds: est_sec.max(10),
@@ -125,20 +117,9 @@ pub fn analyze_deck_stats(
     }
 }
 
+#[allow(dead_code)]
 fn strip_svg_markup(svg: &str) -> String {
-    let mut inside_tag = false;
-    let mut result = String::with_capacity(svg.len() / 3);
-    for ch in svg.chars() {
-        if ch == '<' {
-            inside_tag = true;
-            result.push(' ');
-        } else if ch == '>' {
-            inside_tag = false;
-        } else if !inside_tag {
-            result.push(ch);
-        }
-    }
-    result
+    slide_core::svg::extract_text_from_svg(svg)
 }
 
 /// Execute the stats calculation command

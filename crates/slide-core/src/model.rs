@@ -206,6 +206,23 @@ impl Slide {
         let page_idx = self.page_number.saturating_sub(1);
         crate::pacing::calculate_slide_pacing(self, page_idx, None).estimated_seconds
     }
+
+    /// Extract clean plain text visible on the slide SVG (excluding styles, scripts, defs)
+    #[must_use]
+    pub fn extract_plain_text(&self) -> String {
+        crate::svg::extract_text_from_svg(&self.svg_data)
+    }
+
+    /// Extract human-readable slide title from SVG text or fallback
+    #[must_use]
+    pub fn extract_title(&self) -> String {
+        if let Some(title) = crate::svg::extract_title_from_svg(&self.svg_data) {
+            if !title.trim().is_empty() {
+                return title;
+            }
+        }
+        format!("Slide {}", self.page_number)
+    }
 }
 
 /// Complete presentation deck

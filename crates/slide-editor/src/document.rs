@@ -299,6 +299,7 @@ impl EditorDocument {
 
         self.file_path = Some(path.clone());
         self.is_dirty = false;
+        let _ = self.clear_recovery_draft();
         Ok(path)
     }
 
@@ -324,29 +325,12 @@ impl EditorDocument {
             }
             source.push_str(&format!("// --- Slide {} ---\n", slide.page_number));
 
-            // Extract any text hints or markers from SVG if possible
-            let mut extracted_title = None;
-            for line in slide.svg_data.lines() {
-                if let Some(start) = line.find("<text")
-                    && let Some(content_start) = line[start..].find('>')
-                {
-                    let text_part = &line[start + content_start + 1..];
-                    if let Some(content_end) = text_part.find("</text>") {
-                        let raw_text = text_part[..content_end].trim();
-                        if !raw_text.is_empty() && raw_text.len() < 80 {
-                            extracted_title = Some(raw_text.to_string());
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if let Some(stitle) = extracted_title {
-                source.push_str(&format!("= {stitle}\n\n"));
-            } else if idx == 0 {
+            // Extract clean title from slide SVG
+            let title = slide.extract_title();
+            if idx == 0 && title.starts_with("Slide ") {
                 source.push_str(&format!("= {}\n\n", deck.title));
             } else {
-                source.push_str(&format!("= Slide {}\n\n", slide.page_number));
+                source.push_str(&format!("= {title}\n\n"));
             }
 
             source.push_str(&format!(
@@ -560,5 +544,94 @@ impl EditorDocument {
             return true;
         }
         !self.source_text.trim().is_empty()
+    }
+
+    /// Compute the path for auto-saved recovery draft (`.<filename>.draft.typ`)
+    #[must_use]
+    pub fn recovery_draft_path(&self) -> Option<PathBuf> {
+        let path = self.file_path.as_ref()?;
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let filename = path.file_name()?.to_string_lossy();
+        Some(parent.join(format!(".{filename}.draft.typ")))
+    }
+
+    /// Save an auto-recovery draft if the document is dirty
+    pub fn save_recovery_draft(&self) -> Result<Option<PathBuf>> {
+        if !self.is_dirty || self.source_text.trim().is_empty() {
+            return Ok(None);
+        }
+        if let Some(draft_path) = self.recovery_draft_path() {
+            if let Some(parent) = draft_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&draft_path, &self.source_text)?;
+            Ok(Some(draft_path))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Remove the recovery draft after successful save or discard
+    pub fn clear_recovery_draft(&self) -> Result<()> {
+        if let Some(draft_path) = self.recovery_draft_path() {
+            if draft_path.exists() {
+                let _ = std::fs::remove_file(draft_path);
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if a recovery draft exists for a given original file path
+    #[must_use]
+    pub fn check_recovery_draft(original_path: &Path) -> Option<String> {
+        let parent = original_path.parent().unwrap_or_else(|| Path::new("."));
+        let filename = original_path.file_name()?.to_string_lossy();
+        let draft_path = parent.join(format!(".{filename}.draft.typ"));
+        if draft_path.is_file() {
+            std::fs::read_to_string(draft_path).ok()
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_editor_document_slide_management() {
+        let mut doc = EditorDocument::new_presentation("Test Title");
+        let initial_count = doc.total_slides();
+        assert!(initial_count >= 2);
+
+        doc.duplicate_slide(0);
+        assert_eq!(doc.total_slides(), initial_count + 1);
+
+        doc.delete_slide(1);
+        assert_eq!(doc.total_slides(), initial_count);
+    }
+
+    #[test]
+    fn test_recovery_draft_lifecycle() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let orig_path = temp_dir.path().join("slides.typ");
+
+        let mut doc = EditorDocument::new_presentation("Draft Test");
+        doc.file_path = Some(orig_path.clone());
+        doc.is_dirty = true;
+        doc.source_text = "= Recovered Content".to_string();
+
+        let draft_path = doc.save_recovery_draft().unwrap();
+        assert!(draft_path.is_some());
+        let draft_path = draft_path.unwrap();
+        assert!(draft_path.exists());
+
+        let recovered = EditorDocument::check_recovery_draft(&orig_path);
+        assert_eq!(recovered.as_deref(), Some("= Recovered Content"));
+
+        doc.clear_recovery_draft().unwrap();
+        assert!(!draft_path.exists());
+        assert_eq!(EditorDocument::check_recovery_draft(&orig_path), None);
     }
 }

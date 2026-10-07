@@ -407,11 +407,24 @@ impl SlideCompiler {
         // Check for Typst slide content overflow
         check_slide_overflow(typ_file, &root_dir, &slides)?;
 
-        let title = typ_file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Slide Deck")
-            .to_string();
+        let title = extract_deck_title_from_source(&source_str)
+            .or_else(|| {
+                slides.first().and_then(|s| {
+                    let t = s.extract_title();
+                    if t.starts_with("Slide ") {
+                        None
+                    } else {
+                        Some(t)
+                    }
+                })
+            })
+            .unwrap_or_else(|| {
+                typ_file
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Slide Deck")
+                    .to_string()
+            });
 
         let mut deck = SlideDeck::new(title);
         deck.slides = slides;
@@ -814,6 +827,57 @@ fn preprocess_charts(
     }
 }
 
+/// Extract deck title from Typst source document headers, metadata or title-slide macros
+#[must_use]
+pub fn extract_deck_title_from_source(source: &str) -> Option<String> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        // 1. #title-slide(title: "...")
+        if let Some(pos) = trimmed.find("title:") {
+            let rest = trimmed[pos + 6..].trim();
+            if let Some(stripped) = rest.strip_prefix('"') {
+                if let Some(end) = stripped.find('"') {
+                    let title = stripped[..end].trim();
+                    if !title.is_empty() {
+                        return Some(title.to_string());
+                    }
+                }
+            } else if let Some(stripped) = rest.strip_prefix('[') {
+                if let Some(end) = stripped.find(']') {
+                    let title = stripped[..end].trim();
+                    if !title.is_empty() {
+                        return Some(title.to_string());
+                    }
+                }
+            }
+        }
+
+        // 2. #set document(title: "...")
+        if trimmed.starts_with("#set document")
+            && let Some(pos) = trimmed.find("title:")
+        {
+            let rest = trimmed[pos + 6..].trim();
+            if let Some(stripped) = rest.strip_prefix('"') {
+                if let Some(end) = stripped.find('"') {
+                    let title = stripped[..end].trim();
+                    if !title.is_empty() {
+                        return Some(title.to_string());
+                    }
+                }
+            }
+        }
+
+        // 3. First level-1 heading = Title
+        if trimmed.starts_with("= ") && !trimmed.starts_with("== ") {
+            let title = trimmed.trim_start_matches('=').trim();
+            if !title.is_empty() && title.len() <= 100 {
+                return Some(title.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Extract speaker notes per slide from Typst source code
 #[must_use]
 pub fn extract_speaker_notes_by_slide(source: &str) -> Vec<Option<String>> {
@@ -1150,5 +1214,110 @@ pub fn check_presentation_health(
         });
     }
 
+    // 5. Check for consecutive duplicate slide titles
+    let mut prev_title: Option<String> = None;
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let title = slide.extract_title();
+        if let Some(ref prev) = prev_title {
+            if prev == &title
+                && !title.contains('(')
+                && !title.contains('[')
+                && !title.starts_with("Slide ")
+            {
+                issues.push(PresentationHealthIssue {
+                    severity: HealthSeverity::Warning,
+                    slide_index: Some(idx),
+                    message: format!(
+                        "Slide {} shares an identical title with Slide {} (\"{title}\").",
+                        idx.saturating_add(1),
+                        idx
+                    ),
+                    suggestion: Some(
+                        "Differentiate the topic or add a continuation marker like '(part 2)'."
+                            .to_string(),
+                    ),
+                });
+            }
+        }
+        prev_title = Some(title);
+    }
+
+    // 6. Check for excessive bullet point density (cognitive overload)
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let bullet_count = slide
+            .svg_data
+            .lines()
+            .filter(|l| l.contains("•") || l.contains("&bull;") || l.contains("&#8226;"))
+            .count();
+        if bullet_count > 7 {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Warning,
+                slide_index: Some(idx),
+                message: format!(
+                    "Slide {} has {bullet_count} bullet points, exceeding recommended cognitive limit (7).",
+                    idx.saturating_add(1)
+                ),
+                suggestion: Some(
+                    "Split bullet points into two slides or group into a multi-column layout (#cols(2)[...])."
+                        .to_string(),
+                ),
+            });
+        }
+    }
+
+    // 7. Check for non-contiguous animation build steps
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        if slide.max_step() > 1 {
+            let mut orders: Vec<usize> = slide.steps.iter().map(|s| s.order).collect();
+            orders.sort_unstable();
+            orders.dedup();
+            for i in 1..orders.len() {
+                if orders[i] > orders[i - 1].saturating_add(1) {
+                    issues.push(PresentationHealthIssue {
+                        severity: HealthSeverity::Info,
+                        slide_index: Some(idx),
+                        message: format!(
+                            "Slide {} has non-contiguous animation reveal steps (jumps from step {} to {}).",
+                            idx.saturating_add(1),
+                            orders[i - 1],
+                            orders[i]
+                        ),
+                        suggestion: Some(
+                            "Ensure #step numbers are sequential for natural presentation progression."
+                                .to_string(),
+                        ),
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
     issues
+}
+
+/// Calculate overall presentation readiness score (0-100) and qualitative rating
+#[must_use]
+pub fn calculate_presentation_readiness_score(
+    issues: &[PresentationHealthIssue]
+) -> (u32, &'static str) {
+    let mut penalty = 0u32;
+    for issue in issues {
+        match issue.severity {
+            | HealthSeverity::Error => penalty = penalty.saturating_add(25),
+            | HealthSeverity::Warning => penalty = penalty.saturating_add(10),
+            | HealthSeverity::Info => penalty = penalty.saturating_add(2),
+        }
+    }
+    let score = 100u32.saturating_sub(penalty);
+    let rating = if score >= 90 {
+        "Excellent"
+    } else if score >= 75 {
+        "Good"
+    } else if score >= 60 {
+        "Acceptable"
+    } else {
+        "Needs Polish"
+    };
+    (score, rating)
 }

@@ -835,6 +835,210 @@ pub fn parse_chart_href_with_root(
     Some(Hotspot::Chart { rect, data })
 }
 
+/// Decode common XML and HTML numeric and named entities
+#[must_use]
+pub fn decode_xml_entities(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '&' {
+            let mut entity = String::new();
+            let mut closed = false;
+            let lookahead = chars.clone();
+            for c in lookahead {
+                if c == ';' {
+                    closed = true;
+                    break;
+                }
+                if c.is_alphanumeric() || c == '#' {
+                    entity.push(c);
+                    if entity.len() > 10 {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            if closed {
+                // Advance past entity characters and ';'
+                for _ in 0..=entity.len() {
+                    chars.next();
+                }
+
+                if entity == "amp" {
+                    result.push('&');
+                } else if entity == "lt" {
+                    result.push('<');
+                } else if entity == "gt" {
+                    result.push('>');
+                } else if entity == "quot" {
+                    result.push('"');
+                } else if entity == "apos" {
+                    result.push('\'');
+                } else if entity == "nbsp" {
+                    result.push(' ');
+                } else if let Some(code) = entity.strip_prefix('#') {
+                    let parsed = if let Some(hex) =
+                        code.strip_prefix('x').or_else(|| code.strip_prefix('X'))
+                    {
+                        u32::from_str_radix(hex, 16).ok()
+                    } else {
+                        code.parse::<u32>().ok()
+                    };
+                    if let Some(cp) = parsed
+                        && let Some(c) = char::from_u32(cp)
+                    {
+                        if cp == 160 {
+                            result.push(' ');
+                        } else {
+                            result.push(c);
+                        }
+                    } else {
+                        result.push('&');
+                        result.push_str(&entity);
+                        result.push(';');
+                    }
+                } else {
+                    result.push('&');
+                    result.push_str(&entity);
+                    result.push(';');
+                }
+            } else {
+                result.push('&');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
+}
+
+/// Extract clean plain text visible on the slide SVG, skipping `<style>`, `<script>`, `<defs>`, etc.
+#[must_use]
+pub fn extract_text_from_svg(svg: &str) -> String {
+    let sanitized = sanitize_svg(svg);
+    if let Ok(doc) = roxmltree::Document::parse(&sanitized) {
+        let mut words = Vec::new();
+        for node in doc.descendants() {
+            if node.is_text() {
+                let in_ignored = node.ancestors().any(|a| {
+                    let tag = a.tag_name().name();
+                    tag == "style" || tag == "script" || tag == "defs" || tag == "metadata"
+                });
+                if !in_ignored {
+                    if let Some(text) = node.text() {
+                        let decoded = decode_xml_entities(text);
+                        let trimmed = decoded.trim();
+                        if !trimmed.is_empty() {
+                            words.push(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        words.join(" ")
+    } else {
+        // Fallback scanner if XML parsing fails
+        let mut in_skip_tag = false;
+        let mut in_tag = false;
+        let mut result = String::with_capacity(svg.len() / 4);
+        let mut tag_name = String::new();
+
+        for ch in svg.chars() {
+            if ch == '<' {
+                in_tag = true;
+                tag_name.clear();
+            } else if ch == '>' {
+                in_tag = false;
+                let lower = tag_name.to_lowercase();
+                if lower == "style" || lower == "defs" || lower == "script" {
+                    in_skip_tag = true;
+                } else if lower == "/style" || lower == "/defs" || lower == "/script" {
+                    in_skip_tag = false;
+                }
+                result.push(' ');
+            } else if in_tag {
+                if !ch.is_whitespace() && tag_name.len() < 10 {
+                    tag_name.push(ch);
+                }
+            } else if !in_skip_tag {
+                result.push(ch);
+            }
+        }
+        decode_xml_entities(&result)
+    }
+}
+
+/// Extract a human-readable title preview from slide SVG text elements.
+/// Ignores pure numbers, page indicators (e.g. "1 / 15"), tiny glyph labels, and selects the first prominent title text.
+#[must_use]
+pub fn extract_title_from_svg(svg: &str) -> Option<String> {
+    let sanitized = sanitize_svg(svg);
+    if let Ok(doc) = roxmltree::Document::parse(&sanitized) {
+        for node in doc.descendants() {
+            let tag = node.tag_name().name();
+            if tag == "style" || tag == "defs" || tag == "script" {
+                continue;
+            }
+            if tag == "text" {
+                // Collect child text leaf nodes
+                let mut full_text = String::new();
+                for child in node.descendants() {
+                    if child.is_text() {
+                        if let Some(t) = child.text() {
+                            full_text.push_str(t);
+                        }
+                    }
+                }
+                let decoded = decode_xml_entities(&full_text);
+                let trimmed = decoded.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                // Skip slide counters like "1", "1 / 10", "1/10", or dates
+                if trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '/' || c.is_whitespace())
+                {
+                    continue;
+                }
+                if trimmed.len() >= 2 && trimmed.len() <= 80 {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+
+    // Secondary fallback: lines scan
+    for line in svg.lines() {
+        if line.contains("<style") || line.contains("<defs") {
+            continue;
+        }
+        if let Some(start) = line.find("<text")
+            && let Some(content_start) = line.get(start..).and_then(|s| s.find('>'))
+            && let Some(tp) = line.get(start.saturating_add(content_start).saturating_add(1)..)
+            && let Some(content_end) = tp.find("</text>")
+        {
+            let raw = tp.get(..content_end).unwrap_or("").trim();
+            let decoded = decode_xml_entities(raw);
+            let cleaned = decoded.replace(['<', '>'], " ").trim().to_string();
+            if !cleaned.is_empty()
+                && cleaned.len() >= 2
+                && cleaned.len() <= 80
+                && !cleaned
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '/' || c.is_whitespace())
+            {
+                return Some(cleaned);
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -874,5 +1078,36 @@ mod tests {
         assert_eq!(pass1, pass2);
         assert!(pass1.contains("&amp;b=2"));
         assert!(pass1.contains("&amp;c=3"));
+    }
+
+    #[test]
+    fn test_decode_xml_entities() {
+        assert_eq!(decode_xml_entities("Hello &amp; World"), "Hello & World");
+        assert_eq!(
+            decode_xml_entities("&lt;div&gt;&quot;Test&quot;&apos;&lt;/div&gt;"),
+            "<div>\"Test\"'</div>"
+        );
+        assert_eq!(decode_xml_entities("Alpha&#160;Beta"), "Alpha Beta");
+        assert_eq!(decode_xml_entities("Euro: &#x20AC;"), "Euro: €");
+    }
+
+    #[test]
+    fn test_extract_text_and_title_from_svg() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg">
+            <style>.f0 { font-family: Roboto; }</style>
+            <defs><filter id="f1"></filter></defs>
+            <text font-size="24">Architecture &amp; Design Overview</text>
+            <text font-size="14"><tspan>High performance</tspan> <tspan>pipeline</tspan></text>
+            <text font-size="10">1 / 15</text>
+        </svg>"#;
+
+        let title = extract_title_from_svg(svg);
+        assert_eq!(title.as_deref(), Some("Architecture & Design Overview"));
+
+        let text = extract_text_from_svg(svg);
+        assert!(!text.contains("font-family"));
+        assert!(text.contains("Architecture & Design Overview"));
+        assert!(text.contains("High performance"));
+        assert!(text.contains("pipeline"));
     }
 }

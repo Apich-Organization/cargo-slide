@@ -106,18 +106,20 @@ fn dispatch_command(
             watch,
             fullscreen,
             target,
+            kiosk,
             light,
         }) => {
-            commands::run::execute(&file, &animation, watch, fullscreen, target, light)?;
+            commands::run::execute(&file, &animation, watch, fullscreen, target, light, kiosk)?;
         },
         | Some(Commands::Dev {
             file,
             animation,
             fullscreen,
             target,
+            kiosk,
             light,
         }) => {
-            commands::run::execute(&file, &animation, true, fullscreen, target, light)?;
+            commands::run::execute(&file, &animation, true, fullscreen, target, light, kiosk)?;
         },
         | Some(Commands::Edit { file, dark }) => {
             commands::edit::execute(file.as_deref(), dark)?;
@@ -169,8 +171,14 @@ fn dispatch_command(
         | Some(Commands::Stats { file, json, wpm }) => {
             commands::stats::execute(&file, json, wpm)?;
         },
-        | Some(Commands::Export { file, format, output }) => {
-            commands::export::execute(&file, &format, output)?;
+        | Some(Commands::Export {
+            file,
+            format,
+            output,
+            pages,
+            scale,
+        }) => {
+            commands::export::execute(&file, &format, output, pages.as_deref(), scale)?;
         },
         | Some(Commands::InstallViewer) => {
             println!("Installing slide-viewer universal presentation player...");
@@ -198,7 +206,7 @@ fn dispatch_command(
         },
         | None => {
             let file = default_file.unwrap_or_else(|| PathBuf::from("slides.typ"));
-            commands::run::execute(&file, "fade", false, false, None, false)?;
+            commands::run::execute(&file, "fade", false, false, None, false, None)?;
         },
     }
 

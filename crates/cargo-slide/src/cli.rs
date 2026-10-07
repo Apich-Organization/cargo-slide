@@ -81,6 +81,10 @@ pub enum Commands {
         #[arg(short = 't', long)]
         target: Option<u64>,
 
+        /// Kiosk unattended loop interval in seconds (e.g. --kiosk 10)
+        #[arg(long)]
+        kiosk: Option<u64>,
+
         /// Start presentation player with light HUD theme
         #[arg(long)]
         light: bool,
@@ -102,6 +106,10 @@ pub enum Commands {
         /// Target talk duration in minutes for pacing alert clock
         #[arg(short = 't', long)]
         target: Option<u64>,
+
+        /// Kiosk unattended loop interval in seconds (e.g. --kiosk 10)
+        #[arg(long)]
+        kiosk: Option<u64>,
 
         /// Start presentation player with light HUD theme
         #[arg(long)]
@@ -232,19 +240,27 @@ pub enum Commands {
         #[arg(long, default_value_t = 130)]
         wpm: u32,
     },
-    /// Export presentation to PDF, SVG, .slide, or WASM CSR
+    /// Export presentation to PDF, SVG, PNG, .slide, or WASM CSR
     Export {
         /// Path to .typ slide file (default: slides.typ)
         #[arg(default_value = "slides.typ")]
         file: PathBuf,
 
-        /// Export format (pdf, svg, slide, wasm)
+        /// Export format (pdf, svg, png, slide, wasm)
         #[arg(short, long, default_value = "pdf")]
         format: String,
 
         /// Output file or directory path
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Export selected slide pages or ranges (e.g. "1,3,5-8", 1-indexed)
+        #[arg(short, long)]
+        pages: Option<String>,
+
+        /// Render resolution scale factor for PNG export (e.g. 1.0, 2.0 for Retina/4K, default: 2.0)
+        #[arg(long, default_value_t = 2.0)]
+        scale: f32,
     },
     /// Install universal slide-viewer player and desktop integration to system
     InstallViewer,

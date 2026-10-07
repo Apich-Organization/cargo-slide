@@ -15,6 +15,7 @@ pub fn execute(
     fullscreen: bool,
     target_minutes: Option<u64>,
     light: bool,
+    kiosk: Option<u64>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     if !file.exists() {
         return Err(format!("File does not exist: {}", file.display()).into());
@@ -79,6 +80,7 @@ pub fn execute(
         watch: watch && !is_slide_pkg,
         hud_theme,
         target_duration_secs: target_minutes.map(|m| m.saturating_mul(60)),
+        kiosk_interval_secs: kiosk,
         ..Default::default()
     };
 

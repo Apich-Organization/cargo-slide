@@ -46,6 +46,10 @@ struct Args {
     #[arg(long)]
     light: bool,
 
+    /// Kiosk unattended loop interval in seconds (e.g. --kiosk 10)
+    #[arg(long)]
+    kiosk: Option<u64>,
+
     /// Run built-in Geek Demo showcase presentation
     #[arg(long)]
     demo: bool,
@@ -80,13 +84,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if args.demo {
-        launch_builtin_demo(&args.animation, args.fullscreen, hud_theme)?;
+        launch_builtin_demo(&args.animation, args.fullscreen, hud_theme, args.kiosk)?;
         return Ok(());
     }
 
     if let Some(ref file_path) = args.file {
         if file_path.exists() {
-            play_presentation_file(file_path, &args.animation, args.fullscreen, hud_theme)?;
+            play_presentation_file(
+                file_path,
+                &args.animation,
+                args.fullscreen,
+                hud_theme,
+                args.kiosk,
+            )?;
             return Ok(());
         }
         eprintln!(
@@ -133,6 +143,7 @@ pub fn play_presentation_file(
     animation: &str,
     fullscreen: bool,
     hud_theme: HudTheme,
+    kiosk: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     save_recent_viewer_file(path);
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
@@ -170,6 +181,10 @@ pub fn play_presentation_file(
         .fullscreen(fullscreen)
         .hud_theme(hud_theme);
 
+    if let Some(kiosk_secs) = kiosk {
+        app = app.kiosk_interval(kiosk_secs);
+    }
+
     if let Some(ref dir) = source_dir {
         app = app.source_file(dir);
     }
@@ -183,15 +198,21 @@ pub fn launch_builtin_demo(
     animation: &str,
     fullscreen: bool,
     hud_theme: HudTheme,
+    kiosk: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (deck, cache_dir) =
         unpack_deck_and_assets_from_bytes(EMBEDDED_GEEK_DEMO, "geek_showcase_demo")?;
-    SlideApp::from_deck(deck)
+    let mut app = SlideApp::from_deck(deck)
         .source_file(&cache_dir)
         .default_animation(animation)
         .fullscreen(fullscreen)
-        .hud_theme(hud_theme)
-        .run()?;
+        .hud_theme(hud_theme);
+
+    if let Some(kiosk_secs) = kiosk {
+        app = app.kiosk_interval(kiosk_secs);
+    }
+
+    app.run()?;
     Ok(())
 }
 

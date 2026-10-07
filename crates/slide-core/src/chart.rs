@@ -90,6 +90,32 @@ pub struct ChartData {
     pub precision: Option<usize>,
 }
 
+/// Statistical summary for a single series in a chart
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SeriesStats {
+    pub name: String,
+    pub count: usize,
+    pub min: f64,
+    pub max: f64,
+    pub sum: f64,
+    pub mean: f64,
+    pub median: f64,
+    pub std_dev: f64,
+    pub trend_slope: f64,
+    pub outlier_indices: Vec<usize>,
+}
+
+/// Comprehensive statistical analytics report for a chart dataset
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChartStatsReport {
+    pub total_points: usize,
+    pub categories_count: usize,
+    pub series_count: usize,
+    pub series_stats: Vec<SeriesStats>,
+    pub recommended_chart_type: ChartType,
+    pub recommendation_rationale: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
@@ -310,6 +336,221 @@ impl ChartData {
             SlideError::Chart(format!("Failed to open CSV file {}: {}", path.display(), e))
         })?;
         Self::from_csv_str(&content, chart_type, title)
+    }
+
+    /// Analyze data characteristics and recommend the most effective visualization chart type
+    #[must_use]
+    pub fn recommend_chart_type(&self) -> (ChartType, &'static str) {
+        if self.series.is_empty() {
+            return (ChartType::Bar, "Default bar chart for categorical data");
+        }
+
+        // 1. Check for temporal/sequential categories (e.g. 2020..2025, Q1..Q4, Jan..Dec, dates)
+        let is_sequential = self.categories.iter().all(|c| {
+            let trimmed = c.trim();
+            trimmed.parse::<i64>().is_ok()
+                || trimmed.starts_with('Q')
+                || trimmed.starts_with('q')
+                || [
+                    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov",
+                    "dec", "mon", "tue", "wed", "thu", "fri", "sat", "sun",
+                ]
+                .iter()
+                .any(|m| trimmed.to_lowercase().starts_with(m))
+                || (trimmed.contains('-') && trimmed.len() >= 4)
+        });
+
+        if is_sequential && self.categories.len() >= 3 {
+            return (
+                ChartType::Line,
+                "Temporal trend sequence across categories is best visualized with a Line chart",
+            );
+        }
+
+        // 2. Check for part-of-whole / shares (single series, values positive, summing to ~100 or <= 7 slices)
+        if self.series.len() == 1 && self.categories.len() >= 2 && self.categories.len() <= 7 {
+            let all_positive = self.series[0].values.iter().all(|v| *v > 0.0);
+            if all_positive {
+                let sum: f64 = self.series[0].values.iter().sum();
+                if (sum - 100.0).abs() <= 1.0 {
+                    return (
+                        ChartType::Donut,
+                        "Values sum to 100%, ideal for Donut/Pie market share visualization",
+                    );
+                }
+                if self.categories.len() <= 5 {
+                    return (
+                        ChartType::Pie,
+                        "Few categorical proportions are clearly conveyed with a Pie chart",
+                    );
+                }
+            }
+        }
+
+        // 3. Scatter for correlation or multi-point distribution
+        if self.series.len() >= 2 && self.categories.len() > 15 {
+            return (
+                ChartType::Scatter,
+                "High density multivariate data points are best represented by a Scatter plot",
+            );
+        }
+
+        (
+            ChartType::Bar,
+            "Discrete comparative categories are best presented with a Bar chart",
+        )
+    }
+
+    /// Automatically detect suitable numeric formatting based on title, unit, and value distributions
+    #[must_use]
+    pub fn auto_detect_number_format(&self) -> NumberFormat {
+        if self.format != NumberFormat::Auto {
+            return self.format;
+        }
+
+        let title_lower = self.title.as_deref().unwrap_or("").to_lowercase();
+        let y_lower = self.y_label.as_deref().unwrap_or("").to_lowercase();
+        let unit_lower = self.unit.as_deref().unwrap_or("").to_lowercase();
+
+        if title_lower.contains('$')
+            || title_lower.contains("usd")
+            || title_lower.contains("price")
+            || title_lower.contains("revenue")
+            || title_lower.contains("cost")
+            || unit_lower.contains('$')
+            || y_lower.contains('$')
+            || y_lower.contains("usd")
+        {
+            return NumberFormat::Currency;
+        }
+
+        if title_lower.contains('%')
+            || title_lower.contains("percent")
+            || title_lower.contains("rate")
+            || title_lower.contains("share")
+            || unit_lower.contains('%')
+        {
+            return NumberFormat::Percentage;
+        }
+
+        let all_values: Vec<f64> = self
+            .series
+            .iter()
+            .flat_map(|s| s.values.iter().copied())
+            .collect();
+        if all_values.is_empty() {
+            return NumberFormat::Standard;
+        }
+
+        // Percentage range [0.0, 1.0]
+        if all_values.iter().all(|v| *v >= 0.0 && *v <= 1.0)
+            && all_values.iter().any(|v| *v > 0.0 && *v < 1.0)
+        {
+            return NumberFormat::Percentage;
+        }
+
+        // Large numbers > 10,000 -> compact
+        if all_values.iter().any(|v| v.abs() >= 10_000.0) {
+            return NumberFormat::Compact;
+        }
+
+        // Pure integers
+        if all_values.iter().all(|v| v.fract().abs() < 1e-6) {
+            return NumberFormat::Integer;
+        }
+
+        NumberFormat::Standard
+    }
+
+    /// Compute statistical analytics across all series in the chart
+    #[must_use]
+    pub fn compute_statistics(&self) -> ChartStatsReport {
+        let (recommended_type, rationale) = self.recommend_chart_type();
+        let mut series_stats = Vec::with_capacity(self.series.len());
+        let mut total_points = 0usize;
+
+        for s in &self.series {
+            let n = s.values.len();
+            total_points += n;
+            if n == 0 {
+                series_stats.push(SeriesStats {
+                    name: s.name.clone(),
+                    count: 0,
+                    min: 0.0,
+                    max: 0.0,
+                    sum: 0.0,
+                    mean: 0.0,
+                    median: 0.0,
+                    std_dev: 0.0,
+                    trend_slope: 0.0,
+                    outlier_indices: Vec::new(),
+                });
+                continue;
+            }
+
+            let mut sorted = s.values.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let min = sorted[0];
+            let max = sorted[n - 1];
+            let sum: f64 = sorted.iter().sum();
+            let mean = sum / n as f64;
+            let median = if n % 2 == 1 {
+                sorted[n / 2]
+            } else {
+                (sorted[(n / 2) - 1] + sorted[n / 2]) * 0.5
+            };
+
+            let variance: f64 = sorted.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+            let std_dev = variance.sqrt();
+
+            // Simple linear regression slope against 0..n-1
+            let n_f = n as f64;
+            let x_mean = (n_f - 1.0) * 0.5;
+            let mut num = 0.0f64;
+            let mut den = 0.0f64;
+            for (i, v) in s.values.iter().enumerate() {
+                let dx = i as f64 - x_mean;
+                num += dx * (v - mean);
+                den += dx * dx;
+            }
+            let trend_slope = if den.abs() > 1e-9 {
+                num / den
+            } else {
+                0.0
+            };
+
+            // Outliers (> 2 standard deviations away from mean when n >= 4 and std_dev > 0)
+            let mut outlier_indices = Vec::new();
+            if n >= 4 && std_dev > 1e-6 {
+                for (i, v) in s.values.iter().enumerate() {
+                    if (v - mean).abs() > 2.0 * std_dev {
+                        outlier_indices.push(i);
+                    }
+                }
+            }
+
+            series_stats.push(SeriesStats {
+                name: s.name.clone(),
+                count: n,
+                min,
+                max,
+                sum,
+                mean,
+                median,
+                std_dev,
+                trend_slope,
+                outlier_indices,
+            });
+        }
+
+        ChartStatsReport {
+            total_points,
+            categories_count: self.categories.len(),
+            series_count: self.series.len(),
+            series_stats,
+            recommended_chart_type: recommended_type,
+            recommendation_rationale: rationale.to_string(),
+        }
     }
 
     /// Query a SQLite database and convert rows into `ChartData`
@@ -2325,5 +2566,44 @@ Q4 2025,\"$280,000\",$98000,31.4%
         assert_eq!(filtered_stats.total_sum, 1500.0);
         assert_eq!(filtered_stats.avg, 750.0);
         assert_eq!(filtered_stats.median, 750.0);
+    }
+
+    #[test]
+    fn test_chart_intelligence_and_recommendations() {
+        // Sequential categories -> Line
+        let mut time_chart = ChartData::new(ChartType::Bar);
+        time_chart.categories = vec!["2021".into(), "2022".into(), "2023".into(), "2024".into()];
+        time_chart.series.push(SeriesData {
+            name: "Growth".into(),
+            values: vec![12.0, 18.0, 24.0, 31.0],
+            color: None,
+        });
+        let (rec_type, _) = time_chart.recommend_chart_type();
+        assert_eq!(rec_type, ChartType::Line);
+
+        // Shares summing to 100 -> Donut
+        let mut share_chart = ChartData::new(ChartType::Bar);
+        share_chart.categories = vec!["Product A".into(), "Product B".into(), "Product C".into()];
+        share_chart.series.push(SeriesData {
+            name: "Market Share".into(),
+            values: vec![50.0, 30.0, 20.0],
+            color: None,
+        });
+        let (rec_share, _) = share_chart.recommend_chart_type();
+        assert_eq!(rec_share, ChartType::Donut);
+
+        // Auto detect currency
+        share_chart.title = Some("Total Revenue ($)".into());
+        assert_eq!(
+            share_chart.auto_detect_number_format(),
+            NumberFormat::Currency
+        );
+
+        // Compute statistics report
+        let report = time_chart.compute_statistics();
+        assert_eq!(report.total_points, 4);
+        assert_eq!(report.series_stats[0].min, 12.0);
+        assert_eq!(report.series_stats[0].max, 31.0);
+        assert!(report.series_stats[0].trend_slope > 0.0); // Upward trend
     }
 }

@@ -592,6 +592,7 @@ name = "cargo-slide"
 version = "0.3.0"
 dependencies = [
  "clap",
+ "image",
  "notify",
  "open",
  "serde",

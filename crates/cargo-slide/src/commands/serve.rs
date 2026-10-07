@@ -197,9 +197,34 @@ pub fn execute(
         });
     }
 
-    let bind_addr = format!("{ip}:{port}");
-    let server = Server::http(&bind_addr)
-        .map_err(|e| format!("Failed to bind static server to {bind_addr}: {e}"))?;
+    let mut server_instance = None;
+    let mut bind_addr = format!("{ip}:{port}");
+
+    for offset in 0..10 {
+        let candidate_port = port.saturating_add(offset);
+        let candidate_addr = format!("{ip}:{candidate_port}");
+        match Server::http(&candidate_addr) {
+            | Ok(srv) => {
+                if offset > 0 {
+                    println!(
+                        "  [WARN] Port {port} is in use, auto-fallback to port {candidate_port}..."
+                    );
+                }
+                bind_addr = candidate_addr;
+                server_instance = Some(srv);
+                break;
+            },
+            | Err(e) => {
+                if offset == 9 {
+                    return Err(format!(
+                        "Failed to bind static server after 10 attempts (ports {port}..={candidate_port}): {e}"
+                    )
+                    .into());
+                }
+            },
+        }
+    }
+    let server = server_instance.expect("Server must be bound");
 
     let base_url = format!("http://{bind_addr}/");
     slide_core::logger::log_event(

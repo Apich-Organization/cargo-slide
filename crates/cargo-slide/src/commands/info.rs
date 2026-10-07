@@ -59,6 +59,21 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             file_size as f64 / 1024.0,
             file_size
         );
+        if let Some(ref cs) = meta.checksum {
+            println!("  Checksum:         {cs}");
+        }
+        if let Some(unc_size) = meta.uncompressed_size {
+            let ratio = if unc_size > 0 {
+                (1.0 - (file_size as f64 / unc_size as f64)) * 100.0
+            } else {
+                0.0
+            };
+            println!(
+                "  Uncompressed:     {:.2} KB ({:.1}% compression savings)",
+                unc_size as f64 / 1024.0,
+                ratio.max(0.0)
+            );
+        }
         println!();
 
         println!("  Running deep integrity verification...");
