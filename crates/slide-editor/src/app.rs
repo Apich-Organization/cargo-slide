@@ -67,6 +67,7 @@ pub enum ExportFormat {
     Pdf,
     Png,
     Svg,
+    Html,
     SlidePackage,
 }
 
@@ -77,6 +78,7 @@ impl ExportFormat {
             | Self::Pdf => "pdf",
             | Self::Png => "png",
             | Self::Svg => "svg",
+            | Self::Html => "html",
             | Self::SlidePackage => "slide",
         }
     }
@@ -164,6 +166,7 @@ pub enum ActiveModal {
     RecoveryDraft {
         draft_content: String,
     },
+    Cheatsheet,
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -638,6 +641,8 @@ pub enum Message {
     // Session recovery draft restoration
     RestoreRecoveryDraft(String),
     DiscardRecoveryDraft,
+    // Cheatsheet modal
+    OpenCheatsheetModal,
 }
 
 impl SlideEditorApp {
@@ -2934,6 +2939,27 @@ impl SlideEditorApp {
                             ))
                         }
                     },
+                    | ExportFormat::Html => {
+                        if let Some(ref deck) = self.doc.deck {
+                            let total = deck.total_slides();
+                            let pages = match self.export_page_selection {
+                                | ExportPageSelection::All => None,
+                                | ExportPageSelection::Current => Some(vec![self.active_slide + 1]),
+                                | ExportPageSelection::Custom => {
+                                    Some(CompilerBridge::parse_page_range(
+                                        &self.export_custom_range,
+                                        total,
+                                    ))
+                                },
+                            };
+                            CompilerBridge::export_standalone_html(deck, &target, pages.as_deref())
+                                .map(|_| ())
+                        } else {
+                            Err(slide_core::error::SlideError::Compilation(
+                                "No compiled deck available".to_string(),
+                            ))
+                        }
+                    },
                     | ExportFormat::SlidePackage => {
                         self.compiler.export_slide_package(
                             &self.doc,
@@ -4000,6 +4026,9 @@ impl SlideEditorApp {
                     task = self.trigger_recompile_task();
                 }
             },
+            | Message::OpenCheatsheetModal => {
+                self.active_modal = Some(ActiveModal::Cheatsheet);
+            },
             | Message::OpenCommandPalette => {
                 self.active_modal = Some(ActiveModal::CommandPalette {
                     query: String::new(),
@@ -4499,6 +4528,7 @@ impl SlideEditorApp {
                 | ActiveModal::RecoveryDraft { draft_content } => {
                     crate::ui::modals::view_recovery_draft_modal(self.theme, draft_content)
                 },
+                | ActiveModal::Cheatsheet => crate::ui::modals::view_cheatsheet_modal(self.theme),
             };
 
             // Overlay modal on top of base content
@@ -4640,6 +4670,10 @@ fn handle_global_drag_event(
         }) if (c == "h" || c == "H") && modifiers.alt() => {
             Some(Message::OpenPresentationHealthModal)
         },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::F1),
+            ..
+        }) => Some(Message::OpenCheatsheetModal),
         | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
             key: iced::keyboard::Key::Named(iced::keyboard::key::Named::F5),
             ..

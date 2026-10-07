@@ -211,6 +211,10 @@ pub enum Commands {
         /// Path to .slide package or .typ file (default: slides.typ)
         #[arg(default_value = "slides.typ")]
         file: PathBuf,
+
+        /// Output inspection report in JSON format
+        #[arg(long)]
+        json: bool,
     },
     /// Audit presentation health, element density, slide titles, and media assets
     Check {
@@ -225,6 +229,14 @@ pub enum Commands {
         /// Output report in JSON format
         #[arg(long)]
         json: bool,
+
+        /// Automatically fix common Typst source syntax and layout issues
+        #[arg(long)]
+        fix: bool,
+
+        /// Compute pacing allocation and checkpoints for the specified target talk duration (minutes)
+        #[arg(long)]
+        rebalance: Option<u64>,
     },
     /// Calculate comprehensive slide deck statistics, speaking duration, and notes coverage
     Stats {
@@ -239,14 +251,18 @@ pub enum Commands {
         /// Words per minute speaking pace calibration (default: 130)
         #[arg(long, default_value_t = 130)]
         wpm: u32,
+
+        /// Calculate intelligent pacing rebalance allocations for target duration in minutes
+        #[arg(long)]
+        rebalance: Option<u64>,
     },
-    /// Export presentation to PDF, SVG, PNG, Markdown handout, JSON, .slide, or WASM CSR
+    /// Export presentation to PDF, SVG, PNG, Markdown handout, JSON, .slide, WASM CSR, or standalone HTML
     Export {
         /// Path to .typ slide file (default: slides.typ)
         #[arg(default_value = "slides.typ")]
         file: PathBuf,
 
-        /// Export format (pdf, svg, png, markdown/md, json, slide, wasm)
+        /// Export format (pdf, svg, png, markdown/md, json, slide, wasm, html)
         #[arg(short, long, default_value = "pdf")]
         format: String,
 

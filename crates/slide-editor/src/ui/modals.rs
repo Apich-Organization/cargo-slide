@@ -62,6 +62,7 @@ pub fn view_export_modal<'a>(
         format_btn(ExportFormat::Pdf, "PDF Document"),
         format_btn(ExportFormat::Png, "PNG Images"),
         format_btn(ExportFormat::Svg, "Vector SVG"),
+        format_btn(ExportFormat::Html, "Standalone HTML"),
         format_btn(ExportFormat::SlidePackage, ".slide Bundle"),
     ]
     .spacing(8)
@@ -84,55 +85,57 @@ pub fn view_export_modal<'a>(
         .spacing(8)
         .align_y(Alignment::Center);
 
-    // Page range selection for SVG and PNG
-    let page_options: Element<'a, Message> =
-        if matches!(selected_format, ExportFormat::Svg | ExportFormat::Png) {
-            let page_btn = |sel: ExportPageSelection, label: String| {
-                let is_sel = page_selection == sel;
-                button(text(label).size(12))
-                    .style(move |_theme, _status| theme::subtle_button_style(theme, is_sel))
-                    .padding([4, 10])
-                    .on_press(Message::SelectExportPageSelection(sel))
-            };
-
-            let mut page_col = column![
-                row![
-                    text("Slide Range:").size(12).color(theme.text_secondary()),
-                    page_btn(
-                        ExportPageSelection::All,
-                        format!("All Slides ({})", total_slides.max(1))
-                    ),
-                    page_btn(
-                        ExportPageSelection::Current,
-                        format!("Current Slide ({})", active_slide + 1)
-                    ),
-                    page_btn(ExportPageSelection::Custom, "Custom Range".to_string()),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center)
-            ]
-            .spacing(6);
-
-            if page_selection == ExportPageSelection::Custom {
-                let custom_input = row![
-                    text("Pages:").size(12).color(theme.text_muted()),
-                    text_input("e.g. 1, 3-5, 8", custom_range)
-                        .on_input(Message::ExportCustomRangeChanged)
-                        .padding([4, 8])
-                        .width(Length::Fixed(160.0)),
-                    text(format!("(Valid: 1..{})", total_slides.max(1)))
-                        .size(11)
-                        .color(theme.text_muted()),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center);
-                page_col = page_col.push(custom_input);
-            }
-
-            page_col.into()
-        } else {
-            Space::new().height(0).into()
+    // Page range selection for SVG, PNG, and HTML
+    let page_options: Element<'a, Message> = if matches!(
+        selected_format,
+        ExportFormat::Svg | ExportFormat::Png | ExportFormat::Html
+    ) {
+        let page_btn = |sel: ExportPageSelection, label: String| {
+            let is_sel = page_selection == sel;
+            button(text(label).size(12))
+                .style(move |_theme, _status| theme::subtle_button_style(theme, is_sel))
+                .padding([4, 10])
+                .on_press(Message::SelectExportPageSelection(sel))
         };
+
+        let mut page_col = column![
+            row![
+                text("Slide Range:").size(12).color(theme.text_secondary()),
+                page_btn(
+                    ExportPageSelection::All,
+                    format!("All Slides ({})", total_slides.max(1))
+                ),
+                page_btn(
+                    ExportPageSelection::Current,
+                    format!("Current Slide ({})", active_slide + 1)
+                ),
+                page_btn(ExportPageSelection::Custom, "Custom Range".to_string()),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+        ]
+        .spacing(6);
+
+        if page_selection == ExportPageSelection::Custom {
+            let custom_input = row![
+                text("Pages:").size(12).color(theme.text_muted()),
+                text_input("e.g. 1, 3-5, 8", custom_range)
+                    .on_input(Message::ExportCustomRangeChanged)
+                    .padding([4, 8])
+                    .width(Length::Fixed(160.0)),
+                text(format!("(Valid: 1..{})", total_slides.max(1)))
+                    .size(11)
+                    .color(theme.text_muted()),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center);
+            page_col = page_col.push(custom_input);
+        }
+
+        page_col.into()
+    } else {
+        Space::new().height(0).into()
+    };
 
     // PNG scale options if PNG is selected
     let extra_options: Element<'a, Message> = if selected_format == ExportFormat::Png {
@@ -2099,6 +2102,13 @@ pub fn get_palette_actions() -> Vec<CommandPaletteAction> {
             message: Message::GenerateAgendaSlide,
         },
         CommandPaletteAction {
+            icon: "📖",
+            title: "Typst & Slide Cheatsheet",
+            shortcut: "F1",
+            category: "Help",
+            message: Message::OpenCheatsheetModal,
+        },
+        CommandPaletteAction {
             icon: "🩺",
             title: "Audit Deck Health & Pacing",
             shortcut: "Alt+H",
@@ -2476,6 +2486,158 @@ pub fn view_recovery_draft_modal<'a>(
     .style(move |_| theme::modal_dialog_style(theme));
 
     container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}
+
+/// Render the Typst & Slide Presentation Cheatsheet modal dialog
+#[must_use]
+pub fn view_cheatsheet_modal<'a>(theme: AppTheme) -> Element<'a, Message> {
+    let title = text("📖 Typst & Slide Cheatsheet")
+        .size(18)
+        .color(theme.text_primary());
+
+    let subtitle = text(
+        "Quick syntax reference for presentation slides, layouts, charts, math, and shortcuts.",
+    )
+    .size(13)
+    .color(theme.text_muted());
+
+    let section_header = |label: &'static str| text(label).size(13).color(theme.accent());
+
+    let item_row = |syntax: &'static str, description: &'static str| {
+        row![
+            container(text(syntax).size(12).color(theme.text_primary()))
+                .width(Length::Fixed(240.0))
+                .padding([4, 8])
+                .style(move |_| theme::code_block_container_style(theme)),
+            text(description).size(12).color(theme.text_secondary()),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center)
+    };
+
+    let slides_section = column![
+        section_header("1. Slide Structure & Pacing"),
+        item_row(
+            "#title-slide(...)",
+            "Hero title slide (title, subtitle, author, date)"
+        ),
+        item_row(
+            "#slide(title: [...])[...]",
+            "Standard slide container with auto margin"
+        ),
+        item_row("#pagebreak()", "Explicit slide boundary / transition break"),
+        item_row(
+            "// [note]: Talking point",
+            "Speaker notes visible in HUD & presenter mode"
+        ),
+        item_row(
+            "#step(order: 1)[...]",
+            "In-slide progressive fragment reveal"
+        ),
+    ]
+    .spacing(6);
+
+    let layout_section = column![
+        section_header("2. Layout & Presentation Components"),
+        item_row(
+            "#cols((1fr, 1fr))[...][...]",
+            "Multi-column horizontal side-by-side layout"
+        ),
+        item_row(
+            "#callout(title: [...])[...]",
+            "Accent callout box (info, warning, success, error)"
+        ),
+        item_row(
+            "#badge(\"Rust 2024\")",
+            "Pill tag badge with accent background"
+        ),
+        item_row(
+            "#metric(value: \"60 FPS\", label: \"...\")",
+            "Quantitative KPI metric highlight card"
+        ),
+        item_row(
+            "#code-window(title: \"main.rs\")[...]",
+            "macOS-style window frame around code"
+        ),
+        item_row(
+            "#chart(source: \"data.csv\", type: \"bar\")",
+            "Interactive chart (bar, line, pie, donut)"
+        ),
+        item_row(
+            "#video(source: \"demo.mp4\")",
+            "Video hotspot playable via mpv"
+        ),
+        item_row(
+            "#audio(source: \"bgm.mp3\")",
+            "Audio player hotspot / background music"
+        ),
+    ]
+    .spacing(6);
+
+    let typst_section = column![
+        section_header("3. Typst Typography & Markup"),
+        item_row("*bold text*", "Bold emphasis"),
+        item_row("_italic text_", "Italic emphasis"),
+        item_row("`code snippet`", "Inline monospace code"),
+        item_row("= Title / == Subtitle", "Headings level 1 through 3"),
+        item_row(
+            "- Item / + Numbered",
+            "Bullet lists and sequential numbered lists"
+        ),
+        item_row("$ E = m c^2 $", "Math equations & LaTeX-like formulas"),
+    ]
+    .spacing(6);
+
+    let shortcuts_section = column![
+        section_header("4. Essential Editor Shortcuts"),
+        item_row("F5", "Run presentation in full-screen player"),
+        item_row("F1", "Open this Cheatsheet modal"),
+        item_row("Ctrl+P / Cmd+P", "Open Command Palette search"),
+        item_row(
+            "Ctrl+E / Cmd+E",
+            "Export presentation (PDF, PNG, SVG, HTML, .slide)"
+        ),
+        item_row("Ctrl+S / Cmd+S", "Save document"),
+        item_row("Ctrl+B / Cmd+B", "Toggle outline sidebar"),
+        item_row("Alt+H", "Run presentation health audit & pacing inspection"),
+    ]
+    .spacing(6);
+
+    let content_col = column![
+        slides_section,
+        layout_section,
+        typst_section,
+        shortcuts_section,
+    ]
+    .spacing(14);
+
+    let close_btn = button(text("Close").size(13))
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .padding([8, 18])
+        .on_press(Message::CloseModal);
+
+    let dialog_content = column![
+        title,
+        subtitle,
+        Space::new().height(8),
+        scrollable(content_col).height(Length::Fixed(400.0)),
+        Space::new().height(8),
+        row![Space::new().width(Length::Fill), close_btn],
+    ]
+    .spacing(8);
+
+    let dialog_card = container(dialog_content)
+        .width(Length::Fixed(680.0))
+        .padding(24)
+        .style(move |_| theme::modal_dialog_style(theme));
+
+    container(dialog_card)
         .width(Length::Fill)
         .height(Length::Fill)
         .align_x(Alignment::Center)

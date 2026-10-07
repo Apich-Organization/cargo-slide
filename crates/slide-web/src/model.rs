@@ -290,6 +290,8 @@ pub struct Slide {
     pub svg_data: String,
     pub view_box: Rect,
     #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
     pub hotspots: Vec<Hotspot>,
     #[serde(default)]
     pub animation: Option<String>,

@@ -17,6 +17,7 @@ use crate::hud::draw_circle_outline;
 use crate::hud::draw_help_overlay;
 use crate::hud::draw_hotspot_highlight;
 use crate::hud::draw_hud_toast;
+use crate::hud::draw_kiosk_countdown_bar;
 use crate::hud::draw_page_badge;
 use crate::hud::draw_presenter_clock;
 use crate::hud::draw_slide_grid_overlay;
@@ -2839,7 +2840,7 @@ impl SlidePlayer {
                                     exit_requested = true;
                                 }
                             },
-                            | Key::H | Key::Slash => show_help = !show_help,
+                            | Key::H | Key::Slash | Key::F1 => show_help = !show_help,
                             | Key::R => reload_triggered = true,
                             | _ => {},
                         }
@@ -3170,6 +3171,14 @@ impl SlidePlayer {
                 max_substep,
                 hud_theme,
             );
+
+            if kiosk_mode {
+                #[allow(clippy::cast_precision_loss)]
+                let progress = (last_kiosk_advance.elapsed().as_secs_f32()
+                    / kiosk_interval_secs as f32)
+                    .clamp(0.0, 1.0);
+                draw_kiosk_countdown_bar(&mut buffer, width, height, progress, 0xFF00E5FF);
+            }
 
             if show_help {
                 draw_help_overlay(&mut buffer, width, height, hud_theme);

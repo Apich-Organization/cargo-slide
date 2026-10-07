@@ -1518,6 +1518,98 @@ pub fn check_presentation_health(
         }
     }
 
+    // 12. Check for broken internal slide hyperlink targets
+    let total_pages = deck.slides.len();
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        for hs in &slide.hotspots {
+            if let crate::model::Hotspot::Link { target, .. } = hs
+                && let Some(target_num_str) = target.strip_prefix('#')
+                && let Ok(target_num) = target_num_str.parse::<usize>()
+                && (target_num == 0 || target_num > total_pages)
+            {
+                issues.push(PresentationHealthIssue {
+                    severity: HealthSeverity::Warning,
+                    slide_index: Some(idx),
+                    message: format!(
+                        "Slide {} contains internal hyperlink targeting non-existent slide #{target_num} (deck has {total_pages} slides).",
+                        idx.saturating_add(1)
+                    ),
+                    suggestion: Some(
+                        "Update internal hyperlink target to an existing slide number."
+                            .to_string(),
+                    ),
+                });
+            }
+        }
+    }
+
+    // 13. Check for tiny / illegible font sizes
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let has_tiny_font = slide.svg_data.lines().any(|l| {
+            if l.contains("font-size=\"")
+                && let Some(pos) = l.find("font-size=\"")
+            {
+                let after = l.get(pos.saturating_add(11)..).unwrap_or("");
+                if let Some(end) = after.find('"') {
+                    let num_str = after
+                        .get(..end)
+                        .unwrap_or("")
+                        .trim_end_matches("pt")
+                        .trim_end_matches("px");
+                    if let Ok(size) = num_str.parse::<f32>() {
+                        return size > 0.0 && size <= 10.0;
+                    }
+                }
+            }
+            false
+        });
+        if has_tiny_font {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Info,
+                slide_index: Some(idx),
+                message: format!(
+                    "Slide {} contains very small text (font size <= 10pt) which may be hard to read when projected.",
+                    idx.saturating_add(1)
+                ),
+                suggestion: Some(
+                    "Increase font size to at least 14pt for presentation readability."
+                        .to_string(),
+                ),
+            });
+        }
+    }
+
+    // 14. Check for overly long code blocks in source
+    let mut in_code = false;
+    let mut code_lines = 0usize;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            if in_code {
+                if code_lines > 22 {
+                    issues.push(PresentationHealthIssue {
+                        severity: HealthSeverity::Warning,
+                        slide_index: None,
+                        message: format!(
+                            "Source contains an overly long code block ({code_lines} lines). Large code blocks cause cognitive overload on projection screens."
+                        ),
+                        suggestion: Some(
+                            "Shorten code snippet to under 15–20 lines or focus on essential statements."
+                                .to_string(),
+                        ),
+                    });
+                }
+                in_code = false;
+                code_lines = 0;
+            } else {
+                in_code = true;
+                code_lines = 0;
+            }
+        } else if in_code {
+            code_lines = code_lines.saturating_add(1);
+        }
+    }
+
     issues
 }
 
@@ -1545,4 +1637,88 @@ pub fn calculate_presentation_readiness_score(
         "Needs Polish"
     };
     (score, rating)
+}
+
+/// Result of running intelligent source repair on a Typst presentation
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AutoFixResult {
+    /// The repaired Typst source code
+    pub fixed_source: String,
+    /// List of human-readable descriptions of repairs applied
+    pub repairs: Vec<String>,
+}
+
+/// Automatically repair common syntax mistakes in Typst presentation documents
+#[must_use]
+pub fn auto_fix_source(source: &str) -> AutoFixResult {
+    let mut repairs = Vec::new();
+    let mut lines: Vec<String> = source.lines().map(String::from).collect();
+
+    // 1. Missing imports: if #slide( or #title-slide is present but #import "slide.typ" / theme.typ missing
+    let has_slide = source.contains("#slide(") || source.contains("#title-slide(");
+    let has_slide_import =
+        source.contains("#import \"slide.typ\"") || source.contains("#import 'slide.typ'");
+    let has_theme_import =
+        source.contains("#import \"theme.typ\"") || source.contains("#import 'theme.typ'");
+
+    if has_slide && !has_slide_import && !has_theme_import {
+        lines.insert(0, "#import \"theme.typ\": *".to_string());
+        lines.insert(1, "#import \"slide.typ\": *".to_string());
+        lines.insert(2, String::new());
+        repairs.push(
+            "Added missing imports: `#import \"theme.typ\": *` and `#import \"slide.typ\": *`"
+                .to_string(),
+        );
+    }
+
+    let mut fixed = lines.join("\n");
+
+    // 2. Normalize legacy #speaker-note[...] to // [note]: ...
+    if fixed.contains("#speaker-note[") {
+        let mut replaced = String::new();
+        let mut rest = fixed.as_str();
+        let mut note_count = 0usize;
+        while let Some(pos) = rest.find("#speaker-note[") {
+            replaced.push_str(rest.get(..pos).unwrap_or(""));
+            let after = rest.get(pos.saturating_add(14)..).unwrap_or("");
+            if let Some(close) = after.find(']') {
+                let note_text = after.get(..close).unwrap_or("");
+                replaced.push_str("// [note]: ");
+                replaced.push_str(note_text);
+                rest = after.get(close.saturating_add(1)..).unwrap_or("");
+                note_count = note_count.saturating_add(1);
+            } else {
+                replaced.push_str(rest.get(pos..).unwrap_or(""));
+                rest = "";
+                break;
+            }
+        }
+        replaced.push_str(rest);
+        fixed = replaced;
+        if note_count > 0 {
+            repairs.push(format!(
+                "Normalized {note_count} legacy #speaker-note[...] macros to standard `// [note]:` format"
+            ));
+        }
+    }
+
+    // 3. Fix unclosed slide brackets: if a line starts with #slide(...) [ and next slide begins without closing ]
+    let open_brackets = fixed.chars().filter(|&c| c == '[').count();
+    let close_brackets = fixed.chars().filter(|&c| c == ']').count();
+    if open_brackets > close_brackets {
+        let diff = open_brackets.saturating_sub(close_brackets);
+        fixed.push('\n');
+        for _ in 0..diff {
+            fixed.push(']');
+        }
+        fixed.push('\n');
+        repairs.push(format!(
+            "Closed {diff} unclosed bracket(s) at end of document"
+        ));
+    }
+
+    AutoFixResult {
+        fixed_source: fixed,
+        repairs,
+    }
 }

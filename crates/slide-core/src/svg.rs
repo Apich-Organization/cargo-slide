@@ -1037,6 +1037,81 @@ pub fn extract_title_from_svg(svg: &str) -> Option<String> {
     None
 }
 
+/// Optimize and safely minify SVG markup for packaging and export
+#[must_use]
+pub fn optimize_svg_markup(svg: &str) -> String {
+    let mut result = String::with_capacity(svg.len());
+    let mut in_comment = false;
+    let mut in_text = false;
+    let mut chars = svg.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if in_comment {
+            if ch == '-' && chars.peek() == Some(&'-') {
+                chars.next();
+                if chars.peek() == Some(&'>') {
+                    chars.next();
+                    in_comment = false;
+                }
+            }
+            continue;
+        }
+
+        if ch == '<' {
+            // Check for comment start <!--
+            if chars.peek() == Some(&'!') {
+                let mut lookahead = chars.clone();
+                lookahead.next(); // skip !
+                if lookahead.next() == Some('-') && lookahead.next() == Some('-') {
+                    // Consume !--
+                    chars.next();
+                    chars.next();
+                    chars.next();
+                    in_comment = true;
+                    continue;
+                }
+            }
+
+            // Check if entering or exiting text tag
+            let tag_probe = chars.clone();
+            let mut tag_name = String::new();
+            for tc in tag_probe {
+                if tc.is_whitespace() || tc == '>' || tc == '/' {
+                    break;
+                }
+                tag_name.push(tc);
+            }
+            if tag_name == "text" || tag_name == "tspan" {
+                in_text = true;
+            } else if tag_name == "/text" || tag_name == "/tspan" {
+                in_text = false;
+            }
+
+            result.push('<');
+            continue;
+        }
+
+        if ch == '>' {
+            result.push('>');
+            // If not in text, peek ahead and skip following whitespace before next tag
+            if !in_text {
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch.is_whitespace() {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        result.push(ch);
+    }
+
+    result.replace("<g></g>", "").replace("<g/>", "")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1107,5 +1182,19 @@ mod tests {
         assert!(text.contains("Architecture & Design Overview"));
         assert!(text.contains("High performance"));
         assert!(text.contains("pipeline"));
+    }
+
+    #[test]
+    fn test_optimize_svg_markup() {
+        let svg = r#"<!-- Header comment -->
+        <svg xmlns="http://www.w3.org/2000/svg">
+            <g></g>
+            <text font-size="24">Hello World</text>
+        </svg>"#;
+
+        let opt = optimize_svg_markup(svg);
+        assert!(!opt.contains("Header comment"));
+        assert!(!opt.contains("<g></g>"));
+        assert!(opt.contains("<text font-size=\"24\">Hello World</text>"));
     }
 }

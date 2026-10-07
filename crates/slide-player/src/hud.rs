@@ -2578,6 +2578,27 @@ pub fn draw_blank_screen(
     );
 }
 
+/// Draw a sleek presentation progress / kiosk auto-advance bar along the bottom window edge
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub fn draw_kiosk_countdown_bar(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    progress: f32,
+    color: u32,
+) {
+    let bar_h = 3usize;
+    let fill_w = ((progress.clamp(0.0, 1.0) * width as f32).round() as usize).min(width);
+    let start_y = height.saturating_sub(bar_h);
+
+    for y in start_y..height {
+        let row = y * width;
+        for x in 0..fill_w {
+            buffer[row + x] = color;
+        }
+    }
+}
+
 /// Draw a presenter shortcut help overlay in the center of the screen
 pub fn draw_help_overlay(
     buffer: &mut [u32],
@@ -3328,7 +3349,7 @@ pub enum InspectorAction {
     SortColumn(usize), // 0: category, 1+: series
 }
 
-pub const TRANSFORM_PRESETS: [(&str, ChartTransform); 7] = [
+pub const TRANSFORM_PRESETS: [(&str, ChartTransform); 9] = [
     ("ORIG", ChartTransform::None),
     ("TOP 5", ChartTransform::TopK(5)),
     ("SORT ▼", ChartTransform::SortDesc),
@@ -3336,6 +3357,8 @@ pub const TRANSFORM_PRESETS: [(&str, ChartTransform); 7] = [
     ("CUM", ChartTransform::Cumulative),
     ("% SHARE", ChartTransform::Percent100),
     ("MA3", ChartTransform::MovingAvg(3)),
+    ("NORM", ChartTransform::NormalizeMinMax),
+    ("DIFF", ChartTransform::Difference),
 ];
 
 pub fn get_transform_preset_rects(series_strip: Rect) -> Vec<(Rect, &'static str, ChartTransform)> {
@@ -3601,6 +3624,8 @@ impl ChartInspectorState {
                 | ChartTransform::Cumulative => "Cumulative Running Sum".to_string(),
                 | ChartTransform::Percent100 => "100% Share Normalized".to_string(),
                 | ChartTransform::MovingAvg(w) => format!("Moving Average (MA{})", w),
+                | ChartTransform::NormalizeMinMax => "Min-Max Normalized (0.0 .. 1.0)".to_string(),
+                | ChartTransform::Difference => "Discrete Velocity Delta".to_string(),
             };
             self.show_toast(&msg);
         }

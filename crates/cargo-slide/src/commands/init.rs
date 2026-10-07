@@ -25,17 +25,35 @@ pub fn execute(
         .and_then(|s| s.to_str())
         .unwrap_or("presentation");
 
+    let actual_template = if template.eq_ignore_ascii_case("auto")
+        || (template.eq_ignore_ascii_case("minimal")
+            && dir_name != "presentation"
+            && dir_name != ".")
+    {
+        let inferred = infer_template_from_topic(dir_name);
+        if inferred == "minimal" {
+            template
+        } else {
+            println!(
+                "  [SMART-TEMPLATE] Auto-selected '{inferred}' template based on project topic '{dir_name}'"
+            );
+            inferred
+        }
+    } else {
+        template
+    };
+
     log_event(
         "info",
         &format!(
-            "[INIT] Initializing cargo-slide presentation workspace ({template} template, {aspect} aspect) in: {}",
+            "[INIT] Initializing cargo-slide presentation workspace ({actual_template} template, {aspect} aspect) in: {}",
             project_dir.display()
         ),
         Some(serde_json::json!({
             "event": "init_start",
             "path": project_dir.display().to_string(),
             "rust_extensions": include_rust,
-            "template": template,
+            "template": actual_template,
             "aspect": aspect,
         })),
     );
@@ -46,7 +64,7 @@ pub fn execute(
     // 1. Write slides.typ based on selected template and aspect ratio
     let slides_path = project_dir.join("slides.typ");
     if !slides_path.exists() {
-        let content = get_template_slides(template);
+        let content = get_template_slides(actual_template);
         let normalized_aspect = aspect.replace(':', "-");
         let formatted_content = content.replace(
             "aspect-ratio: \"16-9\"",
@@ -424,5 +442,57 @@ fn get_template_slides(template: &str) -> &'static str {
 "#
         },
         | _ => slide_theme::DEFAULT_PRESENTATION,
+    }
+}
+
+/// Intelligently infer starter template if not explicitly specified by user (i.e. "minimal" or "auto")
+#[must_use]
+pub fn infer_template_from_topic(name_or_topic: &str) -> &'static str {
+    let lower = name_or_topic.to_lowercase();
+    if lower.contains("pitch")
+        || lower.contains("invest")
+        || lower.contains("startup")
+        || lower.contains("deck")
+        || lower.contains("seed")
+        || lower.contains("demo")
+    {
+        "pitch"
+    } else if lower.contains("paper")
+        || lower.contains("research")
+        || lower.contains("academic")
+        || lower.contains("thesis")
+        || lower.contains("math")
+        || lower.contains("science")
+        || lower.contains("theory")
+    {
+        "academic"
+    } else if lower.contains("geek")
+        || lower.contains("rust")
+        || lower.contains("code")
+        || lower.contains("dev")
+        || lower.contains("tech")
+        || lower.contains("infra")
+        || lower.contains("arch")
+        || lower.contains("kernel")
+        || lower.contains("engine")
+        || lower.contains("simd")
+        || lower.contains("cli")
+    {
+        "geek"
+    } else if lower.contains("business")
+        || lower.contains("corp")
+        || lower.contains("sales")
+        || lower.contains("finance")
+        || lower.contains("quarter")
+        || lower.contains("report")
+        || lower.contains("q1")
+        || lower.contains("q2")
+        || lower.contains("q3")
+        || lower.contains("q4")
+        || lower.contains("strategy")
+    {
+        "business"
+    } else {
+        "minimal"
     }
 }

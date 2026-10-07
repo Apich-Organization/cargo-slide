@@ -257,6 +257,79 @@ pub fn execute() -> Result<(), Box<dyn std::error::Error>> {
         },
     });
 
+    // 8. WebAssembly Target Check
+    let wasm_check = Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output();
+    let has_wasm = if let Ok(output) = wasm_check {
+        String::from_utf8_lossy(&output.stdout).contains("wasm32-unknown-unknown")
+    } else {
+        false
+    };
+    checks.push(DiagnosticItem {
+        category: "WASM",
+        name: "wasm32-unknown-unknown Target",
+        status: has_wasm,
+        detail: if has_wasm {
+            "Installed (CSR Web and standalone HTML export ready)".to_string()
+        } else {
+            "Not installed (Optional for web bundles)".to_string()
+        },
+        advice: if has_wasm {
+            None
+        } else {
+            Some("Run 'rustup target add wasm32-unknown-unknown' for Web export support")
+        },
+    });
+
+    // 9. Presentation Fonts Availability
+    let fc_check = Command::new("fc-list").arg(":").arg("family").output();
+    let fonts_available = if let Ok(output) = fc_check {
+        let text = String::from_utf8_lossy(&output.stdout);
+        text.contains("DejaVu")
+            || text.contains("Liberation")
+            || text.contains("Roboto")
+            || text.contains("Inter")
+            || text.contains("Arial")
+            || text.contains("Noto")
+    } else {
+        true
+    };
+    checks.push(DiagnosticItem {
+        category: "Typography",
+        name: "Presentation Fonts",
+        status: fonts_available,
+        detail: if fonts_available {
+            "System presentation fonts detected".to_string()
+        } else {
+            "Limited font inventory detected".to_string()
+        },
+        advice: if fonts_available {
+            None
+        } else {
+            Some("Install standard presentation fonts (e.g. fonts-dejavu, Inter)")
+        },
+    });
+
+    // 10. Trunk CLI for Leptos Web Development
+    let trunk_check = Command::new("trunk").arg("--version").output();
+    let has_trunk = trunk_check.is_ok_and(|o| o.status.success());
+    checks.push(DiagnosticItem {
+        category: "Toolchain",
+        name: "Trunk WASM Bundler",
+        status: has_trunk,
+        detail: if has_trunk {
+            "Available in PATH".to_string()
+        } else {
+            "Not found in PATH (Optional for web hot-reload)".to_string()
+        },
+        advice: if has_trunk {
+            None
+        } else {
+            Some("Install via 'cargo install trunk' for custom web client live editing")
+        },
+    });
+
     // Print summary table
     let mut total_ok = 0usize;
     let total_checks = checks.len();

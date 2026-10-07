@@ -184,6 +184,8 @@ pub enum ChartTransform {
     Cumulative,
     Percent100,
     MovingAvg(usize),
+    NormalizeMinMax,
+    Difference,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1260,7 +1262,120 @@ impl ChartData {
                 self.apply_dsl(&format!("smooth {w}"))
                     .unwrap_or_else(|_| self.clone())
             },
+            | ChartTransform::NormalizeMinMax => {
+                let mut cloned = self.clone();
+                for s in &mut cloned.series {
+                    let min = s.values.iter().copied().fold(f64::INFINITY, f64::min);
+                    let max = s.values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                    if max > min {
+                        for v in &mut s.values {
+                            *v = (*v - min) / (max - min);
+                        }
+                    }
+                }
+                cloned
+            },
+            | ChartTransform::Difference => {
+                let mut cloned = self.clone();
+                for s in &mut cloned.series {
+                    let mut prev = 0.0f64;
+                    for (i, v) in s.values.iter_mut().enumerate() {
+                        let cur = *v;
+                        if i == 0 {
+                            *v = 0.0;
+                        } else {
+                            *v = cur - prev;
+                        }
+                        prev = cur;
+                    }
+                }
+                cloned
+            },
         }
+    }
+
+    /// Calculate aggregate linear trend slope and R-squared coefficient across all data categories
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn compute_trend_slope(&self) -> Option<(f64, f64)> {
+        let n = self.categories.len();
+        if n < 2 || self.series.is_empty() {
+            return None;
+        }
+
+        let mut y_vals = vec![0.0f64; n];
+        for s in &self.series {
+            for (idx, &v) in s.values.iter().enumerate().take(n) {
+                if let Some(slot) = y_vals.get_mut(idx) {
+                    *slot += v;
+                }
+            }
+        }
+
+        let n_f = n as f64;
+        let x_mean = (n_f - 1.0) * 0.5;
+        let y_mean = y_vals.iter().sum::<f64>() / n_f;
+
+        let mut num = 0.0f64;
+        let mut den = 0.0f64;
+        let mut ss_tot = 0.0f64;
+
+        for (i, &y) in y_vals.iter().enumerate() {
+            let dx = i as f64 - x_mean;
+            let dy = y - y_mean;
+            num += dx * dy;
+            den += dx * dx;
+            ss_tot += dy * dy;
+        }
+
+        if den <= 1e-9 {
+            return None;
+        }
+
+        let slope = num / den;
+        let ss_res = y_vals
+            .iter()
+            .enumerate()
+            .map(|(i, &y)| {
+                let y_pred = y_mean + slope * (i as f64 - x_mean);
+                (y - y_pred).powi(2)
+            })
+            .sum::<f64>();
+
+        let r_squared = if ss_tot > 1e-9 {
+            (1.0 - (ss_res / ss_tot)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        Some((slope, r_squared))
+    }
+
+    /// Detect statistical outlier data points (values differing by > 2 standard deviations from series mean)
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn detect_outliers(&self) -> Vec<(usize, usize, f64)> {
+        let mut outliers = Vec::new();
+        for (s_idx, s) in self.series.iter().enumerate() {
+            let n = s.values.len();
+            if n < 4 {
+                continue;
+            }
+            let sum: f64 = s.values.iter().sum();
+            let mean = sum / n as f64;
+            let variance: f64 =
+                s.values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+            let std_dev = variance.sqrt();
+            if std_dev <= 1e-9 {
+                continue;
+            }
+            for (c_idx, &val) in s.values.iter().enumerate() {
+                if (val - mean).abs() > 2.0 * std_dev {
+                    outliers.push((s_idx, c_idx, val));
+                }
+            }
+        }
+        outliers
     }
 
     fn filter_rows(
@@ -2977,5 +3092,20 @@ Q4 2025,\"$280,000\",$98000,31.4%
         assert_eq!(report.series_stats[0].min, 12.0);
         assert_eq!(report.series_stats[0].max, 31.0);
         assert!(report.series_stats[0].trend_slope > 0.0); // Upward trend
+
+        // Trend slope and R^2 test
+        let (slope, r2) = time_chart.compute_trend_slope().unwrap();
+        assert!(slope > 0.0);
+        assert!(r2 > 0.95);
+
+        // NormalizeMinMax transform test
+        let normalized = time_chart.apply_transform(ChartTransform::NormalizeMinMax);
+        assert_eq!(normalized.series[0].values[0], 0.0);
+        assert_eq!(normalized.series[0].values[3], 1.0);
+
+        // Difference transform test
+        let diffed = time_chart.apply_transform(ChartTransform::Difference);
+        assert_eq!(diffed.series[0].values[0], 0.0);
+        assert_eq!(diffed.series[0].values[1], 6.0); // 18 - 12
     }
 }

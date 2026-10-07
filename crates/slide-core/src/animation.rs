@@ -590,6 +590,36 @@ pub fn ease_out_cubic(t: f32) -> f32 {
 
 #[inline]
 #[must_use]
+pub fn ease_in_cubic(t: f32) -> f32 {
+    let c = t.clamp(0.0, 1.0);
+    c * c * c
+}
+
+#[inline]
+#[must_use]
+pub fn ease_in_out_cubic(t: f32) -> f32 {
+    let c = t.clamp(0.0, 1.0);
+    if c < 0.5 {
+        4.0 * c * c * c
+    } else {
+        let p = 2.0f32.mul_add(-c, 2.0);
+        (p * p * p).mul_add(-0.5, 1.0)
+    }
+}
+
+#[inline]
+#[must_use]
+pub fn ease_out_expo(t: f32) -> f32 {
+    let c = t.clamp(0.0, 1.0);
+    if c >= 1.0 {
+        1.0
+    } else {
+        (-10.0 * c).exp2().mul_add(-1.0, 1.0)
+    }
+}
+
+#[inline]
+#[must_use]
 pub fn ease_out_back(t: f32) -> f32 {
     let c1 = 1.70158;
     let c3 = c1 + 1.0;
@@ -1028,6 +1058,89 @@ pub fn dim_pixel(
     (0xFF << 24) | (r << 16) | (g << 8) | b
 }
 
+/// Slide push combined with progressive opacity crossfade
+pub struct SlideFade;
+impl SlideAnimation for SlideFade {
+    fn name(&self) -> &'static str {
+        "slide-fade"
+    }
+
+    fn duration(&self) -> Duration {
+        Duration::from_millis(420)
+    }
+
+    fn render(
+        &self,
+        ctx: &mut RenderContext<'_>,
+        from: Option<&SlideSurface>,
+        to: &SlideSurface,
+        progress: f32,
+    ) {
+        let t = ease_in_out_cubic(progress);
+        let width = ctx.width;
+        let height = ctx.height;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let offset_x = (t * width as f32) as usize;
+        let alpha = progress.clamp(0.0, 1.0);
+
+        for y in 0..height {
+            let row_start = y * width;
+            for x in 0..width {
+                let pixel = if x + offset_x < width {
+                    let from_px = from.map_or(0, |f| f.get_pixel(x + offset_x, y));
+                    blend_pixel(from_px, to.bg_color, t)
+                } else {
+                    let to_x = (x + offset_x).saturating_sub(width);
+                    let to_px = to.get_pixel(to_x, y);
+                    blend_pixel(to.bg_color, to_px, alpha)
+                };
+                ctx.buffer[row_start + x] = pixel;
+            }
+        }
+    }
+}
+
+/// Angled diagonal curtain wipe transition
+pub struct DiagonalWipe;
+impl SlideAnimation for DiagonalWipe {
+    fn name(&self) -> &'static str {
+        "wipe-diagonal"
+    }
+
+    fn duration(&self) -> Duration {
+        Duration::from_millis(400)
+    }
+
+    fn render(
+        &self,
+        ctx: &mut RenderContext<'_>,
+        from: Option<&SlideSurface>,
+        to: &SlideSurface,
+        progress: f32,
+    ) {
+        let t = ease_out_cubic(progress);
+        let width = ctx.width;
+        let height = ctx.height;
+        let max_diag = (width + height) as f32;
+        let threshold = t * max_diag;
+
+        for y in 0..height {
+            let row_start = y * width;
+            for x in 0..width {
+                let diag = (x + y) as f32;
+                let pixel = if diag <= threshold {
+                    to.get_pixel(x, y)
+                } else if let Some(from_surf) = from {
+                    from_surf.get_pixel(x, y)
+                } else {
+                    to.bg_color
+                };
+                ctx.buffer[row_start + x] = pixel;
+            }
+        }
+    }
+}
+
 /// Trait for in-slide component animation effects (fragments / incremental builds)
 pub trait ComponentAnimation: Send + Sync {
     fn name(&self) -> &str;
@@ -1284,6 +1397,8 @@ impl Default for AnimationRegistry {
         registry.register(CyberGlitch);
         registry.register(Cube3D);
         registry.register(ParticleDissolve);
+        registry.register(SlideFade);
+        registry.register(DiagonalWipe);
 
         // Component fragment animations
         registry.register_component(ComponentFadeIn);
@@ -1339,5 +1454,61 @@ impl AnimationRegistry {
         name: &str,
     ) -> Option<Arc<dyn ComponentAnimation>> {
         self.component_animations.get(name).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_easing_functions() {
+        assert_eq!(ease_in_cubic(0.0), 0.0);
+        assert_eq!(ease_in_cubic(1.0), 1.0);
+        assert!((ease_in_cubic(0.5) - 0.125).abs() < 1e-4);
+
+        assert_eq!(ease_in_out_cubic(0.0), 0.0);
+        assert_eq!(ease_in_out_cubic(1.0), 1.0);
+        assert!((ease_in_out_cubic(0.5) - 0.5).abs() < 1e-4);
+
+        assert_eq!(ease_out_expo(0.0), 0.0);
+        assert_eq!(ease_out_expo(1.0), 1.0);
+        assert!(ease_out_expo(0.5) > 0.9);
+    }
+
+    #[test]
+    fn test_slide_fade_and_diagonal_wipe_registry() {
+        let registry = AnimationRegistry::default();
+        let slide_fade = registry.get("slide-fade");
+        assert!(slide_fade.is_some());
+        assert_eq!(slide_fade.unwrap().name(), "slide-fade");
+
+        let diagonal_wipe = registry.get("wipe-diagonal");
+        assert!(diagonal_wipe.is_some());
+        assert_eq!(diagonal_wipe.unwrap().name(), "wipe-diagonal");
+    }
+
+    #[test]
+    fn test_slide_fade_render() {
+        let from = SlideSurface::blank(10, 10, 0xFF000000);
+        let to = SlideSurface::blank(10, 10, 0xFFFFFFFF);
+        let mut buffer = vec![0u32; 100];
+        let mut ctx = RenderContext::new(10, 10, &mut buffer);
+
+        let anim = SlideFade;
+        anim.render(&mut ctx, Some(&from), &to, 0.5);
+        assert_eq!(ctx.buffer.len(), 100);
+    }
+
+    #[test]
+    fn test_diagonal_wipe_render() {
+        let from = SlideSurface::blank(10, 10, 0xFF000000);
+        let to = SlideSurface::blank(10, 10, 0xFFFFFFFF);
+        let mut buffer = vec![0u32; 100];
+        let mut ctx = RenderContext::new(10, 10, &mut buffer);
+
+        let anim = DiagonalWipe;
+        anim.render(&mut ctx, Some(&from), &to, 0.5);
+        assert_eq!(ctx.buffer.len(), 100);
     }
 }

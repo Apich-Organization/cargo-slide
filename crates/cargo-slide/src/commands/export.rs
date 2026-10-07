@@ -287,9 +287,15 @@ pub fn execute(
             let selected_pages = parse_page_selection(pages, deck.total_slides())?;
             export_json(&deck, &selected_pages, &out_file)?;
         },
+        | "html" | "standalone-html" | "single-html" => {
+            let out_file = output.unwrap_or_else(|| PathBuf::from(format!("{stem}.html")));
+            let deck = compiler.compile_file(target_file)?;
+            let selected_pages = parse_page_selection(pages, deck.total_slides())?;
+            export_standalone_html(&deck, &selected_pages, &out_file)?;
+        },
         | other => {
             return Err(format!(
-                "Unsupported export format: {other}. Supported formats: pdf, svg, png, markdown (md), json, slide, wasm"
+                "Unsupported export format: {other}. Supported formats: pdf, svg, png, html, markdown (md), json, slide, wasm"
             )
             .into());
         },
@@ -440,6 +446,30 @@ fn export_json(
             "stage": "export_json_success",
             "output": out_file.display().to_string(),
             "count": count,
+        })),
+    );
+    Ok(())
+}
+
+/// Export presentation to a standalone single-file HTML presentation player
+pub fn export_standalone_html(
+    deck: &slide_core::model::SlideDeck,
+    selected_pages: &[usize],
+    out_file: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    slide_core::export::export_standalone_html(deck, Some(selected_pages), out_file)?;
+
+    slide_core::logger::log_event(
+        "success",
+        &format!(
+            "[OK] Standalone HTML presentation ({} slides) exported successfully to {}",
+            selected_pages.len(),
+            out_file.display()
+        ),
+        Some(serde_json::json!({
+            "stage": "export_html_success",
+            "output": out_file.display().to_string(),
+            "count": selected_pages.len(),
         })),
     );
     Ok(())

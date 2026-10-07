@@ -47,4 +47,7 @@ web-sys = { workspace = true, features = [
     "WheelEvent",
     "Navigator",
     "Clipboard",
+    "TouchEvent",
+    "TouchList",
+    "Touch",
 ] }

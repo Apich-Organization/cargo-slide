@@ -162,14 +162,25 @@ fn dispatch_command(
         }) => {
             commands::serve::execute(&file, port, &ip, dir, open, watch)?;
         },
-        | Some(Commands::Info { file }) => {
-            commands::info::execute(&file)?;
+        | Some(Commands::Info { file, json }) => {
+            commands::info::execute(&file, json)?;
         },
-        | Some(Commands::Check { file, target, json }) => {
-            commands::check::execute(&file, target, json)?;
+        | Some(Commands::Check {
+            file,
+            target,
+            json,
+            fix,
+            rebalance,
+        }) => {
+            commands::check::execute(&file, target, json, fix, rebalance)?;
         },
-        | Some(Commands::Stats { file, json, wpm }) => {
-            commands::stats::execute(&file, json, wpm)?;
+        | Some(Commands::Stats {
+            file,
+            json,
+            wpm,
+            rebalance,
+        }) => {
+            commands::stats::execute(&file, json, wpm, rebalance)?;
         },
         | Some(Commands::Export {
             file,

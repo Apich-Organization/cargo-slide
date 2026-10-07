@@ -107,6 +107,17 @@ pub mod compiler;
     clippy::expect_used
 )]
 pub mod error;
+#[allow(
+    missing_docs,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::single_call_fn,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::unwrap_used,
+    clippy::expect_used
+)]
+pub mod export;
 pub mod font;
 #[allow(
     missing_docs,

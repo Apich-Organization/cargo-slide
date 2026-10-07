@@ -73,6 +73,15 @@ pub fn view_statusbar<'a>(
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
         .on_press(Message::OpenPresentationHealthModal);
 
+    let cheatsheet_btn = button(
+        text("Cheatsheet (F1)")
+            .size(11)
+            .color(theme.text_secondary()),
+    )
+    .padding([2, 6])
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .on_press(Message::OpenCheatsheetModal);
+
     let divider_widget = || {
         container(
             Space::new()
@@ -98,6 +107,7 @@ pub fn view_statusbar<'a>(
         left_info = left_info.push(pacing_btn);
     }
     left_info = left_info.push(health_btn);
+    left_info = left_info.push(cheatsheet_btn);
 
     // Center: Compiler Diagnostic status indicator
     let compiler_indicator: Element<'a, Message> = match status {

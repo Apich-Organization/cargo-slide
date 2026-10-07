@@ -38,6 +38,7 @@ pub struct DeckStatsReport {
     pub rhythm_description: String,
     pub pace_variance_seconds: f32,
     pub checkpoints: Vec<String>,
+    pub rebalance_report: Option<slide_core::pacing::DeckRebalanceReport>,
     pub slides: Vec<SlideStatEntry>,
 }
 
@@ -46,6 +47,7 @@ pub struct DeckStatsReport {
 pub fn analyze_deck_stats(
     deck: &SlideDeck,
     wpm: u32,
+    rebalance_mins: Option<u64>,
 ) -> DeckStatsReport {
     let calibrated_wpm = if wpm == 0 { 130 } else { wpm };
     let mut slides_stats = Vec::with_capacity(deck.slides.len());
@@ -105,6 +107,8 @@ pub fn analyze_deck_stats(
     let est_duration_brisk_mins = (total_pace_words as f32 / 160.0).max(1.0);
 
     let pacing_report = slide_core::pacing::calculate_deck_pacing(deck, &[]);
+    let rebalance_report =
+        rebalance_mins.map(|mins| slide_core::pacing::rebalance_deck_pacing(deck, mins as usize));
 
     DeckStatsReport {
         title: deck.title.clone(),
@@ -127,6 +131,7 @@ pub fn analyze_deck_stats(
             .iter()
             .map(|idx| format!("Slide #{idx}"))
             .collect(),
+        rebalance_report,
         slides: slides_stats,
     }
 }
@@ -141,6 +146,7 @@ pub fn execute(
     file: &Path,
     json: bool,
     wpm: u32,
+    rebalance: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
     let target = resolved_file.as_path();
@@ -157,7 +163,7 @@ pub fn execute(
         compiler.compile_file(target)?
     };
 
-    let report = analyze_deck_stats(&deck, wpm);
+    let report = analyze_deck_stats(&deck, wpm, rebalance);
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -168,6 +174,7 @@ pub fn execute(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
 fn print_report_console(
     report: &DeckStatsReport,
     wpm: u32,
@@ -256,5 +263,37 @@ fn print_report_console(
             );
         }
         println!();
+    }
+
+    if let Some(ref reb) = report.rebalance_report {
+        println!("  ── Intelligent Pacing Rebalance Timetable ────────────────");
+        println!("  Slide  Target Sec  Target Min  Cognitive Weight  Status");
+        println!("  ─────  ──────────  ──────────  ────────────────  ──────");
+        for alloc in &reb.slide_allocations {
+            let status = if alloc.is_bottleneck {
+                "⚠️ Bottleneck slide"
+            } else {
+                "OK"
+            };
+            println!(
+                "   #{:<3}  {:<10}  ~{:<8.1}  {:<16.2}  {}",
+                alloc.slide_index,
+                format!("{}s", alloc.budgeted_seconds),
+                alloc.budgeted_seconds as f64 / 60.0,
+                alloc.cognitive_weight,
+                status
+            );
+        }
+        println!();
+        if !reb.checkpoints.is_empty() {
+            println!("  Presentation Checkpoints:");
+            for cp in &reb.checkpoints {
+                println!(
+                    "    • {:>3}% Checkpoint at Slide #{} (~{:.1} min mark)",
+                    cp.milestone_percent, cp.slide_index, cp.target_minute_mark
+                );
+            }
+            println!();
+        }
     }
 }

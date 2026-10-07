@@ -688,6 +688,8 @@ pub struct PackageVerificationReport {
     pub asset_count: usize,
     /// Size of package file on disk in bytes
     pub file_size: u64,
+    /// Total uncompressed size of extracted content in bytes
+    pub uncompressed_bytes: u64,
     /// Any warnings encountered during inspection
     pub warnings: Vec<String>,
 }
@@ -702,6 +704,7 @@ pub fn verify_package_integrity(package_path: &Path) -> Result<PackageVerificati
     let (deck, temp_dir) = unpack_deck_and_assets(package_path)?;
 
     let mut asset_count = 0usize;
+    let mut uncompressed_bytes = 0u64;
     let mut warnings = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(&temp_dir) {
@@ -709,10 +712,16 @@ pub fn verify_package_integrity(package_path: &Path) -> Result<PackageVerificati
             let p = entry.path();
             if p.is_file() {
                 asset_count = asset_count.saturating_add(1);
+                if let Ok(m) = std::fs::metadata(&p) {
+                    uncompressed_bytes = uncompressed_bytes.saturating_add(m.len());
+                }
             } else if p.is_dir() {
                 for sub in walkdir::WalkDir::new(&p).into_iter().flatten() {
                     if sub.file_type().is_file() {
                         asset_count = asset_count.saturating_add(1);
+                        if let Ok(m) = std::fs::metadata(sub.path()) {
+                            uncompressed_bytes = uncompressed_bytes.saturating_add(m.len());
+                        }
                     }
                 }
             }
@@ -740,6 +749,30 @@ pub fn verify_package_integrity(package_path: &Path) -> Result<PackageVerificati
         }
     }
 
+    // Verify referenced media assets in slides exist in unpacked assets
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        for hs in &slide.hotspots {
+            let media_src = match hs {
+                | crate::model::Hotspot::Video { source, .. }
+                | crate::model::Hotspot::Audio { source, .. } => Some(source.as_str()),
+                | _ => None,
+            };
+            if let Some(src) = media_src
+                && !src.contains("://")
+                && !src.starts_with('#')
+            {
+                let clean = src.strip_prefix("file://").unwrap_or(src);
+                let file_path = temp_dir.join(clean);
+                if !file_path.exists() {
+                    warnings.push(format!(
+                        "Slide {}: Missing embedded media asset in package: '{clean}'",
+                        idx.saturating_add(1)
+                    ));
+                }
+            }
+        }
+    }
+
     if deck.slides.is_empty() {
         warnings.push("Package contains zero slides.".to_string());
     }
@@ -750,6 +783,7 @@ pub fn verify_package_integrity(package_path: &Path) -> Result<PackageVerificati
         slide_count: deck.slides.len(),
         asset_count,
         file_size,
+        uncompressed_bytes,
         warnings,
     })
 }

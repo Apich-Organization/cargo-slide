@@ -321,3 +321,22 @@ Second slide with notes.
             .all(|i| i.severity != slide_core::compiler::HealthSeverity::Error)
     );
 }
+
+#[test]
+fn test_auto_fix_source() {
+    use slide_core::compiler::auto_fix_source;
+
+    // Test missing imports and legacy speaker-note macros
+    let source = r#"#title-slide(title: "My Slide")
+#slide(title: "Overview")[
+  Content here
+  #speaker-note[Remember to smile]
+"#;
+
+    let res = auto_fix_source(source);
+    assert!(res.fixed_source.contains("#import \"theme.typ\": *"));
+    assert!(res.fixed_source.contains("#import \"slide.typ\": *"));
+    assert!(res.fixed_source.contains("// [note]: Remember to smile"));
+    assert!(res.fixed_source.contains(']'));
+    assert!(!res.repairs.is_empty());
+}

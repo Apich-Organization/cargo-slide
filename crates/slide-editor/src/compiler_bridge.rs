@@ -669,4 +669,13 @@ impl CompilerBridge {
         let first_slide = deck.slides.first()?;
         Self::render_svg_to_image(&first_slide.svg_data, 1.5, None)
     }
+
+    /// Export slide deck to a standalone single-file HTML presentation player
+    pub fn export_standalone_html(
+        deck: &SlideDeck,
+        target: &Path,
+        pages: Option<&[usize]>,
+    ) -> Result<PathBuf> {
+        slide_core::export::export_standalone_html(deck, pages, target)
+    }
 }

@@ -607,6 +607,162 @@ impl RehearsalSession {
     }
 }
 
+/// Individual slide allocation resulting from pacing rebalancing
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SlidePacingAllocation {
+    pub slide_index: usize,
+    pub title: String,
+    pub budgeted_seconds: usize,
+    pub cognitive_weight: f64,
+    pub cumulative_start_seconds: usize,
+    pub cumulative_end_seconds: usize,
+    pub is_bottleneck: bool,
+    pub recommendation: String,
+}
+
+/// Checkpoint milestone along the presentation timeline
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PacingCheckpoint {
+    pub milestone_percent: usize,
+    pub target_minute_mark: f32,
+    pub slide_index: usize,
+    pub slide_title: String,
+}
+
+/// Comprehensive report produced by rebalancing a deck against a target talk limit
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeckRebalanceReport {
+    pub target_minutes: usize,
+    pub target_seconds: usize,
+    pub total_slides: usize,
+    pub slide_allocations: Vec<SlidePacingAllocation>,
+    pub checkpoints: Vec<PacingCheckpoint>,
+    pub pacing_bottlenecks: Vec<String>,
+}
+
+/// Rebalance deck pacing to fit an allotted time limit proportionally based on cognitive load
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+pub fn rebalance_deck_pacing(
+    deck: &SlideDeck,
+    target_minutes: usize,
+) -> DeckRebalanceReport {
+    let target_mins = target_minutes.max(1);
+    let target_seconds = target_mins.saturating_mul(60);
+    let total_slides = deck.slides.len();
+
+    if total_slides == 0 {
+        return DeckRebalanceReport {
+            target_minutes: target_mins,
+            target_seconds,
+            total_slides: 0,
+            slide_allocations: Vec::new(),
+            checkpoints: Vec::new(),
+            pacing_bottlenecks: Vec::new(),
+        };
+    }
+
+    // 1. Calculate raw cognitive weight per slide
+    let mut weights = Vec::with_capacity(total_slides);
+    let mut titles = Vec::with_capacity(total_slides);
+
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let info = calculate_slide_pacing(slide, idx, None);
+        titles.push(info.title);
+        let est_sec = info.estimated_seconds.max(15) as f64;
+        weights.push(est_sec);
+    }
+
+    let total_weight: f64 = weights.iter().sum();
+    let safe_total_weight = if total_weight <= 0.0 {
+        1.0
+    } else {
+        total_weight
+    };
+
+    // 2. Proportionally scale to target_seconds
+    let mut allocations = Vec::with_capacity(total_slides);
+    let mut running_sec = 0usize;
+    let mut bottlenecks = Vec::new();
+
+    for (idx, &w) in weights.iter().enumerate() {
+        let proportion = w / safe_total_weight;
+        let mut budgeted = (proportion * target_seconds as f64).round() as usize;
+        // Clamp to at least 10 seconds per slide
+        budgeted = budgeted.max(10);
+
+        let start_sec = running_sec;
+        let end_sec = start_sec.saturating_add(budgeted);
+        running_sec = end_sec;
+
+        let title = titles
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| format!("Slide {}", idx.saturating_add(1)));
+        let is_bottleneck = budgeted > 180; // > 3 minutes on a single slide
+
+        if is_bottleneck {
+            bottlenecks.push(format!(
+                "Slide #{}: \"{}\" allotted {}s (>3 min) - consider splitting",
+                idx.saturating_add(1),
+                title,
+                budgeted
+            ));
+        }
+
+        let recommendation = if is_bottleneck {
+            "Content heavy: consider breaking into two slides or using step reveals".to_string()
+        } else if budgeted < 20 {
+            "Brief overview slide: keep transition brisk (<20s)".to_string()
+        } else {
+            format!("Allotted pace: ~{:.1} min", budgeted as f32 / 60.0)
+        };
+
+        allocations.push(SlidePacingAllocation {
+            slide_index: idx.saturating_add(1),
+            title,
+            budgeted_seconds: budgeted,
+            cognitive_weight: proportion,
+            cumulative_start_seconds: start_sec,
+            cumulative_end_seconds: end_sec,
+            is_bottleneck,
+            recommendation,
+        });
+    }
+
+    // 3. Compute 25%, 50%, 75% milestone checkpoints
+    let mut checkpoints = Vec::new();
+    let milestone_targets = [25usize, 50, 75];
+
+    for &pct in &milestone_targets {
+        let milestone_sec = (target_seconds.saturating_mul(pct)) / 100;
+        let found = allocations
+            .iter()
+            .find(|a| a.cumulative_end_seconds >= milestone_sec);
+        if let Some(alloc) = found {
+            checkpoints.push(PacingCheckpoint {
+                milestone_percent: pct,
+                target_minute_mark: milestone_sec as f32 / 60.0,
+                slide_index: alloc.slide_index,
+                slide_title: alloc.title.clone(),
+            });
+        }
+    }
+
+    DeckRebalanceReport {
+        target_minutes: target_mins,
+        target_seconds,
+        total_slides,
+        slide_allocations: allocations,
+        checkpoints,
+        pacing_bottlenecks: bottlenecks,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -637,5 +793,44 @@ mod tests {
         assert_eq!(session.total_actual_seconds, 153);
         assert!(session.adherence_score >= 90);
         assert!(session.summary.contains("Optimal rehearsal"));
+    }
+
+    #[test]
+    fn test_rebalance_deck_pacing() {
+        let deck = SlideDeck {
+            title: "Pacing Demo".to_string(),
+            default_animation: "fade".to_string(),
+            slides: vec![
+                Slide {
+                    page_number: 1,
+                    svg_data: "<svg><text>Title Slide</text></svg>".to_string(),
+                    view_box: crate::model::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                    notes: Some("Welcome to this presentation".to_string()),
+                    hotspots: vec![],
+                    animation: None,
+                    steps: vec![],
+                },
+                Slide {
+                    page_number: 2,
+                    svg_data: "<svg><text>Detailed Architecture & System Design Analysis with rich code content</text></svg>".to_string(),
+                    view_box: crate::model::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                    notes: Some("Here we go through the in-depth system architecture covering fifty different aspects".to_string()),
+                    hotspots: vec![],
+                    animation: None,
+                    steps: vec![],
+                },
+            ],
+        };
+
+        let report = rebalance_deck_pacing(&deck, 10); // 10 minutes = 600s
+        assert_eq!(report.target_minutes, 10);
+        assert_eq!(report.target_seconds, 600);
+        assert_eq!(report.total_slides, 2);
+        assert_eq!(report.slide_allocations.len(), 2);
+        assert!(report.slide_allocations[0].budgeted_seconds >= 10);
+        assert!(
+            report.slide_allocations[1].budgeted_seconds
+                >= report.slide_allocations[0].budgeted_seconds
+        );
     }
 }

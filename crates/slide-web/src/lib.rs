@@ -179,6 +179,7 @@ fn create_fallback_deck() -> SlideDeck {
             model::Slide {
                 page_number: 1,
                 view_box: Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                notes: None,
                 hotspots: Vec::new(),
                 animation: Some("fade".to_string()),
                 steps: Vec::new(),
@@ -264,6 +265,8 @@ pub fn App() -> impl IntoView {
     // Modals
     let overview_open = RwSignal::new(false);
     let help_open = RwSignal::new(false);
+    let notes_open = RwSignal::new(false);
+    let touch_start_x = RwSignal::new(None::<f64>);
     let is_blank = RwSignal::new(false);
     let is_white_blank = RwSignal::new(false);
     let active_video_modal = RwSignal::new(None::<(String, Option<String>)>);
@@ -326,9 +329,27 @@ pub fn App() -> impl IntoView {
                 return;
             };
             if !loaded_deck.slides.is_empty() {
+                let initial_target = if let Some(w) = web_sys::window() {
+                    if let Ok(hash) = w.location().hash() {
+                        let clean = hash.trim_start_matches('#');
+                        if let Some(num_str) = clean.strip_prefix("slide=") {
+                            num_str.parse::<usize>().ok().map(|p| p.saturating_sub(1))
+                        } else {
+                            clean.parse::<usize>().ok().map(|p| p.saturating_sub(1))
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+                .unwrap_or(0)
+                .min(loaded_deck.slides.len().saturating_sub(1));
+
+                current_index.set(initial_target);
                 let first_max_step = loaded_deck
                     .slides
-                    .first()
+                    .get(initial_target)
                     .map(|s| s.max_step())
                     .unwrap_or(0);
                 current_step.set(if first_max_step > 0 { 1 } else { 0 });
@@ -449,6 +470,10 @@ pub fn App() -> impl IntoView {
             let max_st = d.slides.get(target_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(if max_st > 0 { 1 } else { 0 });
             overview_open.set(false);
+            if let Some(w) = web_sys::window() {
+                let hash = format!("#{}", target_idx + 1);
+                let _ = w.location().set_hash(&hash);
+            }
             trigger_audio_for_slide(target_idx);
         }
     };
@@ -497,9 +522,13 @@ pub fn App() -> impl IntoView {
         }
 
         match ev.key().as_str() {
-            | "ArrowRight" | "ArrowDown" | " " | "Enter" | "PageDown" | "n" => {
+            | "ArrowRight" | "ArrowDown" | " " | "Enter" | "PageDown" => {
                 ev.prevent_default();
                 next_step_or_slide();
+            },
+            | "n" | "N" => {
+                ev.prevent_default();
+                notes_open.update(|v| *v = !*v);
             },
             | "ArrowLeft" | "ArrowUp" | "PageUp" | "Backspace" => {
                 ev.prevent_default();
@@ -664,11 +693,35 @@ pub fn App() -> impl IntoView {
                     help_open.set(false);
                 } else if overview_open.get() {
                     overview_open.set(false);
+                } else if notes_open.get() {
+                    notes_open.set(false);
                 } else if is_blank.get() {
                     is_blank.set(false);
                 }
             },
             | _ => {},
+        }
+    });
+
+    // Touch swipe gesture navigation
+    window_event_listener(leptos::ev::touchstart, move |ev: web_sys::TouchEvent| {
+        if let Some(touch) = ev.touches().get(0) {
+            touch_start_x.set(Some(touch.client_x() as f64));
+        }
+    });
+
+    window_event_listener(leptos::ev::touchend, move |ev: web_sys::TouchEvent| {
+        if let Some(start_x) = touch_start_x.get() {
+            if let Some(touch) = ev.changed_touches().get(0) {
+                let end_x = touch.client_x() as f64;
+                let dx = end_x - start_x;
+                if dx < -50.0 {
+                    next_step_or_slide();
+                } else if dx > 50.0 {
+                    prev_step_or_slide();
+                }
+            }
+            touch_start_x.set(None);
         }
     });
 
@@ -1285,6 +1338,7 @@ pub fn App() -> impl IntoView {
                             trigger_toast(format!("Theme: {}", mode));
                         }
                     >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
+                    <button class="hud-btn" title="Speaker Notes (N)" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
                     <button class="hud-btn" title="Slide Overview Grid (O)" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
                     <button class="hud-btn" title="Toggle Fullscreen (F)" on:click=move |_| toggle_fullscreen()>"⛶"</button>
                     <button class="hud-btn" title="Help & Shortcuts (?)" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
@@ -1448,6 +1502,38 @@ pub fn App() -> impl IntoView {
                                             <tr><td><kbd>"Esc"</kbd></td><td>Close Active Modal</td></tr>
                                         </tbody>
                                     </table>
+                                </div>
+                            </div>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <div/> }.into_any()
+                }
+            }}
+
+            // Presenter Speaker Notes Modal
+            {move || {
+                if notes_open.get() {
+                    let cur_slide = current_slide.get();
+                    let notes_text = cur_slide.as_ref().and_then(|s| s.notes.clone()).unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string());
+                    let word_count = notes_text.split_whitespace().count();
+                    let est_secs = ((word_count as f64 / 130.0) * 60.0).round() as usize;
+
+                    view! {
+                        <div class="modal-overlay" on:click=move |_| notes_open.set(false)>
+                            <div class="modal-card notes-modal" style="max-width: 560px; padding: 24px; background: rgba(18, 24, 38, 0.96); border: 1px solid rgba(88, 166, 255, 0.3); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.6); color: #f0f6fc;" on:click=move |e| e.stop_propagation()>
+                                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 20px;">"📝"</span>
+                                        <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #58a6ff;">{format!("Speaker Notes • Slide {}/{}", current_index.get() + 1, total_slides.get())}</h3>
+                                    </div>
+                                    <button class="close-btn" style="background: none; border: none; font-size: 18px; color: #8b949e; cursor: pointer;" on:click=move |_| notes_open.set(false)>"✕"</button>
+                                </div>
+                                <div class="notes-meta" style="font-size: 13px; color: #8b949e; margin-bottom: 14px;">
+                                    {format!("~{}s estimated speaking time • {} words", est_secs.max(5), word_count)}
+                                </div>
+                                <div class="notes-body" style="font-size: 15px; line-height: 1.6; white-space: pre-wrap; max-height: 380px; overflow-y: auto; background: rgba(0,0,0,0.25); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                                    {notes_text}
                                 </div>
                             </div>
                         </div>
