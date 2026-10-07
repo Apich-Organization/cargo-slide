@@ -20,6 +20,8 @@ pub enum SlideError {
     Watcher(String),
     #[error("Package error: {0}")]
     Package(String),
+    #[error("File not found: {0}")]
+    NotFound(String),
 }
 
 impl From<notify::Error> for SlideError {

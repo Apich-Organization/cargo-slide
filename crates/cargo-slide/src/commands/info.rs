@@ -8,11 +8,10 @@ use std::path::Path;
 /// Inspect and display presentation metadata and integrity
 #[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
 pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !file.exists() {
-        return Err(format!("File does not exist: {}", file.display()).into());
-    }
+    let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
+    let target = resolved_file.as_path();
 
-    let is_slide_pkg = file.extension().and_then(|e| e.to_str()) == Some("slide");
+    let is_slide_pkg = target.extension().and_then(|e| e.to_str()) == Some("slide");
 
     println!();
     println!("  ┌────────────────────────────────────────────────────────┐");
@@ -21,10 +20,10 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     if is_slide_pkg {
-        let meta = read_package_metadata(file)?;
-        let file_size = std::fs::metadata(file).map_or(0, |m| m.len());
+        let meta = read_package_metadata(target)?;
+        let file_size = std::fs::metadata(target).map_or(0, |m| m.len());
 
-        println!("  Package:          {}", file.display());
+        println!("  Package:          {}", target.display());
         println!("  Title:            {}", meta.title);
         println!(
             "  Format:           cargo-slide (v{}, {})",
@@ -77,7 +76,7 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!();
 
         println!("  Running deep integrity verification...");
-        match verify_package_integrity(file) {
+        match verify_package_integrity(target) {
             | Ok(report) => {
                 println!("  [OK] Integrity:      PASSED (Structural LZMA2 TAR is valid)");
                 println!("  [OK] Verified Slides: {} slides", report.slide_count);
@@ -95,9 +94,9 @@ pub fn execute(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             },
         }
     } else {
-        println!("  Typst Source:     {}", file.display());
+        println!("  Typst Source:     {}", target.display());
         let compiler = SlideCompiler::new()?;
-        let deck = compiler.compile_file(file)?;
+        let deck = compiler.compile_file(target)?;
 
         println!("  Title:            {}", deck.title);
         println!("  Slide Count:      {} slides", deck.total_slides());

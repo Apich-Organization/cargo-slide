@@ -573,10 +573,10 @@ impl EditorDocument {
 
     /// Remove the recovery draft after successful save or discard
     pub fn clear_recovery_draft(&self) -> Result<()> {
-        if let Some(draft_path) = self.recovery_draft_path() {
-            if draft_path.exists() {
-                let _ = std::fs::remove_file(draft_path);
-            }
+        if let Some(draft_path) = self.recovery_draft_path()
+            && draft_path.exists()
+        {
+            let _ = std::fs::remove_file(draft_path);
         }
         Ok(())
     }

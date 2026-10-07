@@ -216,10 +216,10 @@ impl Slide {
     /// Extract human-readable slide title from SVG text or fallback
     #[must_use]
     pub fn extract_title(&self) -> String {
-        if let Some(title) = crate::svg::extract_title_from_svg(&self.svg_data) {
-            if !title.trim().is_empty() {
-                return title;
-            }
+        if let Some(title) = crate::svg::extract_title_from_svg(&self.svg_data)
+            && !title.trim().is_empty()
+        {
+            return title;
         }
         format!("Slide {}", self.page_number)
     }

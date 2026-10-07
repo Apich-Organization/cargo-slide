@@ -928,13 +928,11 @@ pub fn extract_text_from_svg(svg: &str) -> String {
                     let tag = a.tag_name().name();
                     tag == "style" || tag == "script" || tag == "defs" || tag == "metadata"
                 });
-                if !in_ignored {
-                    if let Some(text) = node.text() {
-                        let decoded = decode_xml_entities(text);
-                        let trimmed = decoded.trim();
-                        if !trimmed.is_empty() {
-                            words.push(trimmed.to_string());
-                        }
+                if !in_ignored && let Some(text) = node.text() {
+                    let decoded = decode_xml_entities(text);
+                    let trimmed = decoded.trim();
+                    if !trimmed.is_empty() {
+                        words.push(trimmed.to_string());
                     }
                 }
             }
@@ -987,10 +985,10 @@ pub fn extract_title_from_svg(svg: &str) -> Option<String> {
                 // Collect child text leaf nodes
                 let mut full_text = String::new();
                 for child in node.descendants() {
-                    if child.is_text() {
-                        if let Some(t) = child.text() {
-                            full_text.push_str(t);
-                        }
+                    if child.is_text()
+                        && let Some(t) = child.text()
+                    {
+                        full_text.push_str(t);
                     }
                 }
                 let decoded = decode_xml_entities(&full_text);

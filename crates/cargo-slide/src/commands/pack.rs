@@ -16,11 +16,10 @@ pub fn execute(
     animation: &str,
     source: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    if !file.exists() {
-        return Err(format!("File does not exist: {}", file.display()).into());
-    }
+    let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
+    let target = resolved_file.as_path();
 
-    let stem = file
+    let stem = target
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("presentation");
@@ -31,25 +30,25 @@ pub fn execute(
         &format!(
             "Packaging presentation into .slide archive (source: {}): {}",
             source,
-            file.display()
+            target.display()
         ),
         Some(serde_json::json!({
             "stage": "pack_start",
-            "source_file": file.display().to_string(),
+            "source_file": target.display().to_string(),
             "output_file": out_file.display().to_string(),
             "include_source": source,
         })),
     );
 
     let compiler = SlideCompiler::new()?;
-    let mut deck = compiler.compile_file(file)?;
+    let mut deck = compiler.compile_file(target)?;
 
     if !animation.is_empty() {
         deck.default_animation = animation.to_string();
     }
 
-    let base_dir = file.parent();
-    pack_deck_with_source_and_assets(&deck, base_dir, &out_file, source, Some(file))?;
+    let base_dir = target.parent();
+    pack_deck_with_source_and_assets(&deck, base_dir, &out_file, source, Some(target))?;
 
     let size_bytes = std::fs::metadata(&out_file).map(|m| m.len()).unwrap_or(0);
     let size_kb = (size_bytes as f64) / 1024.0;

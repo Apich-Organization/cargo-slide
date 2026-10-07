@@ -240,13 +240,13 @@ pub enum Commands {
         #[arg(long, default_value_t = 130)]
         wpm: u32,
     },
-    /// Export presentation to PDF, SVG, PNG, .slide, or WASM CSR
+    /// Export presentation to PDF, SVG, PNG, Markdown handout, JSON, .slide, or WASM CSR
     Export {
         /// Path to .typ slide file (default: slides.typ)
         #[arg(default_value = "slides.typ")]
         file: PathBuf,
 
-        /// Export format (pdf, svg, png, slide, wasm)
+        /// Export format (pdf, svg, png, markdown/md, json, slide, wasm)
         #[arg(short, long, default_value = "pdf")]
         format: String,
 
@@ -264,4 +264,6 @@ pub enum Commands {
     },
     /// Install universal slide-viewer player and desktop integration to system
     InstallViewer,
+    /// Audit environment, Typst compiler, media players, and cargo-slide dependencies
+    Doctor,
 }

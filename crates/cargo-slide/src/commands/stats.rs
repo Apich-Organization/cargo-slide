@@ -34,6 +34,10 @@ pub struct DeckStatsReport {
     pub est_duration_slow_mins: f32,
     pub est_duration_target_mins: f32,
     pub est_duration_brisk_mins: f32,
+    pub rhythm_score: u32,
+    pub rhythm_description: String,
+    pub pace_variance_seconds: f32,
+    pub checkpoints: Vec<String>,
     pub slides: Vec<SlideStatEntry>,
 }
 
@@ -100,6 +104,8 @@ pub fn analyze_deck_stats(
     let est_duration_target_mins = (total_pace_words as f32 / calibrated_wpm as f32).max(1.0);
     let est_duration_brisk_mins = (total_pace_words as f32 / 160.0).max(1.0);
 
+    let pacing_report = slide_core::pacing::calculate_deck_pacing(deck, &[]);
+
     DeckStatsReport {
         title: deck.title.clone(),
         total_slides,
@@ -113,6 +119,14 @@ pub fn analyze_deck_stats(
         est_duration_slow_mins,
         est_duration_target_mins,
         est_duration_brisk_mins,
+        rhythm_score: pacing_report.rhythm_score,
+        rhythm_description: pacing_report.rhythm_description,
+        pace_variance_seconds: pacing_report.pace_variance_seconds as f32,
+        checkpoints: pacing_report
+            .checkpoint_recommendations
+            .iter()
+            .map(|idx| format!("Slide #{idx}"))
+            .collect(),
         slides: slides_stats,
     }
 }
@@ -128,20 +142,19 @@ pub fn execute(
     json: bool,
     wpm: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !file.exists() {
-        return Err(format!("File does not exist: {}", file.display()).into());
-    }
+    let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
+    let target = resolved_file.as_path();
 
     if json {
         slide_core::logger::set_silent(true);
     }
 
-    let deck = if file.extension().and_then(|e| e.to_str()) == Some("slide") {
-        let _ = read_package_metadata(file)?;
-        unpack_deck_from_file(file)?
+    let deck = if target.extension().and_then(|e| e.to_str()) == Some("slide") {
+        let _ = read_package_metadata(target)?;
+        unpack_deck_from_file(target)?
     } else {
         let compiler = SlideCompiler::new()?;
-        compiler.compile_file(file)?
+        compiler.compile_file(target)?
     };
 
     let report = analyze_deck_stats(&deck, wpm);
@@ -151,6 +164,14 @@ pub fn execute(
         return Ok(());
     }
 
+    print_report_console(&report, wpm);
+    Ok(())
+}
+
+fn print_report_console(
+    report: &DeckStatsReport,
+    wpm: u32,
+) {
     println!();
     println!("  ┌────────────────────────────────────────────────────────┐");
     println!("  │  [STATS] Cargo Slide Deck Analytics & Pacing Report    │");
@@ -185,11 +206,34 @@ pub fn execute(
         report.est_duration_brisk_mins
     );
     println!();
+    println!("  ── Delivery Dynamics & Rhythm ────────────────────────────");
+    println!(
+        "  • Rhythm Score:        {}/100 ({})",
+        report.rhythm_score, report.rhythm_description
+    );
+    println!(
+        "  • Pace Variance:       ±{:.1}s per slide",
+        report.pace_variance_seconds
+    );
+    if !report.checkpoints.is_empty() {
+        println!(
+            "  • Suggested Checkpoints: {}",
+            report.checkpoints.join(", ")
+        );
+    }
+    println!();
 
     if !report.slides.is_empty() {
         println!("  ── Per-Slide Pacing Breakdown ────────────────────────────");
-        println!("  Slide  Words  Est. Sec  Notes  Status");
-        println!("  ─────  ─────  ────────  ─────  ──────");
+        println!("  Slide  Words  Duration Timeline       Notes  Status");
+        println!("  ─────  ─────  ─────────────────────   ─────  ──────");
+        let max_sec = report
+            .slides
+            .iter()
+            .map(|s| s.estimated_seconds)
+            .max()
+            .unwrap_or(60)
+            .max(30);
         for s in &report.slides {
             let notes_badge = if s.has_notes { "YES" } else { "---" };
             let status = if s.estimated_seconds > 180 {
@@ -199,17 +243,18 @@ pub fn execute(
             } else {
                 "Healthy"
             };
+            let filled = ((s.estimated_seconds.saturating_mul(10)) / max_sec).clamp(1, 10) as usize;
+            let bar = format!(
+                "[{}{}] ~{}s",
+                "█".repeat(filled),
+                "░".repeat(10 - filled),
+                s.estimated_seconds
+            );
             println!(
-                "   #{:<3}  {:<5}  {:<8}  {:<5}  {}",
-                s.slide_index,
-                s.word_count,
-                format!("~{}s", s.estimated_seconds),
-                notes_badge,
-                status
+                "   #{:<3}  {:<5}  {:<22}  {:<5}  {}",
+                s.slide_index, s.word_count, bar, notes_badge, status
             );
         }
         println!();
     }
-
-    Ok(())
 }

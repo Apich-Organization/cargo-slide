@@ -17,10 +17,15 @@ pub fn execute(
     target: Option<&str>,
     source: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
+    let target_file = resolved_file.as_path();
+
     match format.to_lowercase().as_str() {
-        | "slide" | "package" => crate::commands::pack::execute(file, output, animation, source),
-        | "wasm" | "web" | "csr" => execute_wasm(file, output, animation),
-        | "binary" | "exe" | "elf" | "" => execute_binary(file, output, animation, target),
+        | "slide" | "package" => {
+            crate::commands::pack::execute(target_file, output, animation, source)
+        },
+        | "wasm" | "web" | "csr" => execute_wasm(target_file, output, animation),
+        | "binary" | "exe" | "elf" | "" => execute_binary(target_file, output, animation, target),
         | other => {
             Err(
                 format!("Unknown build format: '{other}'. Supported formats: binary, slide, wasm")

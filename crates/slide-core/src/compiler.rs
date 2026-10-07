@@ -49,6 +49,68 @@ pub fn get_render_cache_dir(typ_file: &Path) -> PathBuf {
     temp
 }
 
+/// Resolve a requested slide presentation file, or intelligently auto-detect available candidates in current directory.
+pub fn resolve_presentation_target(requested: &Path) -> Result<PathBuf> {
+    if requested.exists() {
+        return Ok(requested.to_path_buf());
+    }
+
+    let dir = requested.parent().unwrap_or_else(|| Path::new("."));
+    let mut candidates = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                // Exclude macro / support typst files
+                if name == "theme.typ" || name == "slide.typ" {
+                    continue;
+                }
+                if let Some(ext) = p.extension().and_then(|e| e.to_str())
+                    && (ext.eq_ignore_ascii_case("typ") || ext.eq_ignore_ascii_case("slide"))
+                {
+                    candidates.push(p);
+                }
+            }
+        }
+    }
+
+    candidates.sort();
+
+    match candidates.len() {
+        | 1 => {
+            let auto = candidates.remove(0);
+            crate::logger::log_event(
+                "info",
+                &format!(
+                    "[AUTO-DETECT] Default '{}' not found. Using presentation candidate: '{}'",
+                    requested.display(),
+                    auto.display()
+                ),
+                None,
+            );
+            Ok(auto)
+        },
+        | 0 => {
+            Err(SlideError::NotFound(format!(
+                "Presentation file '{}' does not exist, and no '*.typ' or '*.slide' candidates found in '{}'.\nHint: Run 'cargo slide init <name>' to create a new presentation.",
+                requested.display(),
+                dir.display()
+            )))
+        },
+        | _ => {
+            let names: Vec<String> = candidates.iter().map(|c| c.display().to_string()).collect();
+            Err(SlideError::NotFound(format!(
+                "Presentation file '{}' does not exist. Multiple candidates found: {}.\nPlease specify target explicitly, e.g. 'cargo slide run {}'",
+                requested.display(),
+                names.join(", "),
+                names.first().map(String::as_str).unwrap_or("slides.typ")
+            )))
+        },
+    }
+}
+
 /// Compiler for Typst presentation files
 pub struct SlideCompiler {
     typst_path: PathBuf,
@@ -835,19 +897,19 @@ pub fn extract_deck_title_from_source(source: &str) -> Option<String> {
         // 1. #title-slide(title: "...")
         if let Some(pos) = trimmed.find("title:") {
             let rest = trimmed[pos + 6..].trim();
-            if let Some(stripped) = rest.strip_prefix('"') {
-                if let Some(end) = stripped.find('"') {
-                    let title = stripped[..end].trim();
-                    if !title.is_empty() {
-                        return Some(title.to_string());
-                    }
+            if let Some(stripped) = rest.strip_prefix('"')
+                && let Some(end) = stripped.find('"')
+            {
+                let title = stripped[..end].trim();
+                if !title.is_empty() {
+                    return Some(title.to_string());
                 }
-            } else if let Some(stripped) = rest.strip_prefix('[') {
-                if let Some(end) = stripped.find(']') {
-                    let title = stripped[..end].trim();
-                    if !title.is_empty() {
-                        return Some(title.to_string());
-                    }
+            } else if let Some(stripped) = rest.strip_prefix('[')
+                && let Some(end) = stripped.find(']')
+            {
+                let title = stripped[..end].trim();
+                if !title.is_empty() {
+                    return Some(title.to_string());
                 }
             }
         }
@@ -857,12 +919,12 @@ pub fn extract_deck_title_from_source(source: &str) -> Option<String> {
             && let Some(pos) = trimmed.find("title:")
         {
             let rest = trimmed[pos + 6..].trim();
-            if let Some(stripped) = rest.strip_prefix('"') {
-                if let Some(end) = stripped.find('"') {
-                    let title = stripped[..end].trim();
-                    if !title.is_empty() {
-                        return Some(title.to_string());
-                    }
+            if let Some(stripped) = rest.strip_prefix('"')
+                && let Some(end) = stripped.find('"')
+            {
+                let title = stripped[..end].trim();
+                if !title.is_empty() {
+                    return Some(title.to_string());
                 }
             }
         }
@@ -1055,6 +1117,7 @@ pub struct PresentationHealthIssue {
 
 /// Analyze a presentation deck and source code for common pitfalls and formatting issues.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn check_presentation_health(
     deck: &SlideDeck,
     source: &str,
@@ -1218,26 +1281,25 @@ pub fn check_presentation_health(
     let mut prev_title: Option<String> = None;
     for (idx, slide) in deck.slides.iter().enumerate() {
         let title = slide.extract_title();
-        if let Some(ref prev) = prev_title {
-            if prev == &title
-                && !title.contains('(')
-                && !title.contains('[')
-                && !title.starts_with("Slide ")
-            {
-                issues.push(PresentationHealthIssue {
-                    severity: HealthSeverity::Warning,
-                    slide_index: Some(idx),
-                    message: format!(
-                        "Slide {} shares an identical title with Slide {} (\"{title}\").",
-                        idx.saturating_add(1),
-                        idx
-                    ),
-                    suggestion: Some(
-                        "Differentiate the topic or add a continuation marker like '(part 2)'."
-                            .to_string(),
-                    ),
-                });
-            }
+        if let Some(ref prev) = prev_title
+            && prev == &title
+            && !title.contains('(')
+            && !title.contains('[')
+            && !title.starts_with("Slide ")
+        {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Warning,
+                slide_index: Some(idx),
+                message: format!(
+                    "Slide {} shares an identical title with Slide {} (\"{title}\").",
+                    idx.saturating_add(1),
+                    idx
+                ),
+                suggestion: Some(
+                    "Differentiate the topic or add a continuation marker like '(part 2)'."
+                        .to_string(),
+                ),
+            });
         }
         prev_title = Some(title);
     }
@@ -1290,6 +1352,169 @@ pub fn check_presentation_health(
                     break;
                 }
             }
+        }
+    }
+
+    // 8. Check for referenced image assets existence and oversized files
+    let mut image_refs = Vec::new();
+    let mut remaining = source;
+    while let Some(pos) = remaining.find("#image(") {
+        let after = &remaining[pos.saturating_add(7)..];
+        if let Some(quote_start) = after.find(['"', '\''])
+            && let Some(quote_char) = after.chars().nth(quote_start)
+        {
+            let path_str = &after[quote_start.saturating_add(1)..];
+            if let Some(quote_end) = path_str.find(quote_char) {
+                let img_path = &path_str[..quote_end];
+                if !img_path.is_empty() && !img_path.contains("://") {
+                    image_refs.push(img_path.to_string());
+                }
+            }
+        }
+        remaining = after;
+    }
+
+    for img_path in &image_refs {
+        let exists = if let Some(root) = project_root {
+            root.join(img_path).exists() || Path::new(img_path).exists()
+        } else {
+            Path::new(img_path).exists()
+        };
+
+        if !exists {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Error,
+                slide_index: None,
+                message: format!("Referenced image asset not found on disk: '{img_path}'"),
+                suggestion: Some(
+                    "Check the image path in #image(...) or place the file in the project directory."
+                        .to_string(),
+                ),
+            });
+        } else {
+            let resolved = if let Some(root) = project_root {
+                if root.join(img_path).exists() {
+                    root.join(img_path)
+                } else {
+                    PathBuf::from(img_path)
+                }
+            } else {
+                PathBuf::from(img_path)
+            };
+            if let Ok(meta) = std::fs::metadata(&resolved) {
+                let size_mb = meta.len() as f64 / (1024.0 * 1024.0);
+                if size_mb > 10.0 {
+                    issues.push(PresentationHealthIssue {
+                        severity: HealthSeverity::Warning,
+                        slide_index: None,
+                        message: format!(
+                            "Image asset '{img_path}' is very large ({size_mb:.1} MB).",
+                        ),
+                        suggestion: Some(
+                            "Compress the image to improve slide render performance and reduce export size."
+                                .to_string(),
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    // 9. Check for orphaned / unreferenced files in assets/ directory
+    if let Some(root) = project_root {
+        let assets_dir = if root.file_name().and_then(|n| n.to_str()) == Some("assets") {
+            root.to_path_buf()
+        } else {
+            root.join("assets")
+        };
+        if assets_dir.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&assets_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if !filename.starts_with('.') && !filename.ends_with(".cache.csv") {
+                        let is_referenced = source.contains(filename)
+                            || deck.slides.iter().any(|s| s.svg_data.contains(filename));
+                        if !is_referenced {
+                            issues.push(PresentationHealthIssue {
+                                    severity: HealthSeverity::Info,
+                                    slide_index: None,
+                                    message: format!(
+                                        "Unreferenced file in assets: 'assets/{filename}'.",
+                                    ),
+                                    suggestion: Some(
+                                        "Remove unused assets or reference them in your slides to keep bundles lean."
+                                            .to_string(),
+                                    ),
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 10. Check for slide aspect ratio consistency across deck
+    if let Some(first_slide) = deck.slides.first() {
+        let base_ratio = if first_slide.view_box.height > 0.0 {
+            first_slide.view_box.width / first_slide.view_box.height
+        } else {
+            16.0 / 9.0
+        };
+
+        for (idx, slide) in deck.slides.iter().enumerate().skip(1) {
+            if slide.view_box.height > 0.0 {
+                let ratio = slide.view_box.width / slide.view_box.height;
+                if (ratio - base_ratio).abs() > 0.15 {
+                    issues.push(PresentationHealthIssue {
+                        severity: HealthSeverity::Warning,
+                        slide_index: Some(idx),
+                        message: format!(
+                            "Slide {} aspect ratio ({:.2}) differs from Slide 1 ({:.2}).",
+                            idx.saturating_add(1),
+                            ratio,
+                            base_ratio
+                        ),
+                        suggestion: Some(
+                            "Ensure uniform aspect-ratio in theme.typ to avoid letterboxing inconsistency."
+                                .to_string(),
+                        ),
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    // 11. Check for long presentation checkpoint / break recommendations
+    let total_secs = deck.total_speaking_seconds();
+    if deck.slides.len() >= 15 || total_secs >= 1200 {
+        let has_checkpoints = deck.slides.iter().any(|s| {
+            let t = s.extract_title().to_lowercase();
+            t.contains("agenda")
+                || t.contains("break")
+                || t.contains("checkpoint")
+                || t.contains("q&a")
+                || t.contains("questions")
+                || t.contains("summary")
+                || t.contains("takeaway")
+        });
+        if !has_checkpoints {
+            issues.push(PresentationHealthIssue {
+                severity: HealthSeverity::Info,
+                slide_index: None,
+                message: format!(
+                    "Extended presentation ({} slides, ~{:.0} min) has no detected Q&A or transition checkpoints.",
+                    deck.slides.len(),
+                    total_secs as f64 / 60.0
+                ),
+                suggestion: Some(
+                    "Insert periodic recap or audience engagement slides every 10–15 minutes."
+                        .to_string(),
+                ),
+            });
         }
     }
 

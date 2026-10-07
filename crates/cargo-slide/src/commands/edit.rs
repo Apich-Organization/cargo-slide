@@ -45,7 +45,11 @@ pub fn execute(
         Command::new,
     );
 
-    if let Some(f) = file {
+    let resolved_path =
+        file.and_then(|f| slide_core::compiler::resolve_presentation_target(f).ok());
+    let target = resolved_path.as_deref().or(file);
+
+    if let Some(f) = target {
         cmd.arg(f);
     }
 

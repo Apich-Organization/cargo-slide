@@ -2377,3 +2377,109 @@ pub fn view_command_palette_modal<'a>(
         .style(move |_| theme::modal_backdrop_style(theme))
         .into()
 }
+
+/// Render crash recovery draft restoration dialog
+#[must_use]
+pub fn view_recovery_draft_modal<'a>(
+    theme: AppTheme,
+    draft_content: &'a str,
+) -> Element<'a, Message> {
+    let title = text("Session Recovery Draft Detected")
+        .size(17)
+        .color(theme.accent())
+        .font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..iced::Font::DEFAULT
+        });
+
+    let subtitle = text(
+        "Cargo Slide found an unsaved session recovery draft from a previous session.\n\
+         Would you like to restore your unsaved edits, or discard the draft and continue with the file on disk?",
+    )
+    .size(13)
+    .color(theme.text_secondary());
+
+    let preview_box = container(
+        scrollable(
+            text(draft_content)
+                .size(11)
+                .color(theme.text_muted())
+                .font(iced::Font::MONOSPACE),
+        )
+        .height(Length::Fixed(180.0)),
+    )
+    .width(Length::Fill)
+    .padding(10)
+    .style(move |_| {
+        container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: iced::Border {
+                color: theme.border_color(),
+                width: 1.0,
+                radius: iced::border::Radius::from(6.0),
+            },
+            ..container::Style::default()
+        }
+    });
+
+    let restore_btn = button(
+        text("Restore Recovery Draft")
+            .size(12)
+            .color(iced::Color::WHITE),
+    )
+    .padding([8, 16])
+    .style(move |_t, _s| {
+        button::Style {
+            background: Some(Background::Color(theme.accent())),
+            border: iced::Border {
+                radius: iced::border::Radius::from(6.0),
+                ..iced::Border::default()
+            },
+            ..button::Style::default()
+        }
+    })
+    .on_press(Message::RestoreRecoveryDraft(draft_content.to_string()));
+
+    let discard_btn = button(text("Discard Draft").size(12).color(theme.danger()))
+        .padding([8, 16])
+        .style(move |_t, _s| {
+            button::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: iced::Border {
+                    color: theme.danger().scale_alpha(0.5),
+                    width: 1.0,
+                    radius: iced::border::Radius::from(6.0),
+                },
+                ..button::Style::default()
+            }
+        })
+        .on_press(Message::DiscardRecoveryDraft);
+
+    let actions = row![discard_btn, Space::new().width(Length::Fill), restore_btn,]
+        .align_y(Alignment::Center);
+
+    let card = container(
+        column![
+            title,
+            Space::new().height(6),
+            subtitle,
+            Space::new().height(12),
+            text("Draft Preview:").size(11).color(theme.text_muted()),
+            preview_box,
+            Space::new().height(16),
+            actions,
+        ]
+        .spacing(4),
+    )
+    .width(Length::Fixed(560.0))
+    .padding(20)
+    .style(move |_| theme::modal_dialog_style(theme));
+
+    container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}

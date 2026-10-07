@@ -43,6 +43,12 @@ pub enum ChartType {
     Donut,
     #[serde(rename = "scatter")]
     Scatter,
+    #[serde(rename = "histogram")]
+    Histogram,
+    #[serde(rename = "waterfall")]
+    Waterfall,
+    #[serde(rename = "radar")]
+    Radar,
 }
 
 impl std::fmt::Display for ChartType {
@@ -57,6 +63,9 @@ impl std::fmt::Display for ChartType {
             | Self::Pie => write!(f, "Pie"),
             | Self::Donut => write!(f, "Donut"),
             | Self::Scatter => write!(f, "Scatter"),
+            | Self::Histogram => write!(f, "Histogram"),
+            | Self::Waterfall => write!(f, "Waterfall"),
+            | Self::Radar => write!(f, "Radar"),
         }
     }
 }

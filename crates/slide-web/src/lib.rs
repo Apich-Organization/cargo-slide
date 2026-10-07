@@ -265,6 +265,7 @@ pub fn App() -> impl IntoView {
     let overview_open = RwSignal::new(false);
     let help_open = RwSignal::new(false);
     let is_blank = RwSignal::new(false);
+    let is_white_blank = RwSignal::new(false);
     let active_video_modal = RwSignal::new(None::<(String, Option<String>)>);
     let active_chart_inspector = RwSignal::new(None::<ChartData>);
     let active_text_modal = RwSignal::new(None::<(String, String, bool)>); // (file_path, content, is_loading)
@@ -522,6 +523,12 @@ pub fn App() -> impl IntoView {
             },
             | "b" | "B" | "." => {
                 ev.prevent_default();
+                is_white_blank.set(false);
+                is_blank.update(|v| *v = !*v);
+            },
+            | "w" | "W" => {
+                ev.prevent_default();
+                is_white_blank.set(true);
                 is_blank.update(|v| *v = !*v);
             },
             | "l" | "L" => {
@@ -790,9 +797,17 @@ pub fn App() -> impl IntoView {
             // Blank screen mode
             {move || {
                 if is_blank.get() {
+                    let white = is_white_blank.get();
+                    let bg = if white { "#ffffff" } else { "#000000" };
+                    let fg = if white { "#1f2328" } else { "#f0f6fc" };
+                    let hint = if white {
+                        "White screen active. Press 'W' or click to resume."
+                    } else {
+                        "Black screen active. Press 'B' or click to resume."
+                    };
                     view! {
-                        <div class="blank-screen" on:click=move |_| is_blank.set(false)>
-                            <div class="blank-hint">"Screen paused. Press 'B' or click anywhere to resume."</div>
+                        <div class="blank-screen" style=format!("background: {bg}; color: {fg};") on:click=move |_| is_blank.set(false)>
+                            <div class="blank-hint" style=format!("color: {fg};")>{hint}</div>
                         </div>
                     }.into_any()
                 } else {

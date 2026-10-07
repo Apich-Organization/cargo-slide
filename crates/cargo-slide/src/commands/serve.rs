@@ -139,6 +139,13 @@ pub fn execute(
     open_browser: bool,
     watch: bool,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let resolved_file = if dir.is_some() || file.is_dir() {
+        file.to_path_buf()
+    } else {
+        slide_core::compiler::resolve_presentation_target(file)?
+    };
+    let target = resolved_file.as_path();
+
     let serve_dir = if let Some(custom_dir) = dir {
         if !custom_dir.exists() {
             return Err(
@@ -146,20 +153,20 @@ pub fn execute(
             );
         }
         custom_dir
-    } else if file.is_dir() {
-        file.to_path_buf()
+    } else if target.is_dir() {
+        target.to_path_buf()
     } else {
-        let stem = file
+        let stem = target
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("presentation");
         let dist = PathBuf::from("target").join(".web_serve").join(stem);
-        prepare_csr_bundle(file, &dist)?;
+        prepare_csr_bundle(target, &dist)?;
         dist
     };
 
-    if watch && !file.is_dir() {
-        let watch_file = file.to_path_buf();
+    if watch && !target.is_dir() {
+        let watch_file = target.to_path_buf();
         let target_dist = serve_dir.clone();
         std::thread::spawn(move || {
             use notify::RecursiveMode;

@@ -17,9 +17,8 @@ pub fn execute(
     light: bool,
     kiosk: Option<u64>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    if !file.exists() {
-        return Err(format!("File does not exist: {}", file.display()).into());
-    }
+    let resolved_path = slide_core::compiler::resolve_presentation_target(file)?;
+    let file = resolved_path.as_path();
 
     let is_slide_pkg = file.extension().and_then(|e| e.to_str()) == Some("slide");
     let is_json_deck = file.extension().and_then(|e| e.to_str()) == Some("json");

@@ -12,9 +12,8 @@ pub fn execute(
     target_minutes: Option<u64>,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !file.exists() {
-        return Err(format!("File does not exist: {}", file.display()).into());
-    }
+    let resolved_path = slide_core::compiler::resolve_presentation_target(file)?;
+    let file = resolved_path.as_path();
 
     if json {
         slide_core::logger::set_silent(true);

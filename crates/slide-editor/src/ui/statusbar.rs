@@ -13,6 +13,7 @@ use crate::ui::theme::{
 use iced::Alignment;
 use iced::Background;
 use iced::Border;
+use iced::Color;
 use iced::Element;
 use iced::Length;
 use iced::Shadow;
@@ -39,6 +40,7 @@ pub fn view_statusbar<'a>(
     zoom_percent: u32,
     speaking_wpm: u32,
     window_width: f32,
+    is_dirty: bool,
 ) -> Element<'a, Message> {
     let is_narrow = window_width < 850.0;
     let is_tiny = window_width < 650.0;
@@ -253,8 +255,58 @@ pub fn view_statusbar<'a>(
         })
     };
 
+    let dirty_pill = if is_dirty {
+        let amber = Color::from_rgb8(245, 158, 11);
+        button(
+            row![
+                text("●").size(9).color(amber),
+                text("Unsaved").size(10).color(amber),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .padding([2, 6])
+        .style(move |_theme, _status| {
+            button::Style {
+                background: Some(Background::Color(Color::from_rgba8(245, 158, 11, 0.12))),
+                border: Border {
+                    color: Color::from_rgba8(245, 158, 11, 0.35),
+                    width: 1.0,
+                    radius: border::Radius::from(RADIUS_XS),
+                },
+                text_color: amber,
+                ..button::Style::default()
+            }
+        })
+        .on_press(Message::SaveDocument)
+    } else {
+        let green = theme.success();
+        button(
+            row![
+                text("✓").size(10).color(green),
+                text("Saved").size(10).color(green),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        )
+        .padding([2, 6])
+        .style(move |_theme, _status| {
+            button::Style {
+                background: Some(Background::Color(Color::from_rgba8(34, 197, 94, 0.10))),
+                border: Border {
+                    color: Color::from_rgba8(34, 197, 94, 0.25),
+                    width: 1.0,
+                    radius: border::Radius::from(RADIUS_XS),
+                },
+                text_color: green,
+                ..button::Style::default()
+            }
+        })
+    };
+
     let mut right_info = row![].spacing(8).align_y(Alignment::Center);
 
+    right_info = right_info.push(dirty_pill);
     if !is_tiny {
         right_info = right_info.push(mode_badge);
     }

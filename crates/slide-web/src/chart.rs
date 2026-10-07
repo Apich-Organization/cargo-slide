@@ -723,6 +723,127 @@ pub fn render_svg_chart(
                 }
             }
         },
+        | ChartType::Histogram => {
+            let num_s = active_series.len().max(1);
+            let bar_group_w = cat_step;
+            let single_bar_w = (bar_group_w / num_s as f64).max(2.0);
+
+            for (s_local_idx, &(s_global_idx, s)) in active_series.iter().enumerate() {
+                let color = s
+                    .color
+                    .as_deref()
+                    .unwrap_or(PALETTE[s_global_idx % PALETTE.len()]);
+
+                for (c_local_idx, &cat_idx) in filtered_indices.iter().enumerate() {
+                    let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                    let cat = data.categories.get(cat_idx).cloned().unwrap_or_default();
+                    let bar_h = (val / max_y * plot_h).max(0.0);
+                    let x = pad_left
+                        + c_local_idx as f64 * cat_step
+                        + s_local_idx as f64 * single_bar_w;
+                    let y = pad_top + plot_h - bar_h;
+                    let formatted_val = data.format_number(val);
+
+                    svg.push_str(&format!(
+                        r##"  <rect x="{x:.1}" y="{y:.1}" width="{:.1}" height="{bar_h:.1}" fill="{color}" stroke="#161b22" stroke-width="1" opacity="0.9" class="chart-histogram-bar">
+    <title>{cat} • {}: {formatted_val}</title>
+  </rect>
+"##,
+                        single_bar_w.max(1.0),
+                        s.name
+                    ));
+                }
+            }
+        },
+        | ChartType::Waterfall => {
+            let bar_w = (cat_step * 0.7).min(100.0);
+            let mut running_total = 0.0f64;
+
+            if let Some(&(_s_global_idx, s)) = active_series.first() {
+                for (c_local_idx, &cat_idx) in filtered_indices.iter().enumerate() {
+                    let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                    let cat = data.categories.get(cat_idx).cloned().unwrap_or_default();
+                    let start_v = running_total;
+                    let end_v = running_total + val;
+                    running_total = end_v;
+
+                    let lower = start_v.min(end_v);
+                    let upper = start_v.max(end_v);
+                    let lower_h = (lower / max_y * plot_h).max(0.0);
+                    let upper_h = (upper / max_y * plot_h).max(0.0);
+                    let bar_h = (upper_h - lower_h).max(2.0);
+
+                    let x = pad_left + c_local_idx as f64 * cat_step + (cat_step - bar_w) / 2.0;
+                    let y = pad_top + plot_h - upper_h;
+                    let color = if val >= 0.0 {
+                        "#34d399"
+                    } else {
+                        "#f43f5e"
+                    };
+                    let formatted_val = data.format_number(val);
+
+                    svg.push_str(&format!(
+                        r##"  <rect x="{x:.1}" y="{y:.1}" width="{bar_w:.1}" height="{bar_h:.1}" fill="{color}" rx="3" class="chart-waterfall-bar">
+    <title>{cat} • Running: {:.1} • Diff: {formatted_val}</title>
+  </rect>
+"##,
+                        running_total
+                    ));
+                }
+            }
+        },
+        | ChartType::Radar => {
+            let center_x = pad_left + plot_w / 2.0;
+            let center_y = pad_top + plot_h / 2.0;
+            let max_radius = (plot_w.min(plot_h) * 0.42).max(20.0);
+            let cat_count = filtered_indices.len().max(1);
+
+            // Web rings
+            for ring in 1..=4 {
+                let r = max_radius * (ring as f64 / 4.0);
+                let mut ring_pts = Vec::new();
+                for i in 0..cat_count {
+                    let angle = (i as f64 / cat_count as f64) * std::f64::consts::TAU
+                        - std::f64::consts::FRAC_PI_2;
+                    ring_pts.push(format!(
+                        "{:.1},{:.1}",
+                        center_x + r * angle.cos(),
+                        center_y + r * angle.sin()
+                    ));
+                }
+                let pts_str = ring_pts.join(" ");
+                svg.push_str(&format!(
+                    r##"  <polygon points="{pts_str}" fill="none" stroke="#30363d" stroke-dasharray="2,2" stroke-width="1"/>
+"##
+                ));
+            }
+
+            // Series polygons
+            for &(s_global_idx, s) in &active_series {
+                let color = s
+                    .color
+                    .as_deref()
+                    .unwrap_or(PALETTE[s_global_idx % PALETTE.len()]);
+                let mut poly_pts = Vec::new();
+                for (c_local_idx, &cat_idx) in filtered_indices.iter().enumerate() {
+                    let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                    let angle = (c_local_idx as f64 / cat_count as f64) * std::f64::consts::TAU
+                        - std::f64::consts::FRAC_PI_2;
+                    let norm = (val / max_y).clamp(0.0, 1.0);
+                    let r = max_radius * norm;
+                    poly_pts.push(format!(
+                        "{:.1},{:.1}",
+                        center_x + r * angle.cos(),
+                        center_y + r * angle.sin()
+                    ));
+                }
+                let pts_str = poly_pts.join(" ");
+                svg.push_str(&format!(
+                    r##"  <polygon points="{pts_str}" fill="{color}" fill-opacity="0.25" stroke="{color}" stroke-width="2" class="chart-radar-poly"/>
+"##
+                ));
+            }
+        },
         | _ => {},
     }
 

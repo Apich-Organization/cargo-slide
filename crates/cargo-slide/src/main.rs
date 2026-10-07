@@ -204,6 +204,9 @@ fn dispatch_command(
                 },
             }
         },
+        | Some(Commands::Doctor) => {
+            commands::doctor::execute()?;
+        },
         | None => {
             let file = default_file.unwrap_or_else(|| PathBuf::from("slides.typ"));
             commands::run::execute(&file, "fade", false, false, None, false, None)?;

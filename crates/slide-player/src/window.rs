@@ -13,6 +13,7 @@ use crate::hud::PresenterMode;
 use crate::hud::draw_blank_screen;
 use crate::hud::draw_chart_inspector;
 use crate::hud::draw_chart_visualizer;
+use crate::hud::draw_circle_outline;
 use crate::hud::draw_help_overlay;
 use crate::hud::draw_hotspot_highlight;
 use crate::hud::draw_hud_toast;
@@ -1234,7 +1235,10 @@ impl SlidePlayer {
             None
         };
         let mut last_kiosk_advance = Instant::now();
-        let presentation_start_time = Instant::now();
+        let mut presentation_start_time = Instant::now();
+        let mut presentation_paused_at: Option<Instant> = None;
+        let mut presentation_paused_duration = std::time::Duration::ZERO;
+        let mut speaker_notes_scroll_offset = 0usize;
         let mut grid_click_rects: Vec<(usize, slide_core::model::Rect)> = Vec::new();
         let mut hovered_grid_idx: Option<usize>;
         let mut exit_requested = false;
@@ -1865,6 +1869,7 @@ impl SlidePlayer {
                         | DockAction::ModeNormal => presenter_mode = PresenterMode::Normal,
                         | DockAction::ModeLaser => presenter_mode = PresenterMode::Laser,
                         | DockAction::ModePen => presenter_mode = PresenterMode::Pen,
+                        | DockAction::ModeEraser => presenter_mode = PresenterMode::Eraser,
                         | DockAction::ModeSpotlight => presenter_mode = PresenterMode::Spotlight,
                         | DockAction::TogglePalette => palette_open = !palette_open,
                         | DockAction::ClearInk => {
@@ -2009,14 +2014,7 @@ impl SlidePlayer {
                                         .unwrap_or(data.chart_type);
 
                                     if clicked_type_btn {
-                                        let next_t = match curr_t {
-                                            | ChartType::Bar => ChartType::Line,
-                                            | ChartType::Line => ChartType::Area,
-                                            | ChartType::Area => ChartType::Pie,
-                                            | ChartType::Pie => ChartType::Donut,
-                                            | ChartType::Donut => ChartType::Bar,
-                                            | ChartType::Scatter => ChartType::Bar,
-                                        };
+                                        let next_t = curr_t.cycle();
                                         chart_type_overrides.insert((current_idx, hs_idx), next_t);
                                     } else {
                                         // Open Data Inspector Modal!
@@ -2063,6 +2061,19 @@ impl SlidePlayer {
                 {
                     slide_ink.entry(current_idx).or_default().push(stroke);
                 }
+            } else if presenter_mode == PresenterMode::Eraser
+                && mouse_down
+                && let Some((mx, my)) = mouse_pos
+                && let Some(strokes) = slide_ink.get_mut(&current_idx)
+            {
+                let eraser_radius = 24.0f32;
+                strokes.retain(|stroke| {
+                    !stroke.points.iter().any(|&(px, py)| {
+                        let dx = px as f32 - mx;
+                        let dy = py as f32 - my;
+                        dx.hypot(dy) <= eraser_radius
+                    })
+                });
             }
 
             // Laser pointer position recording for trailing effect
@@ -2331,6 +2342,27 @@ impl SlidePlayer {
                                         inspector.show_toast("Exported to chart_export.csv");
                                     }
                                 },
+                                | Key::J => {
+                                    let json =
+                                        inspector.chart_data.export_json(&inspector.hidden_series);
+                                    if let Err(e) = std::fs::write("chart_export.json", json) {
+                                        eprintln!("Failed to export JSON: {e}");
+                                        inspector.show_toast("JSON export failed!");
+                                    } else {
+                                        inspector.show_toast("Exported to chart_export.json");
+                                    }
+                                },
+                                | Key::K => {
+                                    let md = inspector
+                                        .chart_data
+                                        .export_markdown(&inspector.hidden_series);
+                                    if let Err(e) = std::fs::write("chart_export.md", md) {
+                                        eprintln!("Failed to export Markdown: {e}");
+                                        inspector.show_toast("Markdown export failed!");
+                                    } else {
+                                        inspector.show_toast("Exported to chart_export.md");
+                                    }
+                                },
                                 | Key::Up => {
                                     inspector.table_scroll =
                                         inspector.table_scroll.saturating_sub(1);
@@ -2384,26 +2416,14 @@ impl SlidePlayer {
                         }
                     } else if jump_dialog_active {
                         match key {
-                            | Key::NumPad0 | Key::Key0 => jump_dialog_input.push('0'),
-                            | Key::NumPad1 | Key::Key1 => jump_dialog_input.push('1'),
-                            | Key::NumPad2 | Key::Key2 => jump_dialog_input.push('2'),
-                            | Key::NumPad3 | Key::Key3 => jump_dialog_input.push('3'),
-                            | Key::NumPad4 | Key::Key4 => jump_dialog_input.push('4'),
-                            | Key::NumPad5 | Key::Key5 => jump_dialog_input.push('5'),
-                            | Key::NumPad6 | Key::Key6 => jump_dialog_input.push('6'),
-                            | Key::NumPad7 | Key::Key7 => jump_dialog_input.push('7'),
-                            | Key::NumPad8 | Key::Key8 => jump_dialog_input.push('8'),
-                            | Key::NumPad9 | Key::Key9 => jump_dialog_input.push('9'),
                             | Key::Backspace => {
                                 jump_dialog_input.pop();
                             },
                             | Key::Enter => {
-                                if let Ok(num) = jump_dialog_input.parse::<usize>()
-                                    && num >= 1
+                                if let Some((target_idx, _)) =
+                                    find_matched_slide(&jump_dialog_input, &self.deck)
                                 {
-                                    jump_target = Some(
-                                        (num.saturating_sub(1)).min(total_slides.saturating_sub(1)),
-                                    );
+                                    jump_target = Some(target_idx);
                                 }
                                 jump_dialog_active = false;
                                 jump_dialog_input.clear();
@@ -2412,13 +2432,75 @@ impl SlidePlayer {
                                 jump_dialog_active = false;
                                 jump_dialog_input.clear();
                             },
-                            | _ => {},
+                            | other_key => {
+                                if let Some(c) = key_to_char(*other_key) {
+                                    jump_dialog_input.push(c);
+                                }
+                            },
                         }
                     } else {
                         match key {
                             | Key::J => {
                                 jump_dialog_active = true;
                                 jump_dialog_input.clear();
+                            },
+                            | Key::E => {
+                                presenter_mode = if presenter_mode == PresenterMode::Eraser {
+                                    PresenterMode::Normal
+                                } else {
+                                    PresenterMode::Eraser
+                                };
+                                hud_toast = Some((
+                                    if presenter_mode == PresenterMode::Eraser {
+                                        "Eraser Mode: Drag to erase ink (Press E to exit)"
+                                    } else {
+                                        "Normal Mode"
+                                    }
+                                    .to_string(),
+                                    Instant::now(),
+                                ));
+                            },
+                            | Key::R
+                                if window.is_key_down(Key::LeftCtrl)
+                                    || window.is_key_down(Key::RightCtrl) =>
+                            {
+                                presentation_start_time = Instant::now();
+                                presentation_paused_at = None;
+                                presentation_paused_duration = std::time::Duration::ZERO;
+                                hud_toast =
+                                    Some(("Presenter Timer Reset".to_string(), Instant::now()));
+                            },
+                            | Key::P
+                                if window.is_key_down(Key::LeftCtrl)
+                                    || window.is_key_down(Key::RightCtrl) =>
+                            {
+                                if let Some(paused_at) = presentation_paused_at.take() {
+                                    presentation_paused_duration += paused_at.elapsed();
+                                    hud_toast = Some((
+                                        "Presenter Timer Resumed".to_string(),
+                                        Instant::now(),
+                                    ));
+                                } else {
+                                    presentation_paused_at = Some(Instant::now());
+                                    hud_toast = Some((
+                                        "Presenter Timer Paused".to_string(),
+                                        Instant::now(),
+                                    ));
+                                }
+                            },
+                            | Key::Up
+                                if window.is_key_down(Key::LeftAlt)
+                                    || window.is_key_down(Key::RightAlt) =>
+                            {
+                                speaker_notes_scroll_offset =
+                                    speaker_notes_scroll_offset.saturating_sub(2);
+                            },
+                            | Key::Down
+                                if window.is_key_down(Key::LeftAlt)
+                                    || window.is_key_down(Key::RightAlt) =>
+                            {
+                                speaker_notes_scroll_offset =
+                                    speaker_notes_scroll_offset.saturating_add(2);
                             },
                             | Key::F12 | Key::S
                                 if window.is_key_down(Key::LeftCtrl)
@@ -2894,6 +2976,7 @@ impl SlidePlayer {
                 active_chart_inspector = None;
                 hovered_hotspot_key = None;
                 hotspot_hover_alpha = 0.0;
+                speaker_notes_scroll_offset = 0;
                 // If slide specified transition override in Typst (e.g. transition: "glitch"), use it!
                 let anim_name = self
                     .deck
@@ -3100,7 +3183,17 @@ impl SlidePlayer {
 
             // Presenter timer & wall clock HUD
             if show_timer {
-                let elapsed = presentation_start_time.elapsed().as_secs();
+                let elapsed = if let Some(paused_at) = presentation_paused_at {
+                    paused_at
+                        .duration_since(presentation_start_time)
+                        .saturating_sub(presentation_paused_duration)
+                        .as_secs()
+                } else {
+                    presentation_start_time
+                        .elapsed()
+                        .saturating_sub(presentation_paused_duration)
+                        .as_secs()
+                };
                 draw_presenter_clock(
                     &mut buffer,
                     width,
@@ -3125,6 +3218,7 @@ impl SlidePlayer {
                     total_slides,
                     current_notes,
                     hud_theme,
+                    speaker_notes_scroll_offset,
                 );
             }
 
@@ -3143,6 +3237,8 @@ impl SlidePlayer {
 
             // Interactive slide jump dialog overlay
             if jump_dialog_active {
+                let matched_preview =
+                    find_matched_slide(&jump_dialog_input, &self.deck).map(|(_, title)| title);
                 draw_slide_jump_dialog(
                     &mut buffer,
                     width,
@@ -3151,6 +3247,22 @@ impl SlidePlayer {
                     current_idx + 1,
                     total_slides,
                     hud_theme,
+                    matched_preview.as_deref(),
+                );
+            }
+
+            // Eraser cursor circle indicator
+            if presenter_mode == PresenterMode::Eraser
+                && let Some((mx, my)) = mouse_pos
+            {
+                draw_circle_outline(
+                    &mut buffer,
+                    width,
+                    height,
+                    mx as isize,
+                    my as isize,
+                    24,
+                    0xFFf85149,
                 );
             }
 
@@ -3182,6 +3294,79 @@ impl SlidePlayer {
 
         Ok(())
     }
+}
+
+fn key_to_char(key: Key) -> Option<char> {
+    match key {
+        | Key::Key0 | Key::NumPad0 => Some('0'),
+        | Key::Key1 | Key::NumPad1 => Some('1'),
+        | Key::Key2 | Key::NumPad2 => Some('2'),
+        | Key::Key3 | Key::NumPad3 => Some('3'),
+        | Key::Key4 | Key::NumPad4 => Some('4'),
+        | Key::Key5 | Key::NumPad5 => Some('5'),
+        | Key::Key6 | Key::NumPad6 => Some('6'),
+        | Key::Key7 | Key::NumPad7 => Some('7'),
+        | Key::Key8 | Key::NumPad8 => Some('8'),
+        | Key::Key9 | Key::NumPad9 => Some('9'),
+        | Key::A => Some('a'),
+        | Key::B => Some('b'),
+        | Key::C => Some('c'),
+        | Key::D => Some('d'),
+        | Key::E => Some('e'),
+        | Key::F => Some('f'),
+        | Key::G => Some('g'),
+        | Key::H => Some('h'),
+        | Key::I => Some('i'),
+        | Key::J => Some('j'),
+        | Key::K => Some('k'),
+        | Key::L => Some('l'),
+        | Key::M => Some('m'),
+        | Key::N => Some('n'),
+        | Key::O => Some('o'),
+        | Key::P => Some('p'),
+        | Key::Q => Some('q'),
+        | Key::R => Some('r'),
+        | Key::S => Some('s'),
+        | Key::T => Some('t'),
+        | Key::U => Some('u'),
+        | Key::V => Some('v'),
+        | Key::W => Some('w'),
+        | Key::X => Some('x'),
+        | Key::Y => Some('y'),
+        | Key::Z => Some('z'),
+        | Key::Space => Some(' '),
+        | Key::Minus | Key::NumPadMinus => Some('-'),
+        | Key::Period => Some('.'),
+        | _ => None,
+    }
+}
+
+fn find_matched_slide(
+    query: &str,
+    deck: &SlideDeck,
+) -> Option<(usize, String)> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return None;
+    }
+    if let Ok(num) = q.parse::<usize>()
+        && num >= 1
+    {
+        let idx = (num - 1).min(deck.slides.len().saturating_sub(1));
+        let title = deck
+            .slides
+            .get(idx)
+            .map(slide_core::model::Slide::extract_title)
+            .unwrap_or_default();
+        return Some((idx, format!("#{} {}", idx + 1, title)));
+    }
+    for (idx, slide) in deck.slides.iter().enumerate() {
+        let title = slide.extract_title();
+        if title.to_lowercase().contains(&q) {
+            return Some((idx, format!("#{} {}", idx + 1, title)));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -3230,5 +3415,51 @@ mod tests {
         // Nonexistent file should return None
         let not_found = resolve_local_file_path("non_existent_file_xyz_12345.typ", None);
         assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_key_to_char_and_find_matched_slide() {
+        assert_eq!(key_to_char(Key::A), Some('a'));
+        assert_eq!(key_to_char(Key::Key5), Some('5'));
+        assert_eq!(key_to_char(Key::Space), Some(' '));
+        assert_eq!(key_to_char(Key::F1), None);
+
+        let mut deck = SlideDeck::new("Test Deck");
+        deck.slides.push(slide_core::model::Slide {
+            page_number: 1,
+            svg_data: r#"<svg><text>Introduction to Slide</text></svg>"#.to_string(),
+            view_box: slide_core::model::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            hotspots: vec![],
+            animation: None,
+            steps: vec![],
+            notes: None,
+        });
+        deck.slides.push(slide_core::model::Slide {
+            page_number: 2,
+            svg_data: r#"<svg><text>Deep Learning Architecture</text></svg>"#.to_string(),
+            view_box: slide_core::model::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            hotspots: vec![],
+            animation: None,
+            steps: vec![],
+            notes: None,
+        });
+
+        // Numeric jump
+        let (idx, preview) = find_matched_slide("2", &deck).expect("Should match slide 2");
+        assert_eq!(idx, 1);
+        assert!(preview.contains("Architecture"));
+
+        // Fuzzy title search
+        let (idx, preview) =
+            find_matched_slide("arch", &deck).expect("Should fuzzy match Architecture");
+        assert_eq!(idx, 1);
+        assert!(preview.contains("Architecture"));
+
+        let (idx, preview) =
+            find_matched_slide("intro", &deck).expect("Should fuzzy match Introduction");
+        assert_eq!(idx, 0);
+        assert!(preview.contains("Introduction"));
+
+        assert!(find_matched_slide("nonexistent_keyword_xyz", &deck).is_none());
     }
 }

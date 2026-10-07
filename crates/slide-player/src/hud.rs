@@ -61,6 +61,7 @@ pub enum PresenterMode {
     Laser,
     Pen,
     Spotlight,
+    Eraser,
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +116,7 @@ pub enum DockAction {
     ModeLaser,
     ModePen,
     ModeSpotlight,
+    ModeEraser,
     TogglePalette,
     ClearInk,
     ToggleMute,
@@ -525,6 +527,48 @@ fn draw_thick_line(
     }
 }
 
+/// Draw a circle outline using midpoint circle algorithm
+pub fn draw_circle_outline(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    cx: isize,
+    cy: isize,
+    radius: isize,
+    color: u32,
+) {
+    if radius <= 0 {
+        return;
+    }
+    let mut x = radius;
+    let mut y = 0isize;
+    let mut err = 0isize;
+
+    while x >= y {
+        let pts = [
+            (cx + x, cy + y),
+            (cx + y, cy + x),
+            (cx - y, cy + x),
+            (cx - x, cy + y),
+            (cx - x, cy - y),
+            (cx - y, cy - x),
+            (cx + y, cy - x),
+            (cx + x, cy - y),
+        ];
+        for (px, py) in pts {
+            if px >= 0 && px < width as isize && py >= 0 && py < height as isize {
+                buffer[py as usize * width + px as usize] = color;
+            }
+        }
+        y += 1;
+        err += 1 + 2 * y;
+        if 2 * (err - x) + 1 > 0 {
+            x -= 1;
+            err += 1 - 2 * x;
+        }
+    }
+}
+
 /// Draw an arrow head at (x1, y1) pointing away from (x0, y0)
 #[allow(clippy::similar_names)]
 fn draw_arrow_head(
@@ -771,7 +815,7 @@ pub fn get_dock_rects(
     is_fullscreen: bool,
     theme: HudTheme,
 ) -> (Rect, Vec<(DockAction, Rect, &'static str)>) {
-    let dock_w = 710.0f32.min((screen_w as f32 - 40.0).max(400.0));
+    let dock_w = 750.0f32.min((screen_w as f32 - 40.0).max(400.0));
     let dock_h = 36.0f32;
     let dock_x = ((screen_w as f32) - dock_w) / 2.0;
     let dock_y = (screen_h as f32) - 48.0;
@@ -790,6 +834,7 @@ pub fn get_dock_rects(
         (DockAction::ModeNormal, "PTR"),
         (DockAction::ModeLaser, "LSR"),
         (DockAction::ModePen, "PEN"),
+        (DockAction::ModeEraser, "ERA"),
         (DockAction::ModeSpotlight, "SPOT"),
         (DockAction::TogglePalette, "COL"),
         (DockAction::ClearInk, "CLR"),
@@ -922,6 +967,7 @@ pub fn render_dock(
             | DockAction::ModeNormal => mode == PresenterMode::Normal,
             | DockAction::ModeLaser => mode == PresenterMode::Laser,
             | DockAction::ModePen => mode == PresenterMode::Pen,
+            | DockAction::ModeEraser => mode == PresenterMode::Eraser,
             | DockAction::ModeSpotlight => mode == PresenterMode::Spotlight,
             | DockAction::TogglePalette => palette_open,
             | DockAction::ToggleTheme => theme.is_light(),
@@ -2043,7 +2089,7 @@ pub fn draw_presenter_clock(
     }
 }
 
-/// Draw interactive slide jump prompt dialog
+/// Draw interactive slide jump prompt dialog with optional search preview
 pub fn draw_slide_jump_dialog(
     buffer: &mut [u32],
     width: usize,
@@ -2052,16 +2098,17 @@ pub fn draw_slide_jump_dialog(
     current_slide: usize,
     total_slides: usize,
     theme: HudTheme,
+    matched_preview: Option<&str>,
 ) {
-    let dialog_w = 340usize;
-    let dialog_h = 76usize;
+    let dialog_w = 400usize.min(width.saturating_sub(40));
+    let dialog_h = 92usize;
     let x = (width.saturating_sub(dialog_w)) / 2;
     let y = (height.saturating_sub(dialog_h)) / 2;
 
-    let (bg, border, text_col, sub_col) = if theme.is_light() {
-        (0xFFf6f8fa, 0xFF0969da, 0xFF1f2328, 0xFF57606a)
+    let (bg, border, text_col, sub_col, preview_col) = if theme.is_light() {
+        (0xFFf6f8fa, 0xFF0969da, 0xFF1f2328, 0xFF57606a, 0xFF1a7f37)
     } else {
-        (0xFF161b22, 0xFF58a6ff, 0xFFf0f6fc, 0xFF8b949e)
+        (0xFF161b22, 0xFF58a6ff, 0xFFf0f6fc, 0xFF8b949e, 0xFF34d399)
     };
 
     fill_rect(buffer, width, height, x, y, dialog_w, dialog_h, bg);
@@ -2069,23 +2116,48 @@ pub fn draw_slide_jump_dialog(
 
     let title = format!(
         "JUMP TO SLIDE  (Current: {} / {})",
-        current_slide + 1,
-        total_slides
+        current_slide, total_slides
     );
-    draw_text(buffer, width, height, x + 16, y + 14, &title, border);
+    draw_text(buffer, width, height, x + 16, y + 12, &title, border);
 
     let prompt = format!(
-        "Slide Number: [ {}_ ]",
+        "Search (# or title): [ {}_ ]",
         if input_str.is_empty() {
             " "
         } else {
             input_str
         }
     );
-    draw_text(buffer, width, height, x + 16, y + 36, &prompt, text_col);
+    let prompt_display = truncate_text_to_width(&prompt, dialog_w.saturating_sub(32));
+    draw_text(
+        buffer,
+        width,
+        height,
+        x + 16,
+        y + 32,
+        &prompt_display,
+        text_col,
+    );
+
+    if let Some(preview) = matched_preview {
+        let preview_msg = format!("Found: {preview}");
+        let preview_display = truncate_text_to_width(&preview_msg, dialog_w.saturating_sub(32));
+        draw_text(
+            buffer,
+            width,
+            height,
+            x + 16,
+            y + 50,
+            &preview_display,
+            preview_col,
+        );
+    } else {
+        let hint_sub = "Type slide number or title keywords...";
+        draw_text(buffer, width, height, x + 16, y + 50, hint_sub, sub_col);
+    }
 
     let hint = "Enter to jump  •  Esc to cancel";
-    draw_text(buffer, width, height, x + 16, y + 54, hint, sub_col);
+    draw_text(buffer, width, height, x + 16, y + 70, hint, sub_col);
 }
 
 /// Draw interactive slide navigator grid overlay
@@ -2304,11 +2376,12 @@ pub fn draw_speaker_notes_overlay(
     total_slides: usize,
     notes: Option<&str>,
     theme: HudTheme,
+    scroll_offset: usize,
 ) {
     let max_w = width.saturating_sub(40);
     let max_h = height.saturating_sub(100);
-    let wi = 420usize.min(max_w);
-    let hi = 200usize.min(max_h);
+    let wi = 440usize.min(max_w);
+    let hi = 210usize.min(max_h);
     let xi = width.saturating_sub(wi).saturating_sub(20);
     let yi = height.saturating_sub(hi).saturating_sub(60);
 
@@ -2366,14 +2439,14 @@ pub fn draw_speaker_notes_overlay(
     let header = if notes.is_some() && total_words > 0 {
         let est_sec = ((total_words as f32 / 130.0) * 60.0).round() as usize;
         format!(
-            "SPEAKER NOTES • SLIDE {}/{} • ~{}s ({} words)",
+            "NOTES • {}/{} • ~{}s ({} w)",
             current_slide,
             total_slides,
             est_sec.max(5),
             total_words
         )
     } else {
-        format!("SPEAKER NOTES • SLIDE {}/{}", current_slide, total_slides)
+        format!("NOTES • {}/{}", current_slide, total_slides)
     };
 
     draw_text(
@@ -2381,12 +2454,12 @@ pub fn draw_speaker_notes_overlay(
         width,
         height,
         xi.saturating_add(12),
-        yi.saturating_add(12),
+        yi.saturating_add(10),
         &header,
         title_color,
     );
 
-    let div_y = yi.saturating_add(28);
+    let div_y = yi.saturating_add(26);
     for x in xi.saturating_add(8)..(xi.saturating_add(wi)).saturating_sub(8) {
         if div_y < height {
             let idx = div_y.saturating_mul(width).saturating_add(x);
@@ -2399,37 +2472,17 @@ pub fn draw_speaker_notes_overlay(
     let char_w = 7;
     let chars_per_line = (max_line_w / char_w).max(10);
 
-    let mut line_y = yi.saturating_add(36);
+    let mut wrapped_lines: Vec<String> = Vec::new();
     for raw_line in notes_content.lines() {
-        if line_y.saturating_add(14) >= yi.saturating_add(hi) {
-            draw_text(
-                buffer,
-                width,
-                height,
-                xi.saturating_add(12),
-                line_y,
-                "...",
-                text_color,
-            );
-            break;
-        }
         let words: Vec<&str> = raw_line.split_whitespace().collect();
+        if words.is_empty() {
+            wrapped_lines.push(String::new());
+            continue;
+        }
         let mut cur_buf = String::new();
         for word in words {
             if cur_buf.len().saturating_add(word.len()).saturating_add(1) > chars_per_line {
-                draw_text(
-                    buffer,
-                    width,
-                    height,
-                    xi.saturating_add(12),
-                    line_y,
-                    &cur_buf,
-                    text_color,
-                );
-                line_y = line_y.saturating_add(16);
-                if line_y.saturating_add(14) >= yi.saturating_add(hi) {
-                    break;
-                }
+                wrapped_lines.push(cur_buf);
                 cur_buf = word.to_string();
             } else {
                 if !cur_buf.is_empty() {
@@ -2438,18 +2491,55 @@ pub fn draw_speaker_notes_overlay(
                 cur_buf.push_str(word);
             }
         }
-        if !cur_buf.is_empty() && line_y.saturating_add(14) < yi.saturating_add(hi) {
-            draw_text(
-                buffer,
-                width,
-                height,
-                xi.saturating_add(12),
-                line_y,
-                &cur_buf,
-                text_color,
-            );
-            line_y = line_y.saturating_add(16);
+        if !cur_buf.is_empty() {
+            wrapped_lines.push(cur_buf);
         }
+    }
+
+    let total_lines = wrapped_lines.len();
+    let effective_scroll = scroll_offset.min(total_lines.saturating_sub(1));
+
+    if effective_scroll > 0 {
+        draw_text(
+            buffer,
+            width,
+            height,
+            xi.saturating_add(wi).saturating_sub(44),
+            yi.saturating_add(10),
+            "^ UP",
+            title_color,
+        );
+    }
+
+    let mut line_y = yi.saturating_add(34);
+    let mut rendered_count = 0;
+    for line in wrapped_lines.iter().skip(effective_scroll) {
+        if line_y.saturating_add(14) >= yi.saturating_add(hi).saturating_sub(6) {
+            break;
+        }
+        draw_text(
+            buffer,
+            width,
+            height,
+            xi.saturating_add(12),
+            line_y,
+            line,
+            text_color,
+        );
+        line_y = line_y.saturating_add(16);
+        rendered_count += 1;
+    }
+
+    if effective_scroll + rendered_count < total_lines {
+        draw_text(
+            buffer,
+            width,
+            height,
+            xi.saturating_add(wi).saturating_sub(58),
+            (yi + hi).saturating_sub(16),
+            "v MORE",
+            title_color,
+        );
     }
 }
 
@@ -3518,14 +3608,7 @@ impl ChartInspectorState {
     }
 
     pub fn cycle_type(&mut self) {
-        self.active_type = match self.active_type {
-            | ChartType::Bar => ChartType::Line,
-            | ChartType::Line => ChartType::Area,
-            | ChartType::Area => ChartType::Pie,
-            | ChartType::Pie => ChartType::Donut,
-            | ChartType::Donut => ChartType::Bar,
-            | ChartType::Scatter => ChartType::Bar,
-        };
+        self.active_type = self.active_type.cycle();
     }
 
     pub fn toggle_series(
@@ -3782,6 +3865,9 @@ pub fn render_chart_hover(
         | ChartType::Pie => "PIE",
         | ChartType::Donut => "DONUT",
         | ChartType::Scatter => "SCAT",
+        | ChartType::Histogram => "HIST",
+        | ChartType::Waterfall => "FALL",
+        | ChartType::Radar => "RADAR",
     };
     draw_chart_quick_button(
         buffer,
@@ -3816,7 +3902,9 @@ pub fn render_chart_hover(
             | slide_core::chart::ChartType::Bar
             | slide_core::chart::ChartType::Line
             | slide_core::chart::ChartType::Area
-            | slide_core::chart::ChartType::Scatter => {
+            | slide_core::chart::ChartType::Scatter
+            | slide_core::chart::ChartType::Histogram
+            | slide_core::chart::ChartType::Waterfall => {
                 if let Some(cat_idx) = chart_data.hit_test_category(chart_rect, svg_x, svg_y) {
                     let cat_name = chart_data
                         .categories
@@ -3827,7 +3915,10 @@ pub fn render_chart_hover(
                     let cat_count = chart_data.categories.len().max(1);
                     let col_w = plot.width / cat_count as f32;
 
-                    if active_type == slide_core::chart::ChartType::Bar {
+                    if active_type == slide_core::chart::ChartType::Bar
+                        || active_type == slide_core::chart::ChartType::Histogram
+                        || active_type == slide_core::chart::ChartType::Waterfall
+                    {
                         // Highlight vertical column with fast bit-shift alpha blending
                         let col_svg_x = plot.x + cat_idx as f32 * col_w;
                         let (screen_col_x, screen_plot_y) =
@@ -3948,6 +4039,25 @@ pub fn render_chart_hover(
                         mouse_y as usize,
                         &slice_name,
                         &lines,
+                    );
+                }
+            },
+            | slide_core::chart::ChartType::Radar => {
+                if let Some(cat_idx) = chart_data.hit_test_radar_axis(chart_rect, svg_x, svg_y) {
+                    let cat_name = chart_data
+                        .categories
+                        .get(cat_idx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Axis {}", cat_idx + 1));
+                    render_tooltip_card(
+                        buffer,
+                        width,
+                        height,
+                        mouse_x as usize,
+                        mouse_y as usize,
+                        &cat_name,
+                        &chart_data.series,
+                        cat_idx,
                     );
                 }
             },
@@ -4567,11 +4677,15 @@ pub fn hit_test_chart_inspector(
         ("AREA", ChartType::Area),
         ("PIE", ChartType::Pie),
         ("DONUT", ChartType::Donut),
+        ("SCAT", ChartType::Scatter),
+        ("HIST", ChartType::Histogram),
+        ("FALL", ChartType::Waterfall),
+        ("RADAR", ChartType::Radar),
     ];
-    let tab_w = 48.0;
+    let tab_w = 40.0;
     let tab_h = 26.0;
-    let tab_gap = 6.0;
-    let start_tabs_x = export_btn.x - 10.0 - (types.len() as f32 * (tab_w + tab_gap));
+    let tab_gap = 4.0;
+    let start_tabs_x = export_btn.x - 8.0 - (types.len() as f32 * (tab_w + tab_gap));
     for (i, &(_, t)) in types.iter().enumerate() {
         let tx = start_tabs_x + i as f32 * (tab_w + tab_gap);
         let tab_rect = Rect::new(tx, close_btn.y, tab_w, tab_h);
@@ -4882,7 +4996,12 @@ pub fn draw_chart_visualizer(
                 }
             }
         },
-        | ChartType::Bar | ChartType::Line | ChartType::Area | ChartType::Scatter => {
+        | ChartType::Bar
+        | ChartType::Line
+        | ChartType::Area
+        | ChartType::Scatter
+        | ChartType::Histogram
+        | ChartType::Waterfall => {
             let px = rx + 44;
             let py = ry + 36;
             let pw = rw.saturating_sub(60);
@@ -4990,9 +5109,13 @@ pub fn draw_chart_visualizer(
                 draw_rect_outline(buffer, width, height, mx1, py, mw, ph, 0xFF58a6ff);
             }
 
-            if chart_type == ChartType::Bar {
-                let group_pad = col_w * 0.15;
-                let bar_w = ((col_w - group_pad * 2.0) / visible_series.len() as f32).max(2.0);
+            if chart_type == ChartType::Bar || chart_type == ChartType::Histogram {
+                let group_pad = if chart_type == ChartType::Histogram {
+                    0.0
+                } else {
+                    col_w * 0.15
+                };
+                let bar_w = ((col_w - group_pad * 2.0) / visible_series.len() as f32).max(1.0);
 
                 for (s_order, (s_idx, s)) in visible_series.iter().enumerate() {
                     let col = parse_hex_color(
@@ -5030,6 +5153,40 @@ pub fn draw_chart_visualizer(
                                 2,
                                 0xFFFFFFFF,
                             );
+                        }
+                    }
+                }
+            } else if chart_type == ChartType::Waterfall {
+                let bar_pad = col_w * 0.15;
+                let bar_w = (col_w - bar_pad * 2.0).max(2.0);
+                let mut running_total = 0.0f64;
+                for (s_order, (_s_idx, s)) in visible_series.iter().enumerate() {
+                    if s_order > 0 {
+                        break;
+                    }
+                    for (c_idx, &val) in s.values.iter().enumerate() {
+                        let start_v = running_total;
+                        let end_v = running_total + val;
+                        running_total = end_v;
+                        let lower = start_v.min(end_v);
+                        let upper = start_v.max(end_v);
+                        let lower_h = (((lower - y_min) / (y_max - y_min).max(1e-6)) as f32
+                            * ph as f32)
+                            .clamp(0.0, ph as f32);
+                        let upper_h = (((upper - y_min) / (y_max - y_min).max(1e-6)) as f32
+                            * ph as f32)
+                            .clamp(0.0, ph as f32);
+                        let bx = (px as f32 + c_idx as f32 * col_w + bar_pad) as usize;
+                        let by = (py + ph).saturating_sub(upper_h as usize);
+                        let bh = (upper_h - lower_h).max(2.0) as usize;
+                        let col = if val >= 0.0 {
+                            0xFF2ea043
+                        } else {
+                            0xFFf85149
+                        };
+                        fill_rect(buffer, width, height, bx, by, bar_w as usize, bh, col);
+                        if hovered_cat == Some(c_idx) {
+                            fill_rect(buffer, width, height, bx, by, bar_w as usize, 2, 0xFFFFFFFF);
                         }
                     }
                 }
@@ -5185,6 +5342,104 @@ pub fn draw_chart_visualizer(
                 }
             }
         },
+        | ChartType::Radar => {
+            let cx = (rx + rw / 2) as f32;
+            let cy = (ry + rh / 2 + 8) as f32;
+            let max_radius = ((rw.min(rh) as f32) * 0.38).max(25.0);
+            let cat_count = chart_data.categories.len().max(1);
+
+            // Draw radar web rings
+            for ring in 1..=4 {
+                let r = max_radius * (ring as f32 / 4.0);
+                for c_idx in 0..cat_count {
+                    let next_idx = (c_idx + 1) % cat_count;
+                    let a0 = (c_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                        - std::f32::consts::FRAC_PI_2;
+                    let a1 = (next_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                        - std::f32::consts::FRAC_PI_2;
+                    let x0 = (cx + r * a0.cos()) as isize;
+                    let y0 = (cy + r * a0.sin()) as isize;
+                    let x1 = (cx + r * a1.cos()) as isize;
+                    let y1 = (cy + r * a1.sin()) as isize;
+                    draw_thick_line(buffer, width, height, x0, y0, x1, y1, 1, 0xFF30363d);
+                }
+            }
+
+            // Draw spokes and axis labels
+            for (c_idx, cat) in chart_data.categories.iter().enumerate() {
+                let a = (c_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                    - std::f32::consts::FRAC_PI_2;
+                let sx = (cx + max_radius * a.cos()) as isize;
+                let sy = (cy + max_radius * a.sin()) as isize;
+                draw_thick_line(
+                    buffer,
+                    width,
+                    height,
+                    cx as isize,
+                    cy as isize,
+                    sx,
+                    sy,
+                    1,
+                    0xFF30363d,
+                );
+
+                let lx = (cx + (max_radius + 14.0) * a.cos()) as usize;
+                let ly = (cy + (max_radius + 14.0) * a.sin()) as usize;
+                let cat_disp = truncate_text_to_width(cat, 50);
+                draw_text_at_center(
+                    buffer,
+                    width,
+                    height,
+                    lx,
+                    ly.saturating_sub(4),
+                    &cat_disp,
+                    0xFF8b949e,
+                );
+            }
+
+            // Find min/max for scaling
+            let mut y_min = 0.0f64;
+            let mut y_max = 0.0f64;
+            for (_, s) in &visible_series {
+                for &v in &s.values {
+                    if v < y_min {
+                        y_min = v;
+                    }
+                    if v > y_max {
+                        y_max = v;
+                    }
+                }
+            }
+            if y_max <= y_min {
+                y_max = y_min + 1.0;
+            }
+
+            // Draw series polygons
+            for (s_idx, s) in &visible_series {
+                let col = parse_hex_color(
+                    s.color
+                        .as_deref()
+                        .unwrap_or(DEFAULT_CHART_COLORS[s_idx % DEFAULT_CHART_COLORS.len()]),
+                );
+                let mut pts = Vec::with_capacity(s.values.len());
+                for (c_idx, &val) in s.values.iter().enumerate() {
+                    let a = (c_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                        - std::f32::consts::FRAC_PI_2;
+                    let norm = (((val - y_min) / (y_max - y_min).max(1e-6)) as f32).clamp(0.0, 1.0);
+                    let r = max_radius * norm;
+                    pts.push(((cx + r * a.cos()) as isize, (cy + r * a.sin()) as isize));
+                }
+
+                if !pts.is_empty() {
+                    for i in 0..pts.len() {
+                        let (x0, y0) = pts[i];
+                        let (x1, y1) = pts[(i + 1) % pts.len()];
+                        draw_thick_line(buffer, width, height, x0, y0, x1, y1, 2, col);
+                        draw_disk(buffer, width, height, x0, y0, 3, col);
+                    }
+                }
+            }
+        },
     }
 }
 
@@ -5328,11 +5583,15 @@ pub fn draw_chart_inspector(
         ("AREA", ChartType::Area),
         ("PIE", ChartType::Pie),
         ("DONUT", ChartType::Donut),
+        ("SCAT", ChartType::Scatter),
+        ("HIST", ChartType::Histogram),
+        ("FALL", ChartType::Waterfall),
+        ("RADAR", ChartType::Radar),
     ];
-    let tab_w = 48.0;
+    let tab_w = 40.0;
     let tab_h = 26.0;
-    let tab_gap = 6.0;
-    let start_tabs_x = export_btn.x - 10.0 - (types.len() as f32 * (tab_w + tab_gap));
+    let tab_gap = 4.0;
+    let start_tabs_x = export_btn.x - 8.0 - (types.len() as f32 * (tab_w + tab_gap));
 
     for (i, &(label, t)) in types.iter().enumerate() {
         let tx = start_tabs_x + i as f32 * (tab_w + tab_gap);
@@ -6533,7 +6792,16 @@ mod tests {
         let height = 200;
         let mut buffer = vec![0u32; width * height];
 
-        draw_slide_jump_dialog(&mut buffer, width, height, "12", 5, 20, HudTheme::Dark);
+        draw_slide_jump_dialog(
+            &mut buffer,
+            width,
+            height,
+            "12",
+            5,
+            20,
+            HudTheme::Dark,
+            Some("Slide 12: Architecture"),
+        );
         let drawn_count = buffer.iter().filter(|&&p| p != 0).count();
         assert!(
             drawn_count > 100,

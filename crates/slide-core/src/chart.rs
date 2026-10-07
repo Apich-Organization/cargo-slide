@@ -16,6 +16,59 @@ pub enum ChartType {
     Pie,
     Donut,
     Scatter,
+    Histogram,
+    Waterfall,
+    Radar,
+}
+
+impl ChartType {
+    /// Human-readable label for chart type
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            | Self::Bar => "Bar",
+            | Self::Line => "Line",
+            | Self::Area => "Area",
+            | Self::Pie => "Pie",
+            | Self::Donut => "Donut",
+            | Self::Scatter => "Scatter",
+            | Self::Histogram => "Histogram",
+            | Self::Waterfall => "Waterfall",
+            | Self::Radar => "Radar",
+        }
+    }
+
+    /// Advance to the next chart type in cycle
+    #[must_use]
+    pub const fn cycle(self) -> Self {
+        match self {
+            | Self::Bar => Self::Line,
+            | Self::Line => Self::Area,
+            | Self::Area => Self::Pie,
+            | Self::Pie => Self::Donut,
+            | Self::Donut => Self::Scatter,
+            | Self::Scatter => Self::Histogram,
+            | Self::Histogram => Self::Waterfall,
+            | Self::Waterfall => Self::Radar,
+            | Self::Radar => Self::Bar,
+        }
+    }
+
+    /// All available chart types
+    #[must_use]
+    pub const fn all() -> &'static [Self] {
+        &[
+            Self::Bar,
+            Self::Line,
+            Self::Area,
+            Self::Pie,
+            Self::Donut,
+            Self::Scatter,
+            Self::Histogram,
+            Self::Waterfall,
+            Self::Radar,
+        ]
+    }
 }
 
 impl std::str::FromStr for ChartType {
@@ -28,6 +81,9 @@ impl std::str::FromStr for ChartType {
             | "pie" => Self::Pie,
             | "donut" => Self::Donut,
             | "scatter" => Self::Scatter,
+            | "histogram" | "hist" => Self::Histogram,
+            | "waterfall" => Self::Waterfall,
+            | "radar" | "spider" => Self::Radar,
             | _ => Self::Bar,
         })
     }
@@ -392,6 +448,48 @@ impl ChartData {
             return (
                 ChartType::Scatter,
                 "High density multivariate data points are best represented by a Scatter plot",
+            );
+        }
+
+        // 4. Waterfall for variance, financial bridge, or mixed positive & negative deltas
+        let title_lower = self.title.as_deref().unwrap_or("").to_lowercase();
+        if title_lower.contains("waterfall")
+            || title_lower.contains("bridge")
+            || title_lower.contains("variance")
+            || (self.series.len() == 1
+                && self.categories.len() >= 3
+                && self.series[0].values.iter().any(|v| *v < 0.0)
+                && self.series[0].values.iter().any(|v| *v > 0.0))
+        {
+            return (
+                ChartType::Waterfall,
+                "Sequential positive and negative increments are best visualized with a Waterfall chart",
+            );
+        }
+
+        // 5. Radar for multi-attribute ratings, benchmarks, or spider plots
+        if (title_lower.contains("radar")
+            || title_lower.contains("spider")
+            || title_lower.contains("benchmark")
+            || title_lower.contains("skills")
+            || title_lower.contains("dimensions"))
+            && self.categories.len() >= 3
+            && self.categories.len() <= 10
+        {
+            return (
+                ChartType::Radar,
+                "Multi-dimensional comparative evaluation metrics are best presented with a Radar chart",
+            );
+        }
+
+        // 6. Histogram for frequency distributions
+        if title_lower.contains("histogram")
+            || title_lower.contains("distribution")
+            || title_lower.contains("frequency")
+        {
+            return (
+                ChartType::Histogram,
+                "Continuous distribution frequency bins are best represented by a Histogram",
             );
         }
 
@@ -1766,6 +1864,73 @@ impl ChartData {
         csv
     }
 
+    /// Export chart data to structured JSON string
+    #[must_use]
+    pub fn export_json(
+        &self,
+        hidden_series: &std::collections::HashSet<usize>,
+    ) -> String {
+        let active_series: Vec<_> = self
+            .series
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !hidden_series.contains(idx))
+            .map(|(_, s)| s)
+            .collect();
+
+        serde_json::to_string_pretty(&serde_json::json!({
+            "title": self.title,
+            "chart_type": self.chart_type,
+            "categories": self.categories,
+            "series": active_series,
+            "format": self.format,
+        }))
+        .unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Export chart data to Markdown table string
+    #[must_use]
+    pub fn export_markdown(
+        &self,
+        hidden_series: &std::collections::HashSet<usize>,
+    ) -> String {
+        let mut md = String::new();
+        if let Some(ref title) = self.title {
+            md.push_str(&format!("### {title}\n\n"));
+        }
+        // Header
+        md.push_str("| Category |");
+        for (idx, s) in self.series.iter().enumerate() {
+            if !hidden_series.contains(&idx) {
+                md.push_str(&format!(" {} |", s.name));
+            }
+        }
+        md.push('\n');
+
+        // Separator
+        md.push_str("| :--- |");
+        for (idx, _) in self.series.iter().enumerate() {
+            if !hidden_series.contains(&idx) {
+                md.push_str(" :---: |");
+            }
+        }
+        md.push('\n');
+
+        // Rows
+        for (c_idx, cat) in self.categories.iter().enumerate() {
+            md.push_str(&format!("| {cat} |"));
+            for (s_idx, s) in self.series.iter().enumerate() {
+                if !hidden_series.contains(&s_idx) {
+                    let val = s.values.get(c_idx).copied().unwrap_or(0.0);
+                    md.push_str(&format!(" {} |", Self::format_value(val)));
+                }
+            }
+            md.push('\n');
+        }
+
+        md
+    }
+
     /// Calculate nice rounded ticks for Y-axis (min, max, ticks)
     #[must_use]
     pub fn nice_scale(
@@ -2017,6 +2182,40 @@ impl ChartData {
         None
     }
 
+    /// Hit-test axis/category index for Radar charts
+    #[must_use]
+    pub fn hit_test_radar_axis(
+        &self,
+        chart_rect: Rect,
+        mouse_x: f32,
+        mouse_y: f32,
+    ) -> Option<usize> {
+        let cat_count = self.categories.len();
+        if cat_count == 0 {
+            return None;
+        }
+
+        let plot = self.plot_area(chart_rect);
+        let center_x = plot.x + plot.width * 0.5;
+        let center_y = plot.y + plot.height * 0.5;
+        let max_radius = (plot.width.min(plot.height) * 0.42).max(10.0);
+
+        let dx = mouse_x - center_x;
+        let dy = mouse_y - center_y;
+        let dist = dx.hypot(dy);
+        if dist > max_radius * 1.25 {
+            return None;
+        }
+
+        let mut a = dy.atan2(dx) + std::f32::consts::FRAC_PI_2;
+        if a < 0.0 {
+            a += std::f32::consts::TAU;
+        }
+        let sector = std::f32::consts::TAU / cat_count as f32;
+        let idx = ((a + sector * 0.5) / sector).floor() as usize % cat_count;
+        Some(idx)
+    }
+
     /// Standalone SVG generation for full visual rendering
     #[must_use]
     pub fn render_svg(
@@ -2181,6 +2380,179 @@ impl ChartData {
                         svg.push_str(&format!(
                             r##"<circle cx="{}" cy="{}" r="4" fill="{}" stroke="#161b22" stroke-width="2"/>"##,
                             p.0, p.1, color
+                        ));
+                    }
+                }
+            },
+            | ChartType::Histogram => {
+                let cat_count = self.categories.len().max(1);
+                let col_width = plot.width / cat_count as f32;
+
+                for (cat_idx, cat_name) in self.categories.iter().enumerate() {
+                    let cat_x = (cat_idx as f32).mul_add(col_width, plot.x);
+
+                    svg.push_str(&format!(
+                        r##"<text x="{}" y="{}" fill="#8b949e" font-size="9" text-anchor="middle" font-family="sans-serif">{}</text>"##,
+                        cat_x + col_width * 0.5, baseline_y + 16.0, cat_name
+                    ));
+
+                    if let Some(s) = self.series.first() {
+                        let color = s.color.as_deref().unwrap_or(DEFAULT_CHART_COLORS[0]);
+                        let val = s.values.get(cat_idx).copied().unwrap_or(0.0);
+                        let bar_h = (((val - y_min) / (y_max - y_min).max(1e-6)) as f32
+                            * plot.height)
+                            .max(0.0);
+                        let by = baseline_y - bar_h;
+                        svg.push_str(&format!(
+                            r##"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" opacity="0.85" stroke="#161b22" stroke-width="1"/>"##,
+                            cat_x, by, col_width, bar_h, color
+                        ));
+                    }
+                }
+            },
+            | ChartType::Waterfall => {
+                let cat_count = self.categories.len().max(1);
+                let col_width = plot.width / cat_count as f32;
+                let bar_w = (col_width * 0.7).max(6.0);
+                let bar_pad = (col_width - bar_w) * 0.5;
+
+                let mut current_val = 0.0f64;
+                for (cat_idx, cat_name) in self.categories.iter().enumerate() {
+                    let cat_x = (cat_idx as f32).mul_add(col_width, plot.x);
+
+                    svg.push_str(&format!(
+                        r##"<text x="{}" y="{}" fill="#8b949e" font-size="10" text-anchor="middle" font-family="sans-serif">{}</text>"##,
+                        cat_x + col_width * 0.5, baseline_y + 16.0, cat_name
+                    ));
+
+                    let delta = self
+                        .series
+                        .first()
+                        .and_then(|s| s.values.get(cat_idx))
+                        .copied()
+                        .unwrap_or(0.0);
+                    let start_val = current_val;
+                    let end_val = current_val + delta;
+                    current_val = end_val;
+
+                    let y_start = baseline_y
+                        - (((start_val - y_min) / (y_max - y_min).max(1e-6)) as f32 * plot.height);
+                    let y_end = baseline_y
+                        - (((end_val - y_min) / (y_max - y_min).max(1e-6)) as f32 * plot.height);
+
+                    let top_y = y_start.min(y_end);
+                    let bar_h = (y_start - y_end).abs().max(2.0);
+                    let fill_color = if delta >= 0.0 {
+                        "#34d399"
+                    } else {
+                        "#f43f5e"
+                    };
+
+                    let bx = cat_x + bar_pad;
+                    svg.push_str(&format!(
+                        r##"<rect x="{bx}" y="{top_y}" width="{bar_w}" height="{bar_h}" rx="2" fill="{fill_color}" opacity="0.9"/>"##
+                    ));
+
+                    // Connector line to next bar
+                    if cat_idx + 1 < cat_count {
+                        let next_bx = cat_x + col_width + bar_pad;
+                        svg.push_str(&format!(
+                            r##"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="#8b949e" stroke-dasharray="2,2" stroke-width="1"/>"##,
+                            bx + bar_w, y_end, next_bx, y_end
+                        ));
+                    }
+                }
+            },
+            | ChartType::Scatter => {
+                let cat_count = self.categories.len().max(1);
+                let col_width = plot.width / cat_count as f32;
+
+                for (cat_idx, cat_name) in self.categories.iter().enumerate() {
+                    let cx = (cat_idx as f32 + 0.5).mul_add(col_width, plot.x);
+                    svg.push_str(&format!(
+                        r##"<text x="{}" y="{}" fill="#8b949e" font-size="10" text-anchor="middle" font-family="sans-serif">{}</text>"##,
+                        cx, baseline_y + 16.0, cat_name
+                    ));
+                }
+
+                for (s_idx, s) in self.series.iter().enumerate() {
+                    let color = s
+                        .color
+                        .as_deref()
+                        .unwrap_or(DEFAULT_CHART_COLORS[s_idx % DEFAULT_CHART_COLORS.len()]);
+                    for (cat_idx, &val) in s.values.iter().enumerate() {
+                        let cx = (cat_idx as f32 + 0.5).mul_add(col_width, plot.x);
+                        let cy = (((val - y_min) / (y_max - y_min).max(1e-6)) as f32)
+                            .mul_add(-plot.height, baseline_y);
+                        svg.push_str(&format!(
+                            r##"<circle cx="{cx}" cy="{cy}" r="5" fill="{color}" opacity="0.9" stroke="#161b22" stroke-width="1.5"/>"##
+                        ));
+                    }
+                }
+            },
+            | ChartType::Radar => {
+                let cat_count = self.categories.len().max(1);
+                let center_x = plot.x + plot.width * 0.5;
+                let center_y = plot.y + plot.height * 0.5;
+                let max_radius = (plot.width.min(plot.height) * 0.42).max(10.0);
+
+                // Draw 4 circular/polygon web rings
+                for ring in 1..=4 {
+                    let r = max_radius * (ring as f32 / 4.0);
+                    let mut ring_pts = Vec::new();
+                    for cat_idx in 0..cat_count {
+                        let angle = (cat_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                            - std::f32::consts::FRAC_PI_2;
+                        let rx = center_x + r * angle.cos();
+                        let ry = center_y + r * angle.sin();
+                        ring_pts.push(format!("{rx:.1},{ry:.1}"));
+                    }
+                    let pts_str = ring_pts.join(" ");
+                    svg.push_str(&format!(
+                        r##"<polygon points="{pts_str}" fill="none" stroke="#30363d" stroke-dasharray="2,2" stroke-width="1"/>"##
+                    ));
+                }
+
+                // Draw radial spoke axes and category labels
+                for (cat_idx, cat_name) in self.categories.iter().enumerate() {
+                    let angle = (cat_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                        - std::f32::consts::FRAC_PI_2;
+                    let spoke_x = center_x + max_radius * angle.cos();
+                    let spoke_y = center_y + max_radius * angle.sin();
+                    svg.push_str(&format!(
+                        r##"<line x1="{center_x}" y1="{center_y}" x2="{spoke_x}" y2="{spoke_y}" stroke="#30363d" stroke-width="1"/>"##
+                    ));
+
+                    let label_x = center_x + (max_radius + 14.0) * angle.cos();
+                    let label_y = center_y + (max_radius + 14.0) * angle.sin() + 4.0;
+                    svg.push_str(&format!(
+                        r##"<text x="{label_x}" y="{label_y}" fill="#8b949e" font-size="10" text-anchor="middle" font-family="sans-serif">{cat_name}</text>"##
+                    ));
+                }
+
+                // Draw series polygons
+                for (s_idx, s) in self.series.iter().enumerate() {
+                    let color = s
+                        .color
+                        .as_deref()
+                        .unwrap_or(DEFAULT_CHART_COLORS[s_idx % DEFAULT_CHART_COLORS.len()]);
+                    let mut poly_pts = Vec::new();
+
+                    for (cat_idx, &val) in s.values.iter().enumerate() {
+                        let angle = (cat_idx as f32 / cat_count as f32) * std::f32::consts::TAU
+                            - std::f32::consts::FRAC_PI_2;
+                        let norm =
+                            ((val - y_min) / (y_max - y_min).max(1e-6)).clamp(0.0, 1.0) as f32;
+                        let r = max_radius * norm;
+                        let px = center_x + r * angle.cos();
+                        let py = center_y + r * angle.sin();
+                        poly_pts.push(format!("{px:.1},{py:.1}"));
+                    }
+
+                    if !poly_pts.is_empty() {
+                        let pts_str = poly_pts.join(" ");
+                        svg.push_str(&format!(
+                            r##"<polygon points="{pts_str}" fill="{color}" fill-opacity="0.30" stroke="{color}" stroke-width="2"/>"##
                         ));
                     }
                 }

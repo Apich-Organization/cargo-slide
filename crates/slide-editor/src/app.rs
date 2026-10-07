@@ -161,6 +161,9 @@ pub enum ActiveModal {
         query: String,
         selected_idx: usize,
     },
+    RecoveryDraft {
+        draft_content: String,
+    },
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -632,6 +635,9 @@ pub enum Message {
     CommandPaletteExecute,
     // Agenda slide generation
     GenerateAgendaSlide,
+    // Session recovery draft restoration
+    RestoreRecoveryDraft(String),
+    DiscardRecoveryDraft,
 }
 
 impl SlideEditorApp {
@@ -754,6 +760,11 @@ impl SlideEditorApp {
         };
         if let Some(ref p) = initial_file {
             save_recent_editor_file(p);
+            if let Some(draft) = EditorDocument::check_recovery_draft(p)
+                && draft.trim() != app.doc.source_text.trim()
+            {
+                app.active_modal = Some(ActiveModal::RecoveryDraft { draft_content: draft });
+            }
         }
         app.update_slide_cache();
         app
@@ -1174,6 +1185,10 @@ impl SlideEditorApp {
         self.compilation_in_flight = true;
         self.pending_recompile = false;
         self.compilation_status = CompilationStatus::Compiling;
+
+        if self.doc.is_dirty {
+            let _ = self.doc.save_recovery_draft();
+        }
 
         let fallback_clean = self.doc.source_text.clone();
         let source = if self.mode == EditorMode::FocusMode {
@@ -4086,6 +4101,21 @@ impl SlideEditorApp {
                 self.sync_editors_from_doc();
                 task = self.trigger_recompile_task();
             },
+            | Message::RestoreRecoveryDraft(content) => {
+                self.push_undo_snapshot();
+                self.doc.source_text = content;
+                self.doc.is_dirty = true;
+                self.doc.sync_chunks_from_source();
+                self.engine.source_text = self.doc.source_text.clone();
+                self.engine.reparse();
+                self.sync_editors_from_doc();
+                self.active_modal = None;
+                task = self.trigger_recompile_task();
+            },
+            | Message::DiscardRecoveryDraft => {
+                let _ = self.doc.clear_recovery_draft();
+                self.active_modal = None;
+            },
         }
 
         task
@@ -4313,6 +4343,7 @@ impl SlideEditorApp {
             self.zoom_percent,
             self.speaking_wpm,
             win_w,
+            self.doc.is_dirty,
         );
 
         let base_content = column![toolbar, formatting_bar, center_content, statusbar]
@@ -4464,6 +4495,9 @@ impl SlideEditorApp {
                 },
                 | ActiveModal::CommandPalette { query, selected_idx } => {
                     crate::ui::modals::view_command_palette_modal(self.theme, query, *selected_idx)
+                },
+                | ActiveModal::RecoveryDraft { draft_content } => {
+                    crate::ui::modals::view_recovery_draft_modal(self.theme, draft_content)
                 },
             };
 

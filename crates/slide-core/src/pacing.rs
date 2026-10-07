@@ -132,6 +132,10 @@ pub struct DeckPacingReport {
     pub dense_count: usize,
     pub overloaded_count: usize,
     pub brisk_count: usize,
+    pub pace_variance_seconds: usize,
+    pub rhythm_score: u32,
+    pub rhythm_description: String,
+    pub checkpoint_recommendations: Vec<usize>,
     pub slides: Vec<SlidePacingInfo>,
 }
 
@@ -367,6 +371,50 @@ pub fn calculate_deck_pacing(
     let max_range = (total_secs as f64 * 1.15 / 60.0).ceil() as usize;
     let duration_range = format!("{min_range} – {max_range} min");
 
+    let mean_secs = avg_seconds as f64;
+    let variance: f64 = if slides_info.is_empty() {
+        0.0
+    } else {
+        let sum_sq: f64 = slides_info
+            .iter()
+            .map(|s| {
+                let diff = s.estimated_seconds as f64 - mean_secs;
+                diff * diff
+            })
+            .sum();
+        sum_sq / slides_info.len() as f64
+    };
+    let pace_variance_seconds = variance.sqrt().round() as usize;
+
+    let (rhythm_score, rhythm_description) = if slides_info.len() <= 2 {
+        (95, "Consistent Pace".to_string())
+    } else {
+        let cv = if mean_secs > 0.0 {
+            (pace_variance_seconds as f64 / mean_secs).min(2.0)
+        } else {
+            0.0
+        };
+        let score = (100.0 - cv * 35.0).clamp(30.0, 100.0).round() as u32;
+        let desc = if cv < 0.4 {
+            "Steady & Balanced Rhythm".to_string()
+        } else if cv < 0.8 {
+            "Moderate Dynamic Variation".to_string()
+        } else {
+            "High Pace Variance (Some slides brief, others dense)".to_string()
+        };
+        (score, desc)
+    };
+
+    let mut checkpoint_recommendations = Vec::new();
+    let mut accum = 0usize;
+    for (i, s) in slides_info.iter().enumerate() {
+        accum = accum.saturating_add(s.estimated_seconds);
+        if accum >= 600 && i + 2 < slides_info.len() {
+            checkpoint_recommendations.push(i + 1);
+            accum = 0;
+        }
+    }
+
     DeckPacingReport {
         total_slides: deck.total_slides(),
         total_estimated_seconds: total_secs,
@@ -382,6 +430,10 @@ pub fn calculate_deck_pacing(
         dense_count,
         overloaded_count,
         brisk_count,
+        pace_variance_seconds,
+        rhythm_score,
+        rhythm_description,
+        checkpoint_recommendations,
         slides: slides_info,
     }
 }
