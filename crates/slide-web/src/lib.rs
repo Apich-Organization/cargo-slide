@@ -1386,7 +1386,7 @@ pub fn App() -> impl IntoView {
                                                 }
                                             }
                                         >"⛶ Fullscreen"</button>
-                                        <button class="close-btn" on:click=move |_| active_video_modal.set(None)>"✕"</button>
+                                        <button class="close-btn" aria-label="Close video player" title="Close video player" on:click=move |_| active_video_modal.set(None)>"✕"</button>
                                     </div>
                                 </div>
                                 <div class="video-body">
@@ -1442,7 +1442,7 @@ pub fn App() -> impl IntoView {
                             <div class="overview-modal" on:click=move |ev| ev.stop_propagation()>
                                 <div class="modal-header">
                                     <h2>"Slide Overview"</h2>
-                                    <button class="close-btn" on:click=move |_| overview_open.set(false)>"✕"</button>
+                                    <button class="close-btn" aria-label="Close overview" title="Close overview" on:click=move |_| overview_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="grid-container">
                                     {d.slides.into_iter().enumerate().map(|(idx, slide)| {
@@ -1477,7 +1477,7 @@ pub fn App() -> impl IntoView {
                             <div class="help-modal" on:click=move |ev| ev.stop_propagation()>
                                 <div class="modal-header">
                                     <h2>"Presenter Shortcuts & Controls"</h2>
-                                    <button class="close-btn" on:click=move |_| help_open.set(false)>"✕"</button>
+                                    <button class="close-btn" aria-label="Close help" title="Close help" on:click=move |_| help_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="help-content">
                                     <table class="shortcuts-table">
@@ -1527,7 +1527,7 @@ pub fn App() -> impl IntoView {
                                         <span style="font-size: 20px;">"📝"</span>
                                         <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #58a6ff;">{format!("Speaker Notes • Slide {}/{}", current_index.get() + 1, total_slides.get())}</h3>
                                     </div>
-                                    <button class="close-btn" style="background: none; border: none; font-size: 18px; color: #8b949e; cursor: pointer;" on:click=move |_| notes_open.set(false)>"✕"</button>
+                                    <button class="close-btn" aria-label="Close notes" title="Close notes" style="background: none; border: none; font-size: 18px; color: #8b949e; cursor: pointer;" on:click=move |_| notes_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="notes-meta" style="font-size: 13px; color: #8b949e; margin-bottom: 14px;">
                                     {format!("~{}s estimated speaking time • {} words", est_secs.max(5), word_count)}
@@ -1693,7 +1693,7 @@ fn ChartInspectorModal(
                         <h2>{move || transformed_data.get().title.unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
                         <span class="inspector-badge">"Interactive SQL & Data Engine"</span>
                     </div>
-                    <button class="close-btn" on:click=move |_| on_close()>"✕"</button>
+                    <button class="close-btn" aria-label="Close data inspector" title="Close data inspector" on:click=move |_| on_close()>"✕"</button>
                 </div>
 
                 // KPI Strip (6 HUD KPI Cards)
@@ -2002,7 +2002,7 @@ fn TextPreviewModal(
                         >
                             "💾 Download"
                         </button>
-                        <button class="close-btn" on:click=move |_| on_close()>"✕"</button>
+                        <button class="close-btn" aria-label="Close text preview" title="Close text preview" on:click=move |_| on_close()>"✕"</button>
                     </div>
                 </div>
 
