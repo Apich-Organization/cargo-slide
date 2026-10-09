@@ -1196,7 +1196,7 @@ pub fn App() -> impl IntoView {
                                         view! {
                                             <button
                                                 class=move || if is_sel() { "pen-size-btn active" } else { "pen-size-btn" }
-                                                aria-label=format!("Stroke Width {w:.0}px", w)
+                                                aria-label=format!("Stroke Width {w:.0}px")
                                                 title=format!("Stroke Width {w:.0}px ([ / ])")
                                                 on:click=move |_| {
                                                     pen_width.set(w);

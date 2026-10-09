@@ -41,7 +41,7 @@
   #v(0.5cm)
   #badge("Quantum Mechanics") #badge("Field Theory", fill: rgb("238636"))
   
-  $ cal(H) |psi(t) chevron.r = i ħ dif / (dif t) |psi(t) chevron.r $
+  $ cal(H) |psi(t) angle.r = i ħ dif / (dif t) |psi(t) angle.r $
 ]
 
 #slide(title: "Interactive Hyperlinks & Hotspots")[
