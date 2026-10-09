@@ -66,7 +66,7 @@
       === Quantum Field & Wave Equations
       Typst renders complex LaTeX-grade mathematics natively:
 
-      $ cal(H) |psi(t) angle.r = i ħ dif / (dif t) |psi(t) angle.r $
+      $ cal(H) |psi(t) chevron.r = i ħ dif / (dif t) |psi(t) chevron.r $
 
       $ dif / (dif t) frac(partial cal(L), partial dot(q)_i) - frac(partial cal(L), partial q_i) = 0 $
 
