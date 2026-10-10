@@ -18,6 +18,7 @@ use iced::widget::container;
 use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
+use iced::widget::tooltip;
 
 /// Breakpoint widths for responsive toolbar layout
 const COMPACT_BREAKPOINT: f32 = 1100.0;
@@ -293,17 +294,28 @@ pub fn view_toolbar<'a>(
         None
     });
 
+    // Helper to wrap buttons with tooltips for better UX and shortcut discovery
+    let make_tooltip = |widget: Element<'a, Message>, hint: &'static str| -> Element<'a, Message> {
+        tooltip(
+            widget,
+            container(text(hint).size(11)).padding(4),
+            tooltip::Position::Bottom,
+        )
+        .style(container::rounded_box)
+        .into()
+    };
+
     // Build right bar — progressively hide less-important items at narrow widths
     let mut right_bar = row![].spacing(tb_spacing).align_y(Alignment::Center);
 
     // Always-visible core actions
-    right_bar = right_bar.push(save_btn);
-    right_bar = right_bar.push(undo_btn);
-    right_bar = right_bar.push(redo_btn);
+    right_bar = right_bar.push(make_tooltip(save_btn.into(), "Save Document (Ctrl+S)"));
+    right_bar = right_bar.push(make_tooltip(undo_btn.into(), "Undo (Ctrl+Z)"));
+    right_bar = right_bar.push(make_tooltip(redo_btn.into(), "Redo (Ctrl+Y)"));
 
     if !is_tiny {
-        right_bar = right_bar.push(new_btn);
-        right_bar = right_bar.push(open_btn);
+        right_bar = right_bar.push(make_tooltip(new_btn.into(), "New Document (Ctrl+N)"));
+        right_bar = right_bar.push(make_tooltip(open_btn.into(), "Open Document (Ctrl+O)"));
     }
 
     if !is_narrow {
@@ -311,32 +323,32 @@ pub fn view_toolbar<'a>(
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenTemplateLibraryModal);
-        right_bar = right_bar.push(templates_btn);
+        right_bar = right_bar.push(make_tooltip(templates_btn.into(), "Templates"));
 
         let find_btn = button(text("Find").size(tb_size))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenSearchModal);
-        right_bar = right_bar.push(find_btn);
+        right_bar = right_bar.push(make_tooltip(find_btn.into(), "Find (Ctrl+F)"));
 
         let font_btn = button(text("Font").size(tb_size))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenFontModal);
-        right_bar = right_bar.push(font_btn);
+        right_bar = right_bar.push(make_tooltip(font_btn.into(), "Select Font"));
 
         let header_footer_btn = button(text("Header/Footer").size(tb_size))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenHeaderFooterModal);
-        right_bar = right_bar.push(header_footer_btn);
+        right_bar = right_bar.push(make_tooltip(header_footer_btn.into(), "Header/Footer"));
     }
 
-    right_bar = right_bar.push(export_btn);
-    right_bar = right_bar.push(present_btn);
+    right_bar = right_bar.push(make_tooltip(export_btn.into(), "Export (Ctrl+E)"));
+    right_bar = right_bar.push(make_tooltip(present_btn.into(), "Play Presentation (F5)"));
 
     if !is_tiny {
-        right_bar = right_bar.push(theme_btn);
+        right_bar = right_bar.push(make_tooltip(theme_btn.into(), "Toggle Theme"));
     }
 
     let main_row = row![
