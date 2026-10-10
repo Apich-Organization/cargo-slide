@@ -1564,13 +1564,19 @@ fn ChartInspectorModal(
     );
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
-    let transformed_data = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Using Memo::new instead of Signal::derive here.
+    // Why: `transformed_data` performs an expensive data transformation.
+    // Signal::derive would recompute this on *every* read. Memo caches the result,
+    // saving CPU cycles and significantly improving UI responsiveness when interacting with the chart.
+    let transformed_data = Memo::new(move |_| {
         let raw = base_data.get();
         let tr = active_transform.get();
         apply_transform(&raw, tr)
     });
 
-    let filtered_indices = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Switched to Memo::new.
+    // Impact: Caching this filtering operation prevents unnecessary O(N) array scans during renders.
+    let filtered_indices = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let query = search_query.get();
@@ -1655,14 +1661,19 @@ fn ChartInspectorModal(
         indices
     });
 
-    let stats = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Switched to Memo::new.
+    // Impact: Avoids redundant statistical calculations (mean, median, etc.) on every read.
+    let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
         calculate_stats(&d, &vs, &f_indices)
     });
 
-    let rendered_chart_svg = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Switched to Memo::new.
+    // Impact: SVG string generation is computationally heavy. Caching this drastically reduces re-render times
+    // when unrelated state changes occur.
+    let rendered_chart_svg = Memo::new(move |_| {
         let d = transformed_data.get();
         let ct = active_type.get();
         let vs = visible_series.get();
