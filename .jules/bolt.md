@@ -1,0 +1,3 @@
+## 2024-05-24 - Leptos 0.8 `Signal::derive` Re-evaluation Behavior
+**Learning:** In Leptos 0.8, `Signal::derive` re-evaluates its closure on every read, unlike some other frameworks where derived signals are automatically cached. For computationally expensive reactive derivations (like parsing, filtering, formatting, sorting, and SVG rendering), this means heavy operations are duplicated unnecessarily during renders.
+**Action:** Use `Memo::new(move |_| { ... })` instead of `Signal::derive` to cache the results of computationally heavy reactive operations, so they only re-evaluate when their dependencies change.

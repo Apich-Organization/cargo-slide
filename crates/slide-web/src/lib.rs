@@ -1564,13 +1564,18 @@ fn ChartInspectorModal(
     );
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
-    let transformed_data = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Use Memo instead of Signal::derive for expensive operations
+    // In Leptos 0.8, Signal::derive re-evaluates its closure on every read.
+    // Memo caches the result and only re-evaluates when dependencies change,
+    // avoiding redundant calculations during render.
+    let transformed_data = Memo::new(move |_| {
         let raw = base_data.get();
         let tr = active_transform.get();
         apply_transform(&raw, tr)
     });
 
-    let filtered_indices = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Cache filtered indices calculation
+    let filtered_indices = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let query = search_query.get();
@@ -1655,14 +1660,16 @@ fn ChartInspectorModal(
         indices
     });
 
-    let stats = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Cache stats calculation
+    let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
         calculate_stats(&d, &vs, &f_indices)
     });
 
-    let rendered_chart_svg = Signal::derive(move || {
+    // ⚡ Bolt Optimization: Cache heavy SVG rendering
+    let rendered_chart_svg = Memo::new(move |_| {
         let d = transformed_data.get();
         let ct = active_type.get();
         let vs = visible_series.get();
