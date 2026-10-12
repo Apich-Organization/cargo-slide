@@ -30,4 +30,5 @@ image.workspace = true
 rfd = "0.17"
 typst-syntax = "0.15"
 regex = "1.13"
+open.workspace = true
 
