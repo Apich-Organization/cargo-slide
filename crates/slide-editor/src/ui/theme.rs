@@ -825,3 +825,23 @@ pub fn editor_style(theme: AppTheme) -> text_editor::Style {
         selection: Color::from_rgba(0.39, 0.40, 0.95, 0.25),
     }
 }
+
+/// Style for tooltip containers
+pub fn tooltip_container_style(theme: AppTheme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(match theme {
+            | AppTheme::Light => Color::from_rgb8(33, 37, 41), // Dark gray background for light theme
+            | AppTheme::Dark => Color::from_rgb8(248, 249, 250), // Light gray background for dark theme
+        })),
+        text_color: Some(match theme {
+            | AppTheme::Light => Color::WHITE,
+            | AppTheme::Dark => Color::BLACK,
+        }),
+        border: Border {
+            radius: border::Radius::from(RADIUS_SM),
+            ..Border::default()
+        },
+        shadow: elevation_subtle(theme),
+        ..container::Style::default()
+    }
+}

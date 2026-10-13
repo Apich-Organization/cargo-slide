@@ -18,6 +18,7 @@ use iced::widget::container;
 use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
+use iced::widget::tooltip;
 
 /// Breakpoint widths for responsive toolbar layout
 const COMPACT_BREAKPOINT: f32 = 1100.0;
@@ -272,6 +273,15 @@ pub fn view_toolbar<'a>(
         None
     });
 
+    let undo_widget = tooltip(
+        undo_btn,
+        container(text("Undo (Ctrl+Z)").size(11))
+            .padding([4, 8])
+            .style(move |_| theme::tooltip_container_style(theme)),
+        tooltip::Position::Bottom,
+    )
+    .gap(4);
+
     let redo_btn = button(
         text(if is_compact {
             "↷"
@@ -293,13 +303,22 @@ pub fn view_toolbar<'a>(
         None
     });
 
+    let redo_widget = tooltip(
+        redo_btn,
+        container(text("Redo (Ctrl+Y / Ctrl+Shift+Z)").size(11))
+            .padding([4, 8])
+            .style(move |_| theme::tooltip_container_style(theme)),
+        tooltip::Position::Bottom,
+    )
+    .gap(4);
+
     // Build right bar — progressively hide less-important items at narrow widths
     let mut right_bar = row![].spacing(tb_spacing).align_y(Alignment::Center);
 
     // Always-visible core actions
     right_bar = right_bar.push(save_btn);
-    right_bar = right_bar.push(undo_btn);
-    right_bar = right_bar.push(redo_btn);
+    right_bar = right_bar.push(undo_widget);
+    right_bar = right_bar.push(redo_widget);
 
     if !is_tiny {
         right_bar = right_bar.push(new_btn);
