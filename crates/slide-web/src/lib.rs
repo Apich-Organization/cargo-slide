@@ -731,14 +731,14 @@ pub fn App() -> impl IntoView {
         d.slides.get(idx).cloned()
     });
 
-    let current_view_box = Signal::derive(move || {
+    let current_view_box = Memo::new(move |_| {
         current_slide
             .get()
             .map(|s| s.view_box)
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 793.7008, 446.4567))
     });
 
-    let current_view_box_str = Signal::derive(move || {
+    let current_view_box_str = Memo::new(move |_| {
         let vb = current_view_box.get();
         format!("{} {} {} {}", vb.x, vb.y, vb.width, vb.height)
     });
@@ -826,7 +826,7 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let progress_percent = Signal::derive(move || {
+    let progress_percent = Memo::new(move |_| {
         let total = total_slides.get();
         if total <= 1 {
             100.0
@@ -1564,13 +1564,13 @@ fn ChartInspectorModal(
     );
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
-    let transformed_data = Signal::derive(move || {
+    let transformed_data = Memo::new(move |_| {
         let raw = base_data.get();
         let tr = active_transform.get();
         apply_transform(&raw, tr)
     });
 
-    let filtered_indices = Signal::derive(move || {
+    let filtered_indices = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let query = search_query.get();
@@ -1655,14 +1655,14 @@ fn ChartInspectorModal(
         indices
     });
 
-    let stats = Signal::derive(move || {
+    let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
         calculate_stats(&d, &vs, &f_indices)
     });
 
-    let rendered_chart_svg = Signal::derive(move || {
+    let rendered_chart_svg = Memo::new(move |_| {
         let d = transformed_data.get();
         let ct = active_type.get();
         let vs = visible_series.get();
