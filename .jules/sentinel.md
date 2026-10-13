@@ -1,0 +1,4 @@
+## 2025-02-18 - [Command Injection via External Target Opening]
+**Vulnerability:** Command injection vulnerability in how URLs and external files are opened using platform-specific system shells (like `cmd /C start`, `xdg-open`, and `open`) combined with `std::process::Command::new` in `crates/slide-player/src/window.rs` and `crates/slide-editor/src/app.rs`.
+**Learning:** Hardcoding shell commands without sanitizing user-provided strings (such as parsed URLs from typst presentations) directly exposes the application to command injection attacks. Even "harmless" functions like `open_external_target_detached` can be exploited.
+**Prevention:** Avoid using `std::process::Command::new` directly with system shell commands for opening targets. Use the secure, cross-platform `open` crate (`open::that_detached`) which properly handles escaping and platform-specific behaviors.

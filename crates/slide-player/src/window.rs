@@ -341,60 +341,10 @@ pub fn normalize_windows_path(p: PathBuf) -> PathBuf {
 /// Spawns a background thread with standard streams detached so the main render loop never freezes.
 pub fn open_external_target_detached(target: &str) {
     let target_str = target.to_string();
+    // SECURITY FIX: Using `open::that_detached` prevents command injection vulnerabilities
+    // that exist when using `std::process::Command::new` with system shells.
     let _ = std::thread::spawn(move || {
-        #[cfg(target_os = "linux")]
-        {
-            let child = std::process::Command::new("xdg-open")
-                .arg(&target_str)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            if let Ok(mut c) = child {
-                let _ = c.wait();
-                return;
-            }
-            let child = std::process::Command::new("gio")
-                .args(["open", &target_str])
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            if let Ok(mut c) = child {
-                let _ = c.wait();
-            }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            let child = std::process::Command::new("open")
-                .arg(&target_str)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            if let Ok(mut c) = child {
-                let _ = c.wait();
-            }
-        }
-
-        #[cfg(windows)]
-        {
-            let child = std::process::Command::new("cmd")
-                .args(["/C", "start", "", &target_str])
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            if let Ok(mut c) = child {
-                let _ = c.wait();
-            }
-        }
-
-        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-        {
-            let _ = target_str;
-        }
+        let _ = open::that_detached(&target_str);
     });
 }
 
