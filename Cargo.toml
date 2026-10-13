@@ -70,7 +70,7 @@ walkdir = "2.5"
 rodio = "0.22"
 csv = "1.4"
 rusqlite = { version = "0.40", features = ["bundled"] }
-zip = "8.6"
+zip = "9.0"
 tar = "0.4"
 xz2 = "0.1"
 lzma-rs = "0.3"
