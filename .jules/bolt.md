@@ -1,0 +1,3 @@
+## 2024-10-15 - Leptos 0.8 `Signal::derive` vs `Memo::new` Performance Trap
+**Learning:** In Leptos 0.8, `Signal::derive` is lightweight but re-evaluates its closure on *every single read*. For computationally expensive operations (like data transformations, SVG rendering, or complex filtering as seen in `slide-web`), using `Signal::derive` can lead to severe performance bottlenecks due to redundant recalculations.
+**Action:** Always use `Memo::new(move |_| { ... })` instead of `Signal::derive(move || { ... })` for expensive reactive derivations to cache the result. Reserve `Signal::derive` only for trivial, cheap operations.
