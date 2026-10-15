@@ -1282,8 +1282,8 @@ pub fn App() -> impl IntoView {
             // Bottom Navigation & Presenter Tools Dock
             <div class="hud-container">
                 <div class="hud-card">
-                    <button class="hud-btn" title="First slide (Home)" on:click=move |_| jump_to_slide(0)>"⏮"</button>
-                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" on:click=move |_| prev_step_or_slide()>"◀"</button>
+                    <button class="hud-btn" title="First slide (Home)" aria-label="First slide" on:click=move |_| jump_to_slide(0)>"⏮"</button>
+                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" aria-label="Previous slide" on:click=move |_| prev_step_or_slide()>"◀"</button>
                     <div class="hud-counter">
                         {move || {
                             let cur_st = current_step.get();
@@ -1295,12 +1295,13 @@ pub fn App() -> impl IntoView {
                             }
                         }}
                     </div>
-                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" on:click=move |_| next_step_or_slide()>"▶"</button>
-                    <button class="hud-btn" title="Last slide (End)" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))>"⏭"</button>
+                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" aria-label="Next slide" on:click=move |_| next_step_or_slide()>"▶"</button>
+                    <button class="hud-btn" title="Last slide (End)" aria-label="Last slide" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))>"⏭"</button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Laser Pointer (L)"
+                        aria-label="Toggle Laser Pointer"
                         on:click=move |_| {
                             laser_active.update(|v| *v = !*v);
                             if laser_active.get() { pen_active.set(false); }
@@ -1309,6 +1310,7 @@ pub fn App() -> impl IntoView {
                     <button
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Whiteboard Drawing Pen (P)"
+                        aria-label="Toggle Whiteboard Drawing Pen"
                         on:click=move |_| {
                             pen_active.update(|v| *v = !*v);
                             if pen_active.get() { laser_active.set(false); }
@@ -1317,6 +1319,7 @@ pub fn App() -> impl IntoView {
                     <button
                         class="hud-btn"
                         title="Clear whiteboard pen annotations (C / X)"
+                        aria-label="Clear whiteboard pen annotations"
                         on:click=move |_| {
                             let cur = current_index.get();
                             pen_strokes.update(|m| { m.remove(&cur); });
@@ -1326,22 +1329,24 @@ pub fn App() -> impl IntoView {
                     <button
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
                         title="Mute / Unmute Audio (M)"
+                        aria-label="Toggle Audio Mute"
                         on:click=move |_| toggle_mute()
                     >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
                     <div class="hud-divider"/>
                     <button
                         class="hud-btn"
                         title="Toggle Light / Dark HUD Theme (T)"
+                        aria-label="Toggle Light / Dark HUD Theme"
                         on:click=move |_| {
                             is_dark_theme.update(|v| *v = !*v);
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
                     >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
-                    <button class="hud-btn" title="Toggle Fullscreen (F)" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
+                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
+                    <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
+                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
                 </div>
             </div>
 
