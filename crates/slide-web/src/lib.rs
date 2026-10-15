@@ -1564,13 +1564,15 @@ fn ChartInspectorModal(
     );
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
-    let transformed_data = Signal::derive(move || {
+    // Optimization: Memoized instead of derived. `transformed_data` calculates expensive data transforms.
+    let transformed_data = Memo::new(move |_| {
         let raw = base_data.get();
         let tr = active_transform.get();
         apply_transform(&raw, tr)
     });
 
-    let filtered_indices = Signal::derive(move || {
+    // Optimization: Memoized instead of derived to cache computationally expensive list filtering results.
+    let filtered_indices = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let query = search_query.get();
@@ -1655,14 +1657,16 @@ fn ChartInspectorModal(
         indices
     });
 
-    let stats = Signal::derive(move || {
+    // Optimization: Memoized instead of derived to cache computationally expensive metrics results.
+    let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
         calculate_stats(&d, &vs, &f_indices)
     });
 
-    let rendered_chart_svg = Signal::derive(move || {
+    // Optimization: Memoized instead of derived to cache SVG rendering outputs to prevent redundant dom manipulations.
+    let rendered_chart_svg = Memo::new(move |_| {
         let d = transformed_data.get();
         let ct = active_type.get();
         let vs = visible_series.get();
