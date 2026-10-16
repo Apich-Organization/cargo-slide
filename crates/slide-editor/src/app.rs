@@ -4004,14 +4004,7 @@ impl SlideEditorApp {
                 }
             },
             | Message::OpenUrl(url) => {
-                #[cfg(target_os = "windows")]
-                let _ = std::process::Command::new("cmd")
-                    .args(["/C", "start", &url])
-                    .spawn();
-                #[cfg(target_os = "macos")]
-                let _ = std::process::Command::new("open").arg(&url).spawn();
-                #[cfg(target_os = "linux")]
-                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                let _ = open::that_detached(&url);
             },
             | Message::DeleteActiveSlide => {
                 let current_idx = self.active_slide;
