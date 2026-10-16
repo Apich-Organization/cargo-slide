@@ -1282,8 +1282,8 @@ pub fn App() -> impl IntoView {
             // Bottom Navigation & Presenter Tools Dock
             <div class="hud-container">
                 <div class="hud-card">
-                    <button class="hud-btn" title="First slide (Home)" on:click=move |_| jump_to_slide(0)>"⏮"</button>
-                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" on:click=move |_| prev_step_or_slide()>"◀"</button>
+                    <button class="hud-btn" aria-label="First slide" title="First slide (Home)" on:click=move |_| jump_to_slide(0)>"⏮"</button>
+                    <button class="hud-btn" aria-label="Previous slide" title="Previous (Left arrow / Backspace)" on:click=move |_| prev_step_or_slide()>"◀"</button>
                     <div class="hud-counter">
                         {move || {
                             let cur_st = current_step.get();
@@ -1295,8 +1295,8 @@ pub fn App() -> impl IntoView {
                             }
                         }}
                     </div>
-                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" on:click=move |_| next_step_or_slide()>"▶"</button>
-                    <button class="hud-btn" title="Last slide (End)" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))>"⏭"</button>
+                    <button class="hud-btn" aria-label="Next slide" title="Next (Right arrow / Space / Enter)" on:click=move |_| next_step_or_slide()>"▶"</button>
+                    <button class="hud-btn" aria-label="Last slide" title="Last slide (End)" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))>"⏭"</button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
@@ -1305,7 +1305,7 @@ pub fn App() -> impl IntoView {
                             laser_active.update(|v| *v = !*v);
                             if laser_active.get() { pen_active.set(false); }
                         }
-                    >"🔦"</button>
+                     aria-label="Toggle laser pointer">"🔦"</button>
                     <button
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Whiteboard Drawing Pen (P)"
@@ -1313,7 +1313,7 @@ pub fn App() -> impl IntoView {
                             pen_active.update(|v| *v = !*v);
                             if pen_active.get() { laser_active.set(false); }
                         }
-                    >"✏️"</button>
+                     aria-label="Toggle whiteboard tools">"✏️"</button>
                     <button
                         class="hud-btn"
                         title="Clear whiteboard pen annotations (C / X)"
@@ -1321,13 +1321,13 @@ pub fn App() -> impl IntoView {
                             let cur = current_index.get();
                             pen_strokes.update(|m| { m.remove(&cur); });
                         }
-                    >"🧹"</button>
+                     aria-label="Clear annotations">"🧹"</button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
                         title="Mute / Unmute Audio (M)"
                         on:click=move |_| toggle_mute()
-                    >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
+                     aria-label="Toggle mute">{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
                     <div class="hud-divider"/>
                     <button
                         class="hud-btn"
@@ -1337,11 +1337,11 @@ pub fn App() -> impl IntoView {
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
-                    >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
-                    <button class="hud-btn" title="Toggle Fullscreen (F)" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                     aria-label="Toggle theme">{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
+                    <button class="hud-btn" aria-label="Toggle speaker notes" title="Speaker Notes (N)" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
+                    <button class="hud-btn" aria-label="Toggle slide overview grid" title="Slide Overview Grid (O)" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
+                    <button class="hud-btn" aria-label="Toggle fullscreen" title="Toggle Fullscreen (F)" on:click=move |_| toggle_fullscreen()>"⛶"</button>
+                    <button class="hud-btn" aria-label="Toggle help and shortcuts" title="Help & Shortcuts (?)" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
                 </div>
             </div>
 
@@ -1386,7 +1386,7 @@ pub fn App() -> impl IntoView {
                                                 }
                                             }
                                         >"⛶ Fullscreen"</button>
-                                        <button class="close-btn" on:click=move |_| active_video_modal.set(None)>"✕"</button>
+                                        <button class="close-btn" aria-label="Close modal" title="Close" on:click=move |_| active_video_modal.set(None)>"✕"</button>
                                     </div>
                                 </div>
                                 <div class="video-body">
@@ -1442,7 +1442,7 @@ pub fn App() -> impl IntoView {
                             <div class="overview-modal" on:click=move |ev| ev.stop_propagation()>
                                 <div class="modal-header">
                                     <h2>"Slide Overview"</h2>
-                                    <button class="close-btn" on:click=move |_| overview_open.set(false)>"✕"</button>
+                                    <button class="close-btn" aria-label="Close modal" title="Close" on:click=move |_| overview_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="grid-container">
                                     {d.slides.into_iter().enumerate().map(|(idx, slide)| {
@@ -1477,7 +1477,7 @@ pub fn App() -> impl IntoView {
                             <div class="help-modal" on:click=move |ev| ev.stop_propagation()>
                                 <div class="modal-header">
                                     <h2>"Presenter Shortcuts & Controls"</h2>
-                                    <button class="close-btn" on:click=move |_| help_open.set(false)>"✕"</button>
+                                    <button class="close-btn" aria-label="Close modal" title="Close" on:click=move |_| help_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="help-content">
                                     <table class="shortcuts-table">
@@ -1527,7 +1527,7 @@ pub fn App() -> impl IntoView {
                                         <span style="font-size: 20px;">"📝"</span>
                                         <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #58a6ff;">{format!("Speaker Notes • Slide {}/{}", current_index.get() + 1, total_slides.get())}</h3>
                                     </div>
-                                    <button class="close-btn" style="background: none; border: none; font-size: 18px; color: #8b949e; cursor: pointer;" on:click=move |_| notes_open.set(false)>"✕"</button>
+                                    <button class="close-btn" aria-label="Close modal" title="Close" style="background: none; border: none; font-size: 18px; color: #8b949e; cursor: pointer;" on:click=move |_| notes_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="notes-meta" style="font-size: 13px; color: #8b949e; margin-bottom: 14px;">
                                     {format!("~{}s estimated speaking time • {} words", est_secs.max(5), word_count)}
@@ -1693,7 +1693,7 @@ fn ChartInspectorModal(
                         <h2>{move || transformed_data.get().title.unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
                         <span class="inspector-badge">"Interactive SQL & Data Engine"</span>
                     </div>
-                    <button class="close-btn" on:click=move |_| on_close()>"✕"</button>
+                    <button class="close-btn" aria-label="Close modal" title="Close" on:click=move |_| on_close()>"✕"</button>
                 </div>
 
                 // KPI Strip (6 HUD KPI Cards)
@@ -2002,7 +2002,7 @@ fn TextPreviewModal(
                         >
                             "💾 Download"
                         </button>
-                        <button class="close-btn" on:click=move |_| on_close()>"✕"</button>
+                        <button class="close-btn" aria-label="Close modal" title="Close" on:click=move |_| on_close()>"✕"</button>
                     </div>
                 </div>
 
