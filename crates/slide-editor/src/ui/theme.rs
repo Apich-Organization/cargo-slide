@@ -6,9 +6,7 @@ use iced::Color;
 use iced::Shadow;
 use iced::Vector;
 use iced::border::Border;
-use iced::border::{
-    self,
-};
+use iced::border::{self};
 use iced::widget::button;
 use iced::widget::container;
 use iced::widget::text_editor;

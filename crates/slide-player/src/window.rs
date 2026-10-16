@@ -283,13 +283,11 @@ pub struct SlidePlayer {
 /// URL percent-decode a UTF-8 string (e.g. `%20` -> `' '`, `%2F` -> `'/'`)
 #[must_use]
 pub fn url_decode(s: &str) -> String {
-    let parse_hex = |b: u8| {
-        match b {
-            | b'0'..=b'9' => Some(b.saturating_sub(b'0')),
-            | b'a'..=b'f' => Some(b.saturating_sub(b'a').saturating_add(10)),
-            | b'A'..=b'F' => Some(b.saturating_sub(b'A').saturating_add(10)),
-            | _ => None,
-        }
+    let parse_hex = |b: u8| match b {
+        | b'0'..=b'9' => Some(b.saturating_sub(b'0')),
+        | b'a'..=b'f' => Some(b.saturating_sub(b'a').saturating_add(10)),
+        | b'A'..=b'F' => Some(b.saturating_sub(b'A').saturating_add(10)),
+        | _ => None,
     };
 
     let bytes = s.as_bytes();
@@ -2385,33 +2383,18 @@ impl SlidePlayer {
                                 | Key::O => {
                                     inspector.set_transform(slide_core::chart::ChartTransform::None)
                                 },
-                                | Key::T => {
-                                    inspector
-                                        .set_transform(slide_core::chart::ChartTransform::TopK(5))
-                                },
-                                | Key::S => {
-                                    inspector
-                                        .set_transform(slide_core::chart::ChartTransform::SortDesc)
-                                },
-                                | Key::A => {
-                                    inspector
-                                        .set_transform(slide_core::chart::ChartTransform::SortAsc)
-                                },
-                                | Key::U => {
-                                    inspector.set_transform(
-                                        slide_core::chart::ChartTransform::Cumulative,
-                                    )
-                                },
-                                | Key::P => {
-                                    inspector.set_transform(
-                                        slide_core::chart::ChartTransform::Percent100,
-                                    )
-                                },
-                                | Key::M => {
-                                    inspector.set_transform(
-                                        slide_core::chart::ChartTransform::MovingAvg(3),
-                                    )
-                                },
+                                | Key::T => inspector
+                                    .set_transform(slide_core::chart::ChartTransform::TopK(5)),
+                                | Key::S => inspector
+                                    .set_transform(slide_core::chart::ChartTransform::SortDesc),
+                                | Key::A => inspector
+                                    .set_transform(slide_core::chart::ChartTransform::SortAsc),
+                                | Key::U => inspector
+                                    .set_transform(slide_core::chart::ChartTransform::Cumulative),
+                                | Key::P => inspector
+                                    .set_transform(slide_core::chart::ChartTransform::Percent100),
+                                | Key::M => inspector
+                                    .set_transform(slide_core::chart::ChartTransform::MovingAvg(3)),
                                 | _ => {},
                             }
                         }

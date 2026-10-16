@@ -11,9 +11,7 @@ use crate::model::ast_engine::TypstDocumentEngine;
 use crate::model::ast_engine::WysiwygBlock;
 use crate::model::ast_engine::WysiwygSlide;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use crate::ui::typst_highlighter::TypstHighlightSettings;
 use crate::ui::typst_highlighter::TypstHighlighter;
 use crate::ui::typst_highlighter::to_typst_format;
@@ -79,12 +77,10 @@ pub fn view_slide_canvas<'a>(
                 .color(theme.text_secondary()),
         )
         .padding([2, 8])
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_subtle())),
-                border: iced::border::rounded(4.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_subtle())),
+            border: iced::border::rounded(4.0),
+            ..container::Style::default()
         });
 
         let title_color = if is_slide_active {
@@ -96,11 +92,9 @@ pub fn view_slide_canvas<'a>(
             .size(13)
             .padding([2, 6])
             .style(move |_t, _s| clean_input_style(theme, title_color))
-            .on_input(move |new_title| {
-                Message::UpdateSlideTitle {
-                    slide_idx: idx,
-                    new_title,
-                }
+            .on_input(move |new_title| Message::UpdateSlideTitle {
+                slide_idx: idx,
+                new_title,
             })
             .width(Length::Fill);
 
@@ -117,12 +111,10 @@ pub fn view_slide_canvas<'a>(
                         .color(theme.text_muted()),
                 )
                 .padding([2, 6])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(iced::Background::Color(theme.bg_subtle())),
-                        border: iced::border::rounded(4.0),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(theme.bg_subtle())),
+                    border: iced::border::rounded(4.0),
+                    ..container::Style::default()
                 })
                 .into(),
             )
@@ -278,11 +270,9 @@ pub fn view_slide_canvas<'a>(
             .height(Length::Fixed(card_height))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_subtle())),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                ..container::Style::default()
             })
             .into()
         };
@@ -294,12 +284,10 @@ pub fn view_slide_canvas<'a>(
         // Zero drift, zero ghost text from a background image, seamless in-place editing!
         let slide_surface: Element<'a, Message> = if is_vector_mode {
             let vector_view = button(img_widget)
-                .style(move |_t, _s| {
-                    button::Style {
-                        background: None,
-                        border: iced::border::Border::default(),
-                        ..button::Style::default()
-                    }
+                .style(move |_t, _s| button::Style {
+                    background: None,
+                    border: iced::border::Border::default(),
+                    ..button::Style::default()
                 })
                 .padding(0)
                 .on_press(Message::ToggleSlideViewMode(idx));
@@ -325,19 +313,17 @@ pub fn view_slide_canvas<'a>(
             )
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |_t, _s| {
-                button::Style {
-                    background: Some(iced::Background::Color(iced::Color {
-                        a: 0.04,
-                        ..theme.accent()
-                    })),
-                    border: iced::border::Border {
-                        color: theme.accent().scale_alpha(0.25),
-                        width: 1.0,
-                        radius: iced::border::Radius::from(6.0),
-                    },
-                    ..button::Style::default()
-                }
+            .style(move |_t, _s| button::Style {
+                background: Some(iced::Background::Color(iced::Color {
+                    a: 0.04,
+                    ..theme.accent()
+                })),
+                border: iced::border::Border {
+                    color: theme.accent().scale_alpha(0.25),
+                    width: 1.0,
+                    radius: iced::border::Radius::from(6.0),
+                },
+                ..button::Style::default()
             })
             .on_press(Message::InsertBlockAfter {
                 offset: engine.get_slide_content_insert_offset(idx),
@@ -383,17 +369,13 @@ pub fn view_slide_canvas<'a>(
             for (b_idx, block) in content_blocks.iter().enumerate() {
                 let is_this_block_active = is_slide_active && active_block_id == Some(block.id());
                 let is_raw_code = raw_code_blocks.contains(block.id());
-                let eq_img = equation_images.get(block.id()).or_else(|| {
-                    match block {
-                        | WysiwygBlock::Equation { formula, .. } => equation_images.get(formula),
-                        | _ => None,
-                    }
+                let eq_img = equation_images.get(block.id()).or_else(|| match block {
+                    | WysiwygBlock::Equation { formula, .. } => equation_images.get(formula),
+                    | _ => None,
                 });
-                let cd_img = code_images.get(block.id()).or_else(|| {
-                    match block {
-                        | WysiwygBlock::CodeBlock { code, .. } => code_images.get(code),
-                        | _ => None,
-                    }
+                let cd_img = code_images.get(block.id()).or_else(|| match block {
+                    | WysiwygBlock::CodeBlock { code, .. } => code_images.get(code),
+                    | _ => None,
                 });
                 let is_block_dragging = dragging_block == Some((idx, b_idx));
                 let spacing_pt = engine.get_block_spacing_pt(idx, b_idx);
@@ -477,12 +459,10 @@ pub fn view_slide_canvas<'a>(
                     .align_y(Alignment::Center)
                     .padding([2, 12]),
                 )
-                .style(move |_t, _s| {
-                    button::Style {
-                        background: None,
-                        border: iced::border::Border::default(),
-                        ..button::Style::default()
-                    }
+                .style(move |_t, _s| button::Style {
+                    background: None,
+                    border: iced::border::Border::default(),
+                    ..button::Style::default()
                 })
                 .on_press(Message::OpenHeaderFooterModal);
 
@@ -523,12 +503,10 @@ pub fn view_slide_canvas<'a>(
                 .align_y(Alignment::Center)
                 .padding([2, 12]),
             )
-            .style(move |_t, _s| {
-                button::Style {
-                    background: None,
-                    border: iced::border::Border::default(),
-                    ..button::Style::default()
-                }
+            .style(move |_t, _s| button::Style {
+                background: None,
+                border: iced::border::Border::default(),
+                ..button::Style::default()
             })
             .on_press(Message::OpenHeaderFooterModal);
 
@@ -657,11 +635,9 @@ pub fn view_slide_canvas<'a>(
     container(scroll)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_canvas())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_canvas())),
+            ..container::Style::default()
         })
         .into()
 }

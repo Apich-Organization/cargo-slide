@@ -790,23 +790,21 @@ pub fn parse_chart_href_with_root(
         });
     }
 
-    let mut data = loaded_data.unwrap_or_else(|| {
-        ChartData {
-            chart_type,
-            title,
-            categories: vec!["A".into(), "B".into(), "C".into()],
-            series: vec![SeriesData {
-                name: "Series 1".into(),
-                values: vec![10.0, 20.0, 30.0],
-                color: Some(DEFAULT_CHART_COLORS[0].to_string()),
-            }],
-            x_label: None,
-            y_label: None,
-            format: chart_format,
-            unit: chart_unit.clone(),
-            prefix: chart_prefix.clone(),
-            precision: chart_precision,
-        }
+    let mut data = loaded_data.unwrap_or_else(|| ChartData {
+        chart_type,
+        title,
+        categories: vec!["A".into(), "B".into(), "C".into()],
+        series: vec![SeriesData {
+            name: "Series 1".into(),
+            values: vec![10.0, 20.0, 30.0],
+            color: Some(DEFAULT_CHART_COLORS[0].to_string()),
+        }],
+        x_label: None,
+        y_label: None,
+        format: chart_format,
+        unit: chart_unit.clone(),
+        prefix: chart_prefix.clone(),
+        precision: chart_precision,
     });
 
     data.format = chart_format;

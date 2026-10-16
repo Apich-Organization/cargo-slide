@@ -7,9 +7,7 @@ use std::ops::Range;
 use typst_syntax::LinkedNode;
 use typst_syntax::SyntaxKind;
 use typst_syntax::ast::AstNode;
-use typst_syntax::ast::{
-    self,
-};
+use typst_syntax::ast::{self};
 
 /// Semantic block within a Typora-style visual presentation page
 #[derive(Debug, Clone, PartialEq)]
@@ -642,10 +640,10 @@ impl TypstDocumentEngine {
                     &mut current_transitions,
                 );
 
-                let slide_title = current_blocks
-                    .iter()
-                    .find_map(|b| {
-                        match b {
+                let slide_title =
+                    current_blocks
+                        .iter()
+                        .find_map(|b| match b {
                             | WysiwygBlock::Heading { title, .. } => Some(title.clone()),
                             | WysiwygBlock::FuncCall { callee, args, .. }
                                 if callee == "title-slide" =>
@@ -653,9 +651,8 @@ impl TypstDocumentEngine {
                                 extract_arg_str(args, "title")
                             },
                             | _ => None,
-                        }
-                    })
-                    .unwrap_or_else(|| format!("Slide {slide_num}"));
+                        })
+                        .unwrap_or_else(|| format!("Slide {slide_num}"));
 
                 let slide_range = slide_start_offset..start;
                 let slide_raw = self.source_text.get(slide_range.clone()).unwrap_or("");
@@ -687,16 +684,14 @@ impl TypstDocumentEngine {
 
                     let slide_title = current_blocks
                         .iter()
-                        .find_map(|b| {
-                            match b {
-                                | WysiwygBlock::Heading { title, .. } => Some(title.clone()),
-                                | WysiwygBlock::FuncCall { callee, args, .. }
-                                    if callee == "title-slide" =>
-                                {
-                                    extract_arg_str(args, "title")
-                                },
-                                | _ => None,
-                            }
+                        .find_map(|b| match b {
+                            | WysiwygBlock::Heading { title, .. } => Some(title.clone()),
+                            | WysiwygBlock::FuncCall { callee, args, .. }
+                                if callee == "title-slide" =>
+                            {
+                                extract_arg_str(args, "title")
+                            },
+                            | _ => None,
                         })
                         .unwrap_or_else(|| format!("Slide {slide_num}"));
 
@@ -734,14 +729,12 @@ impl TypstDocumentEngine {
 
         let slide_title = current_blocks
             .iter()
-            .find_map(|b| {
-                match b {
-                    | WysiwygBlock::Heading { title, .. } => Some(title.clone()),
-                    | WysiwygBlock::FuncCall { callee, args, .. } if callee == "title-slide" => {
-                        extract_arg_str(args, "title")
-                    },
-                    | _ => None,
-                }
+            .find_map(|b| match b {
+                | WysiwygBlock::Heading { title, .. } => Some(title.clone()),
+                | WysiwygBlock::FuncCall { callee, args, .. } if callee == "title-slide" => {
+                    extract_arg_str(args, "title")
+                },
+                | _ => None,
             })
             .unwrap_or_else(|| format!("Slide {slide_num}"));
 
@@ -1010,7 +1003,6 @@ pub fn extract_v_spacing_points(gap: &str) -> Option<f32> {
     let inner = gap[start_idx + 3..start_idx + end_idx].trim();
     parse_length_to_pt(inner)
 }
-
 
 /// Helper to extract string value of a named argument from an argument list or raw func call
 #[must_use]
@@ -1845,14 +1837,12 @@ fn classify_linked_node(
             | ast::Expr::MathAttach(_)
             | ast::Expr::MathPrimes(_)
             | ast::Expr::MathFrac(_)
-            | ast::Expr::MathRoot(_) => {
-                WysiwygBlock::Equation {
-                    id,
-                    formula: raw.clone(),
-                    display: false,
-                    range,
-                    raw,
-                }
+            | ast::Expr::MathRoot(_) => WysiwygBlock::Equation {
+                id,
+                formula: raw.clone(),
+                display: false,
+                range,
+                raw,
             },
 
             // 8. Set rule (#set ...)
@@ -1901,33 +1891,29 @@ fn classify_linked_node(
             },
 
             // 11. Module imports and includes (#import ..., #include ...)
-            | ast::Expr::ModuleImport(mi) => {
-                WysiwygBlock::Module {
-                    id,
-                    path: mi
-                        .source()
-                        .to_untyped()
-                        .full_text()
-                        .as_str()
-                        .trim()
-                        .to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::ModuleImport(mi) => WysiwygBlock::Module {
+                id,
+                path: mi
+                    .source()
+                    .to_untyped()
+                    .full_text()
+                    .as_str()
+                    .trim()
+                    .to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::ModuleInclude(mi) => {
-                WysiwygBlock::Module {
-                    id,
-                    path: mi
-                        .source()
-                        .to_untyped()
-                        .full_text()
-                        .as_str()
-                        .trim()
-                        .to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::ModuleInclude(mi) => WysiwygBlock::Module {
+                id,
+                path: mi
+                    .source()
+                    .to_untyped()
+                    .full_text()
+                    .as_str()
+                    .trim()
+                    .to_string(),
+                range,
+                raw,
             },
 
             // 12. Function calls & Macros (#align, #grid, #video, etc.)
@@ -1980,97 +1966,75 @@ fn classify_linked_node(
             },
 
             // 13. Pure code blocks ({ let x = 1; ... })
-            | ast::Expr::CodeBlock(cb) => {
-                WysiwygBlock::PureCode {
-                    id,
-                    body: cb.to_untyped().full_text().as_str().trim().to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::CodeBlock(cb) => WysiwygBlock::PureCode {
+                id,
+                body: cb.to_untyped().full_text().as_str().trim().to_string(),
+                range,
+                raw,
             },
 
             // 14. Content blocks ([ ... ])
-            | ast::Expr::ContentBlock(cb) => {
-                WysiwygBlock::ContentBlock {
-                    id,
-                    body: cb.to_untyped().full_text().as_str().trim().to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::ContentBlock(cb) => WysiwygBlock::ContentBlock {
+                id,
+                body: cb.to_untyped().full_text().as_str().trim().to_string(),
+                range,
+                raw,
             },
 
             // 15. Control flow expressions
-            | ast::Expr::Conditional(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "if-else".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Conditional(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "if-else".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::WhileLoop(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "while".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::WhileLoop(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "while".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::ForLoop(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "for".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::ForLoop(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "for".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Contextual(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "context".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Contextual(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "context".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Closure(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "closure".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Closure(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "closure".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::DestructAssignment(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "destruct".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::DestructAssignment(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "destruct".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::LoopBreak(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "break".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::LoopBreak(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "break".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::LoopContinue(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "continue".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::LoopContinue(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "continue".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::FuncReturn(_) => {
-                WysiwygBlock::ControlFlow {
-                    id,
-                    kind: "return".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::FuncReturn(_) => WysiwygBlock::ControlFlow {
+                id,
+                kind: "return".to_string(),
+                range,
+                raw,
             },
 
             // 16. Inline rich formatting and paragraphs
@@ -2087,33 +2051,29 @@ fn classify_linked_node(
                     raw,
                 }
             },
-            | ast::Expr::Strong(st) => {
-                WysiwygBlock::Paragraph {
-                    id,
-                    text: st
-                        .body()
-                        .to_untyped()
-                        .full_text()
-                        .as_str()
-                        .trim()
-                        .to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Strong(st) => WysiwygBlock::Paragraph {
+                id,
+                text: st
+                    .body()
+                    .to_untyped()
+                    .full_text()
+                    .as_str()
+                    .trim()
+                    .to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Emph(em) => {
-                WysiwygBlock::Paragraph {
-                    id,
-                    text: em
-                        .body()
-                        .to_untyped()
-                        .full_text()
-                        .as_str()
-                        .trim()
-                        .to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Emph(em) => WysiwygBlock::Paragraph {
+                id,
+                text: em
+                    .body()
+                    .to_untyped()
+                    .full_text()
+                    .as_str()
+                    .trim()
+                    .to_string(),
+                range,
+                raw,
             },
             | ast::Expr::Space(_)
             | ast::Expr::Linebreak(_)
@@ -2132,143 +2092,109 @@ fn classify_linked_node(
                     raw,
                 }
             },
-            | ast::Expr::Link(l) => {
-                WysiwygBlock::Paragraph {
-                    id,
-                    text: l.get().to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Link(l) => WysiwygBlock::Paragraph {
+                id,
+                text: l.get().to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Label(lb) => {
-                WysiwygBlock::Paragraph {
-                    id,
-                    text: format!("<{}>", lb.get()),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Label(lb) => WysiwygBlock::Paragraph {
+                id,
+                text: format!("<{}>", lb.get()),
+                range,
+                raw,
             },
-            | ast::Expr::Ref(r) => {
-                WysiwygBlock::Paragraph {
-                    id,
-                    text: format!("@{}", r.target()),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Ref(r) => WysiwygBlock::Paragraph {
+                id,
+                text: format!("@{}", r.target()),
+                range,
+                raw,
             },
 
             // 17. Literals and data structures
-            | ast::Expr::Ident(i) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "ident".to_string(),
-                    range,
-                    raw: i.get().to_string(),
-                }
+            | ast::Expr::Ident(i) => WysiwygBlock::Expression {
+                id,
+                kind: "ident".to_string(),
+                range,
+                raw: i.get().to_string(),
             },
-            | ast::Expr::None(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "none".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::None(_) => WysiwygBlock::Expression {
+                id,
+                kind: "none".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Auto(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "auto".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Auto(_) => WysiwygBlock::Expression {
+                id,
+                kind: "auto".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Bool(b) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "bool".to_string(),
-                    range,
-                    raw: b.get().to_string(),
-                }
+            | ast::Expr::Bool(b) => WysiwygBlock::Expression {
+                id,
+                kind: "bool".to_string(),
+                range,
+                raw: b.get().to_string(),
             },
-            | ast::Expr::Int(i) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "int".to_string(),
-                    range,
-                    raw: i.get().to_string(),
-                }
+            | ast::Expr::Int(i) => WysiwygBlock::Expression {
+                id,
+                kind: "int".to_string(),
+                range,
+                raw: i.get().to_string(),
             },
-            | ast::Expr::Float(f) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "float".to_string(),
-                    range,
-                    raw: f.get().to_string(),
-                }
+            | ast::Expr::Float(f) => WysiwygBlock::Expression {
+                id,
+                kind: "float".to_string(),
+                range,
+                raw: f.get().to_string(),
             },
-            | ast::Expr::Numeric(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "numeric".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Numeric(_) => WysiwygBlock::Expression {
+                id,
+                kind: "numeric".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Str(s) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "string".to_string(),
-                    range,
-                    raw: s.get().to_string(),
-                }
+            | ast::Expr::Str(s) => WysiwygBlock::Expression {
+                id,
+                kind: "string".to_string(),
+                range,
+                raw: s.get().to_string(),
             },
-            | ast::Expr::Parenthesized(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "paren".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Parenthesized(_) => WysiwygBlock::Expression {
+                id,
+                kind: "paren".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Array(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "array".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Array(_) => WysiwygBlock::Expression {
+                id,
+                kind: "array".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Dict(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "dict".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Dict(_) => WysiwygBlock::Expression {
+                id,
+                kind: "dict".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Unary(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "unary".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Unary(_) => WysiwygBlock::Expression {
+                id,
+                kind: "unary".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::Binary(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "binary".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::Binary(_) => WysiwygBlock::Expression {
+                id,
+                kind: "binary".to_string(),
+                range,
+                raw,
             },
-            | ast::Expr::FieldAccess(_) => {
-                WysiwygBlock::Expression {
-                    id,
-                    kind: "field".to_string(),
-                    range,
-                    raw,
-                }
+            | ast::Expr::FieldAccess(_) => WysiwygBlock::Expression {
+                id,
+                kind: "field".to_string(),
+                range,
+                raw,
             },
         };
         Some(block)
@@ -2704,12 +2630,10 @@ pub fn update_header_footer_in_source(
         ));
         match config.footer_right_mode {
             | 0 => header_args.push("footer-right: auto".to_string()),
-            | 1 => {
-                header_args.push(format!(
-                    "footer-right: \"{}\"",
-                    config.footer_right_custom.replace('"', "\\\"")
-                ))
-            },
+            | 1 => header_args.push(format!(
+                "footer-right: \"{}\"",
+                config.footer_right_custom.replace('"', "\\\"")
+            )),
             | 2 => header_args.push("footer-right: none".to_string()),
             | _ => {},
         }

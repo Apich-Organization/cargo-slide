@@ -6,9 +6,7 @@ use crate::document::DocumentFormat;
 use crate::ui::theme::AppTheme;
 use crate::ui::theme::RADIUS_FULL;
 use crate::ui::theme::RADIUS_XS;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use iced::Alignment;
 use iced::Element;
 use iced::Length;
@@ -80,12 +78,10 @@ pub fn view_toolbar<'a>(
             .color(iced::Color::WHITE),
     )
     .padding([2, 7])
-    .style(move |_| {
-        container::Style {
-            background: Some(iced::Background::Color(badge_bg)),
-            border: iced::border::rounded(RADIUS_FULL),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(badge_bg)),
+        border: iced::border::rounded(RADIUS_FULL),
+        ..container::Style::default()
     });
 
     let mut left_bar = row![outline_btn, doc_title]
@@ -98,17 +94,15 @@ pub fn view_toolbar<'a>(
                 .width(Length::Fixed(7.0))
                 .height(Length::Fixed(7.0)),
         )
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.warning())),
-                border: iced::border::rounded(RADIUS_FULL),
-                shadow: iced::Shadow {
-                    color: theme.warning().scale_alpha(0.4),
-                    offset: iced::Vector::ZERO,
-                    blur_radius: 4.0,
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.warning())),
+            border: iced::border::rounded(RADIUS_FULL),
+            shadow: iced::Shadow {
+                color: theme.warning().scale_alpha(0.4),
+                offset: iced::Vector::ZERO,
+                blur_radius: 4.0,
+            },
+            ..container::Style::default()
         });
         left_bar = left_bar.push(dirty_dot);
     }
@@ -382,11 +376,9 @@ pub fn view_formatting_bar<'a>(
                 .width(Length::Fixed(1.0))
                 .height(Length::Fixed(14.0)),
         )
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.border_color())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.border_color())),
+            ..container::Style::default()
         })
     };
 

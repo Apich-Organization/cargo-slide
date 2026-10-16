@@ -3,9 +3,7 @@
 
 use crate::app::Message;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use crate::ui::typst_highlighter::TypstHighlightSettings;
 use crate::ui::typst_highlighter::TypstHighlighter;
 use crate::ui::typst_highlighter::to_typst_format;
@@ -1078,16 +1076,14 @@ pub fn view_complex_element_modal<'a>(
         | ComplexModalState::TitleSlide { .. } => ("[Title]", "Presentation Title Slide Editor"),
         | ComplexModalState::Badge { .. } => ("[Badge]", "Badge & Pill Live Editor"),
         | ComplexModalState::Video { .. } => ("[Video]", "Video Playback & Visual Style Config"),
-        | ComplexModalState::Audio { is_player, .. } => {
-            (
-                "[Audio]",
-                if *is_player {
-                    "Audio Player & Soundtrack Config"
-                } else {
-                    "Background Audio Trigger Config"
-                },
-            )
-        },
+        | ComplexModalState::Audio { is_player, .. } => (
+            "[Audio]",
+            if *is_player {
+                "Audio Player & Soundtrack Config"
+            } else {
+                "Background Audio Trigger Config"
+            },
+        ),
     };
 
     let title_widget = row![
@@ -1133,11 +1129,9 @@ pub fn view_complex_element_modal<'a>(
             prefix: _,
             height: _,
             items,
-        } => {
-            render_modal_chart_editor(
-                theme, title, chart_type, source, sql, dsl, format, unit, items,
-            )
-        },
+        } => render_modal_chart_editor(
+            theme, title, chart_type, source, sql, dsl, format, unit, items,
+        ),
         | ComplexModalState::Grid { cols, columns } => {
             render_modal_grid_editor(theme, *cols, columns, col_editors)
         },
@@ -1153,11 +1147,9 @@ pub fn view_complex_element_modal<'a>(
             radius,
             inset,
             width,
-        } => {
-            render_modal_box_editor(
-                theme, content, fill, stroke, radius, inset, width, box_editor,
-            )
-        },
+        } => render_modal_box_editor(
+            theme, content, fill, stroke, radius, inset, width, box_editor,
+        ),
         | ComplexModalState::Link { url, label } => render_modal_link_editor(theme, url, label),
         | ComplexModalState::TitleSlide {
             title,
@@ -1168,19 +1160,17 @@ pub fn view_complex_element_modal<'a>(
             institution,
             extra_args,
             ..
-        } => {
-            render_modal_title_slide_editor(
-                theme,
-                title,
-                subtitle,
-                author,
-                date,
-                version,
-                institution,
-                extra_args,
-                title_slide_editor,
-            )
-        },
+        } => render_modal_title_slide_editor(
+            theme,
+            title,
+            subtitle,
+            author,
+            date,
+            version,
+            institution,
+            extra_args,
+            title_slide_editor,
+        ),
         | ComplexModalState::Badge {
             label,
             fill,
@@ -1203,18 +1193,16 @@ pub fn view_complex_element_modal<'a>(
             loop_playback,
             volume,
             width: _,
-        } => {
-            render_modal_audio_editor(
-                theme,
-                source,
-                *is_player,
-                title,
-                artist,
-                *autoplay,
-                *loop_playback,
-                *volume,
-            )
-        },
+        } => render_modal_audio_editor(
+            theme,
+            source,
+            *is_player,
+            title,
+            artist,
+            *autoplay,
+            *loop_playback,
+            *volume,
+        ),
     };
 
     // Dialog footer with Discard and Apply
@@ -1327,17 +1315,16 @@ fn render_modal_table_editor<'a>(
                 .size(12)
                 .padding([6, 8])
                 .style(move |_t, _s| modal_input_style(theme))
-                .on_input(move |new_val| {
-                    Message::ModalTableUpdateHeaderCell {
-                        col: c_idx,
-                        val: new_val,
-                    }
+                .on_input(move |new_val| Message::ModalTableUpdateHeaderCell {
+                    col: c_idx,
+                    val: new_val,
                 });
             h_row = h_row.push(container(input).width(Length::FillPortion(1)));
         }
 
-        let h_container = container(h_row).padding([4, 6]).style(move |_| {
-            container::Style {
+        let h_container = container(h_row)
+            .padding([4, 6])
+            .style(move |_| container::Style {
                 background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.12))),
                 border: Border {
                     color: theme.accent().scale_alpha(0.4),
@@ -1345,8 +1332,7 @@ fn render_modal_table_editor<'a>(
                     radius: border::Radius::from(4.0),
                 },
                 ..container::Style::default()
-            }
-        });
+            });
 
         table_col = table_col.push(h_container);
     }
@@ -1375,32 +1361,31 @@ fn render_modal_table_editor<'a>(
                 .size(12)
                 .padding([6, 8])
                 .style(move |_t, _s| modal_input_style(theme))
-                .on_input(move |new_val| {
-                    Message::ModalTableUpdateCell {
-                        row: r_idx,
-                        col: c_idx,
-                        val: new_val,
-                    }
+                .on_input(move |new_val| Message::ModalTableUpdateCell {
+                    row: r_idx,
+                    col: c_idx,
+                    val: new_val,
                 });
 
             row_widget = row_widget.push(container(input).width(Length::FillPortion(1)));
         }
 
-        let row_container = container(row_widget).padding([3, 6]).style(move |_| {
-            container::Style {
-                background: Some(Background::Color(if r_idx % 2 == 1 {
-                    Color::from_rgba(0.5, 0.5, 0.5, 0.03)
-                } else {
-                    Color::TRANSPARENT
-                })),
-                border: Border {
-                    color: Color::from_rgba(0.5, 0.5, 0.5, 0.1),
-                    width: 0.5,
-                    radius: border::Radius::from(4.0),
-                },
-                ..container::Style::default()
-            }
-        });
+        let row_container =
+            container(row_widget)
+                .padding([3, 6])
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(if r_idx % 2 == 1 {
+                        Color::from_rgba(0.5, 0.5, 0.5, 0.03)
+                    } else {
+                        Color::TRANSPARENT
+                    })),
+                    border: Border {
+                        color: Color::from_rgba(0.5, 0.5, 0.5, 0.1),
+                        width: 0.5,
+                        radius: border::Radius::from(4.0),
+                    },
+                    ..container::Style::default()
+                });
 
         table_col = table_col.push(row_container);
     }
@@ -1526,8 +1511,9 @@ fn render_modal_chart_editor<'a>(
     ]
     .spacing(4);
 
-    let query_box = container(query_controls).padding(10).style(move |_| {
-        container::Style {
+    let query_box = container(query_controls)
+        .padding(10)
+        .style(move |_| container::Style {
             background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.04))),
             border: Border {
                 color: theme.border_color(),
@@ -1535,8 +1521,7 @@ fn render_modal_chart_editor<'a>(
                 radius: border::Radius::from(6.0),
             },
             ..container::Style::default()
-        }
-    });
+        });
 
     // 3. Inline Data points editor list (fallback or direct preview)
     let colors = [
@@ -1572,23 +1557,19 @@ fn render_modal_chart_editor<'a>(
         let dot = container(Space::new())
             .width(Length::Fixed(12.0))
             .height(Length::Fixed(12.0))
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(color)),
-                    border: border::rounded(6.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(color)),
+                border: border::rounded(6.0),
+                ..container::Style::default()
             });
 
         let lbl_input = text_input("Label", lbl)
             .size(12)
             .padding([4, 6])
             .style(move |_t, _s| modal_input_style(theme))
-            .on_input(move |new_lbl| {
-                Message::ModalChartUpdateItemLabel {
-                    idx: i,
-                    label: new_lbl,
-                }
+            .on_input(move |new_lbl| Message::ModalChartUpdateItemLabel {
+                idx: i,
+                label: new_lbl,
             });
 
         let val_input = text_input("Value", &format!("{val:.0}"))
@@ -1641,12 +1622,10 @@ fn render_modal_chart_editor<'a>(
                 .color(theme.accent()),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.1))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.1))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
         preview_col = preview_col.push(sql_badge);
     } else if !source.trim().is_empty() {
@@ -1657,12 +1636,10 @@ fn render_modal_chart_editor<'a>(
                 .color(theme.text_secondary()),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.08))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.08))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
         preview_col = preview_col.push(src_badge);
     }
@@ -1675,12 +1652,10 @@ fn render_modal_chart_editor<'a>(
         let bar_widget = container(Space::new())
             .width(Length::Fixed(bar_width))
             .height(Length::Fixed(12.0))
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(color)),
-                    border: border::rounded(3.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(color)),
+                border: border::rounded(3.0),
+                ..container::Style::default()
             });
 
         let unit_suffix = if !unit.is_empty() {
@@ -1707,16 +1682,14 @@ fn render_modal_chart_editor<'a>(
     let preview_box = container(preview_col)
         .width(Length::Fixed(300.0))
         .padding(10)
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_color(),
-                    width: 0.5,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_color(),
+                width: 0.5,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         });
 
     let main_row = row![
@@ -1821,16 +1794,14 @@ fn render_modal_grid_editor<'a>(
         )
         .width(Length::FillPortion(1))
         .padding(14)
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_color(),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_color(),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         });
 
         cols_row = cols_row.push(col_card);
@@ -1927,20 +1898,18 @@ fn render_modal_callout_editor<'a>(
     let preview_container = container(preview_col)
         .width(Length::Fill)
         .padding([10, 14])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(if theme.is_dark() {
-                    Color::from_rgba(0.12, 0.15, 0.20, 0.6)
-                } else {
-                    Color::from_rgba(0.96, 0.97, 0.99, 0.9)
-                })),
-                border: Border {
-                    color: accent_color,
-                    width: 2.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(if theme.is_dark() {
+                Color::from_rgba(0.12, 0.15, 0.20, 0.6)
+            } else {
+                Color::from_rgba(0.96, 0.97, 0.99, 0.9)
+            })),
+            border: Border {
+                color: accent_color,
+                width: 2.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         });
 
     column![
@@ -2130,20 +2099,18 @@ fn render_modal_box_editor<'a>(
     )
     .width(Length::Fill)
     .padding([8, 12])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(preview_bg)),
-            border: Border {
-                color: preview_border,
-                width: if stroke.contains("none") {
-                    0.0
-                } else {
-                    1.5
-                },
-                radius: border::Radius::from(6.0),
+    .style(move |_| container::Style {
+        background: Some(Background::Color(preview_bg)),
+        border: Border {
+            color: preview_border,
+            width: if stroke.contains("none") {
+                0.0
+            } else {
+                1.5
             },
-            ..container::Style::default()
-        }
+            radius: border::Radius::from(6.0),
+        },
+        ..container::Style::default()
     });
 
     column![
@@ -2238,16 +2205,14 @@ fn render_modal_link_editor<'a>(
     )
     .width(Length::Fill)
     .padding([10, 14])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.06))),
-            border: Border {
-                color: Color::from_rgba(0.2, 0.5, 0.9, 0.3),
-                width: 1.0,
-                radius: border::Radius::from(6.0),
-            },
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.06))),
+        border: Border {
+            color: Color::from_rgba(0.2, 0.5, 0.9, 0.3),
+            width: 1.0,
+            radius: border::Radius::from(6.0),
+        },
+        ..container::Style::default()
     });
 
     column![
@@ -2484,12 +2449,10 @@ fn render_modal_title_slide_editor<'a>(
         )
         .height(Length::Fixed(72.0))
         .width(Length::Fill)
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(4.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(4.0),
+            ..container::Style::default()
         })
         .into()
     } else {
@@ -2517,11 +2480,9 @@ fn render_modal_title_slide_editor<'a>(
     preview_items = preview_items.push(
         container(Space::new().height(1.0))
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.border_color())),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.border_color())),
+                ..container::Style::default()
             }),
     );
 
@@ -2534,12 +2495,10 @@ fn render_modal_title_slide_editor<'a>(
                     .color(theme.text_primary()),
             )
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: border::rounded(4.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(4.0),
+                ..container::Style::default()
             }),
         );
     }
@@ -2551,12 +2510,10 @@ fn render_modal_title_slide_editor<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: border::rounded(4.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(4.0),
+                ..container::Style::default()
             }),
         );
     }
@@ -2568,12 +2525,10 @@ fn render_modal_title_slide_editor<'a>(
                     .color(theme.accent()),
             )
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: border::rounded(4.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(4.0),
+                ..container::Style::default()
             }),
         );
     }
@@ -2585,12 +2540,10 @@ fn render_modal_title_slide_editor<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: border::rounded(4.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(4.0),
+                ..container::Style::default()
             }),
         );
     }
@@ -2600,16 +2553,14 @@ fn render_modal_title_slide_editor<'a>(
     let preview_card = container(preview_items)
         .padding([12, 16])
         .width(Length::Fill)
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_color(),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_color(),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         });
 
     let preview_section = column![
@@ -2680,16 +2631,14 @@ fn render_modal_badge_editor<'a>(
         .align_y(Alignment::Center),
     )
     .padding([6, 14])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(preview_fill)),
-            border: Border {
-                color: preview_fill.scale_alpha(0.8),
-                width: 1.0,
-                radius: border::Radius::from(999.0),
-            },
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(preview_fill)),
+        border: Border {
+            color: preview_fill.scale_alpha(0.8),
+            width: 1.0,
+            radius: border::Radius::from(999.0),
+        },
+        ..container::Style::default()
     });
 
     let preview_section = container(
@@ -2702,12 +2651,10 @@ fn render_modal_badge_editor<'a>(
     )
     .padding(14)
     .width(Length::Fill)
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(8.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: border::rounded(8.0),
+        ..container::Style::default()
     });
 
     let label_label = text("Badge Text / Label:")
@@ -2851,16 +2798,14 @@ fn render_modal_video_editor<'a>(
                 .color(Color::from_rgb(0.95, 0.25, 0.25)),
         )
         .padding([2, 6])
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.95, 0.25, 0.25, 0.2))),
-                border: Border {
-                    color: Color::from_rgb(0.95, 0.25, 0.25),
-                    width: 1.0,
-                    radius: border::Radius::from(3.0),
-                },
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.95, 0.25, 0.25, 0.2))),
+            border: Border {
+                color: Color::from_rgb(0.95, 0.25, 0.25),
+                width: 1.0,
+                radius: border::Radius::from(3.0),
+            },
+            ..container::Style::default()
         });
 
         let quality_badge = container(
@@ -2873,12 +2818,10 @@ fn render_modal_video_editor<'a>(
             .color(theme.text_secondary()),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let mut right_meta = row![quality_badge].spacing(6).align_y(Alignment::Center);
@@ -2889,12 +2832,10 @@ fn render_modal_video_editor<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
-                    border: border::rounded(3.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
+                border: border::rounded(3.0),
+                ..container::Style::default()
             });
             right_meta = right_meta.push(dur_badge);
         }
@@ -2907,12 +2848,10 @@ fn render_modal_video_editor<'a>(
             .height(Length::Fixed(44.0))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(|_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgb(0.98, 0.45, 0.09))),
-                    border: border::rounded(22.0),
-                    ..container::Style::default()
-                }
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgb(0.98, 0.45, 0.09))),
+                border: border::rounded(22.0),
+                ..container::Style::default()
             });
 
         let center_content = column![
@@ -2937,16 +2876,14 @@ fn render_modal_video_editor<'a>(
         )
         .padding(14)
         .width(Length::Fill)
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.03, 0.04, 0.06))),
-                border: Border {
-                    color: Color::from_rgb(0.98, 0.45, 0.09),
-                    width: 1.5,
-                    radius: border::Radius::from(8.0),
-                },
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgb(0.03, 0.04, 0.06))),
+            border: Border {
+                color: Color::from_rgb(0.98, 0.45, 0.09),
+                width: 1.5,
+                radius: border::Radius::from(8.0),
+            },
+            ..container::Style::default()
         })
         .into()
     } else if is_minimal {
@@ -2955,22 +2892,18 @@ fn render_modal_video_editor<'a>(
             .height(Length::Fixed(28.0))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.accent())),
-                    border: border::rounded(14.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.accent())),
+                border: border::rounded(14.0),
+                ..container::Style::default()
             });
 
         let play_pill = container(text("PLAY").size(10).color(theme.accent()))
             .padding([3, 8])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: border::rounded(4.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(4.0),
+                ..container::Style::default()
             });
 
         let row_content = row![
@@ -2991,16 +2924,14 @@ fn render_modal_video_editor<'a>(
         container(row_content)
             .padding([10, 14])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: theme.border_color(),
-                        width: 1.0,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: theme.border_color(),
+                    width: 1.0,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             })
             .into()
     } else {
@@ -3010,12 +2941,10 @@ fn render_modal_video_editor<'a>(
             .height(Length::Fixed(46.0))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.accent())),
-                    border: border::rounded(23.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.accent())),
+                border: border::rounded(23.0),
+                ..container::Style::default()
             });
 
         let quality_pill = container(
@@ -3028,16 +2957,14 @@ fn render_modal_video_editor<'a>(
             .color(theme.accent()),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_active(),
-                    width: 0.8,
-                    radius: border::Radius::from(3.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_active(),
+                width: 0.8,
+                radius: border::Radius::from(3.0),
+            },
+            ..container::Style::default()
         });
 
         let mut badges_row = row![quality_pill].spacing(6).align_y(Alignment::Center);
@@ -3048,12 +2975,10 @@ fn render_modal_video_editor<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
-                    border: border::rounded(3.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+                border: border::rounded(3.0),
+                ..container::Style::default()
             });
             badges_row = badges_row.push(dur_pill);
         }
@@ -3075,16 +3000,14 @@ fn render_modal_video_editor<'a>(
             .padding(16)
             .width(Length::Fill)
             .align_x(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: theme.border_active(),
-                        width: 1.5,
-                        radius: border::Radius::from(8.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: theme.border_active(),
+                    width: 1.5,
+                    radius: border::Radius::from(8.0),
+                },
+                ..container::Style::default()
             })
             .into()
     };
@@ -3108,12 +3031,10 @@ fn render_modal_video_editor<'a>(
     )
     .padding(14)
     .width(Length::Fill)
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(8.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: border::rounded(8.0),
+        ..container::Style::default()
     });
 
     // Form inputs:
@@ -3271,16 +3192,14 @@ fn render_modal_audio_editor<'a>(
         .height(Length::Fixed(34.0))
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.2))),
-                border: Border {
-                    color: Color::from_rgb(0.02, 0.71, 0.83),
-                    width: 1.0,
-                    radius: border::Radius::from(17.0),
-                },
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.2))),
+            border: Border {
+                color: Color::from_rgb(0.02, 0.71, 0.83),
+                width: 1.0,
+                radius: border::Radius::from(17.0),
+            },
+            ..container::Style::default()
         });
 
         // 5 simulated equalizer bars
@@ -3288,12 +3207,10 @@ fn render_modal_audio_editor<'a>(
             container(Space::new())
                 .width(Length::Fixed(3.0))
                 .height(Length::Fixed(h))
-                .style(|_| {
-                    container::Style {
-                        background: Some(Background::Color(Color::from_rgb(0.02, 0.71, 0.83))),
-                        border: border::rounded(1.0),
-                        ..container::Style::default()
-                    }
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgb(0.02, 0.71, 0.83))),
+                    border: border::rounded(1.0),
+                    ..container::Style::default()
                 })
         };
 
@@ -3307,12 +3224,10 @@ fn render_modal_audio_editor<'a>(
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
         )
         .padding([2, 6])
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.15))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.15))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let auto_pill = container(
@@ -3321,12 +3236,10 @@ fn render_modal_audio_editor<'a>(
                 .color(theme.text_secondary()),
         )
         .padding([2, 5])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let loop_pill = container(
@@ -3339,12 +3252,10 @@ fn render_modal_audio_editor<'a>(
             .color(theme.text_secondary()),
         )
         .padding([2, 5])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let right_cluster = row![eq_stack, vol_pill, auto_pill, loop_pill,]
@@ -3367,16 +3278,14 @@ fn render_modal_audio_editor<'a>(
         container(card_body)
             .padding([10, 14])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: Color::from_rgb(0.02, 0.71, 0.83),
-                        width: 1.2,
-                        radius: border::Radius::from(8.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: Color::from_rgb(0.02, 0.71, 0.83),
+                    width: 1.2,
+                    radius: border::Radius::from(8.0),
+                },
+                ..container::Style::default()
             })
             .into()
     } else {
@@ -3418,16 +3327,14 @@ fn render_modal_audio_editor<'a>(
         container(trigger_content)
             .padding([8, 12])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: Border {
-                        color: theme.border_color(),
-                        width: 1.0,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: Border {
+                    color: theme.border_color(),
+                    width: 1.0,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             })
             .into()
     };
@@ -3453,12 +3360,10 @@ fn render_modal_audio_editor<'a>(
     )
     .padding(14)
     .width(Length::Fill)
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(8.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: border::rounded(8.0),
+        ..container::Style::default()
     });
 
     let mode_btn = |player_mode: bool, label: &'static str| {
