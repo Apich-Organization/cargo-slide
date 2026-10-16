@@ -501,7 +501,7 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
         let mut deck_data = None;
         for i in 0..zip_archive.len() {
             let mut entry = zip_archive.by_index(i)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == "deck.json" || name.ends_with("/deck.json") {
                 let mut content = Vec::new();
                 entry.read_to_end(&mut content)?;
@@ -831,7 +831,7 @@ pub fn unpack_package_to_dir(
         let mut zip_archive = zip::ZipArchive::new(file)?;
         for i in 0..zip_archive.len() {
             let mut entry = zip_archive.by_index(i)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if entry.is_dir() {
                 let _ = std::fs::create_dir_all(output_dir.join(&name));
             } else {

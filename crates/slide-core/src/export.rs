@@ -76,19 +76,19 @@ pub fn generate_standalone_html(
     // Speaker Notes Modal
     let _ = writeln!(
         html,
-        "<div id=\"notes-modal\" class=\"modal\" onclick=\"if(event.target===this)toggleNotes()\">\n  <div class=\"modal-card\">\n    <div class=\"modal-header\">\n      <h3>📝 Speaker Notes</h3>\n      <button class=\"close-btn\" onclick=\"toggleNotes()\">✕</button>\n    </div>\n    <div class=\"notes-text\" id=\"notes-content\">No notes</div>\n  </div>\n</div>"
+        "<div id=\"notes-modal\" class=\"modal\" onclick=\"if(event.target===this)toggleNotes()\">\n  <div class=\"modal-card\">\n    <div class=\"modal-header\">\n      <h3>📝 Speaker Notes</h3>\n      <button class=\"close-btn\" aria-label=\"Close speaker notes\" onclick=\"toggleNotes()\">✕</button>\n    </div>\n    <div class=\"notes-text\" id=\"notes-content\">No notes</div>\n  </div>\n</div>"
     );
 
     // Grid Overview Modal
     let _ = writeln!(
         html,
-        "<div id=\"grid-modal\" class=\"modal\" onclick=\"if(event.target===this)toggleGrid()\">\n  <div class=\"modal-card\" style=\"max-width: 800px;\">\n    <div class=\"modal-header\">\n      <h3>▦ Slide Overview</h3>\n      <button class=\"close-btn\" onclick=\"toggleGrid()\">✕</button>\n    </div>\n    <div class=\"grid-container\" id=\"grid-content\"></div>\n  </div>\n</div>"
+        "<div id=\"grid-modal\" class=\"modal\" onclick=\"if(event.target===this)toggleGrid()\">\n  <div class=\"modal-card\" style=\"max-width: 800px;\">\n    <div class=\"modal-header\">\n      <h3>▦ Slide Overview</h3>\n      <button class=\"close-btn\" aria-label=\"Close slide overview\" onclick=\"toggleGrid()\">✕</button>\n    </div>\n    <div class=\"grid-container\" id=\"grid-content\"></div>\n  </div>\n</div>"
     );
 
     // Help Modal
     let _ = writeln!(
         html,
-        "<div id=\"help-modal\" class=\"modal\" onclick=\"if(event.target===this)toggleHelp()\">\n  <div class=\"modal-card\">\n    <div class=\"modal-header\">\n      <h3>? Keyboard Shortcuts</h3>\n      <button class=\"close-btn\" onclick=\"toggleHelp()\">✕</button>\n    </div>\n    <table style=\"width: 100%; font-size: 14px; line-height: 2;\">\n      <tr><td><b>Space / → / Enter</b></td><td>Next slide</td></tr>\n      <tr><td><b>← / Backspace</b></td><td>Previous slide</td></tr>\n      <tr><td><b>Home / End</b></td><td>First / Last slide</td></tr>\n      <tr><td><b>F</b></td><td>Toggle Fullscreen</td></tr>\n      <tr><td><b>N</b></td><td>Toggle Speaker Notes</td></tr>\n      <tr><td><b>G / O</b></td><td>Toggle Grid Overview</td></tr>\n      <tr><td><b>B / .</b></td><td>Blank black screen</td></tr>\n      <tr><td><b>W</b></td><td>Blank white screen</td></tr>\n      <tr><td><b>?</b></td><td>Toggle this help</td></tr>\n    </table>\n  </div>\n</div>"
+        "<div id=\"help-modal\" class=\"modal\" onclick=\"if(event.target===this)toggleHelp()\">\n  <div class=\"modal-card\">\n    <div class=\"modal-header\">\n      <h3>? Keyboard Shortcuts</h3>\n      <button class=\"close-btn\" aria-label=\"Close help\" onclick=\"toggleHelp()\">✕</button>\n    </div>\n    <table style=\"width: 100%; font-size: 14px; line-height: 2;\">\n      <tr><td><b>Space / → / Enter</b></td><td>Next slide</td></tr>\n      <tr><td><b>← / Backspace</b></td><td>Previous slide</td></tr>\n      <tr><td><b>Home / End</b></td><td>First / Last slide</td></tr>\n      <tr><td><b>F</b></td><td>Toggle Fullscreen</td></tr>\n      <tr><td><b>N</b></td><td>Toggle Speaker Notes</td></tr>\n      <tr><td><b>G / O</b></td><td>Toggle Grid Overview</td></tr>\n      <tr><td><b>B / .</b></td><td>Blank black screen</td></tr>\n      <tr><td><b>W</b></td><td>Blank white screen</td></tr>\n      <tr><td><b>?</b></td><td>Toggle this help</td></tr>\n    </table>\n  </div>\n</div>"
     );
 
     // Encode speaker notes into JSON array
