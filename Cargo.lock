@@ -5153,6 +5153,7 @@ dependencies = [
  "clap",
  "iced",
  "image",
+ "open",
  "regex",
  "resvg 0.48.1",
  "rfd",
