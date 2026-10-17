@@ -67,7 +67,7 @@ minifb = "0.29"
 notify = "8.2"
 tempfile = "3.27"
 walkdir = "2.5"
-rodio = "0.22"
+rodio = "0.23"
 csv = "1.4"
 rusqlite = { version = "0.40", features = ["bundled"] }
 zip = "9.0"
