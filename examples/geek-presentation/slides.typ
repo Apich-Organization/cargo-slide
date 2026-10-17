@@ -12,10 +12,6 @@
 )
 #audio("assets/ambient.wav", autoplay: true, loop: true, volume: 0.5)
 
-==== Detail Topic
-
-
-
 #slide(title: "Architecture: Typst Functional Markup to Native Engine", transition: "slide-left")[
   #align(center)[#image("assets/architecture.svg", height: 4.4cm)]
   
