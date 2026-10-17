@@ -417,17 +417,15 @@ impl ViewerLauncherApp {
                 self.show_toast(&format!("Path: {}", s));
                 Task::none()
             },
-            | Message::InstallToSystem => {
-                match install_viewer_to_system() {
-                    | Ok(msg) => {
-                        self.show_toast(&format!("[OK] {}", msg));
-                        Task::none()
-                    },
-                    | Err(e) => {
-                        self.show_toast(&format!("[ERR] Failed to install: {}", e));
-                        Task::none()
-                    },
-                }
+            | Message::InstallToSystem => match install_viewer_to_system() {
+                | Ok(msg) => {
+                    self.show_toast(&format!("[OK] {}", msg));
+                    Task::none()
+                },
+                | Err(e) => {
+                    self.show_toast(&format!("[ERR] Failed to install: {}", e));
+                    Task::none()
+                },
             },
             | Message::DismissToast => {
                 self.toast_message = None;
@@ -627,13 +625,11 @@ impl ViewerLauncherApp {
         let mut list: Vec<&SlideFileEntry> = self
             .presentations
             .iter()
-            .filter(|p| {
-                match self.filter {
-                    | PresentationFilter::All => true,
-                    | PresentationFilter::Packages => p.is_slide_pkg,
-                    | PresentationFilter::Typst => !p.is_slide_pkg,
-                    | PresentationFilter::Favorites => p.is_favorite,
-                }
+            .filter(|p| match self.filter {
+                | PresentationFilter::All => true,
+                | PresentationFilter::Packages => p.is_slide_pkg,
+                | PresentationFilter::Typst => !p.is_slide_pkg,
+                | PresentationFilter::Favorites => p.is_favorite,
             })
             .filter(|p| {
                 if self.search_query.trim().is_empty() {
@@ -887,14 +883,12 @@ impl ViewerLauncherApp {
                     theme.text_secondary()
                 };
                 let fav_btn = button(text(fav_icon).size(16).color(fav_color))
-                    .style(move |_t, _s| {
-                        button::Style {
-                            background: Some(Background::Color(Color::TRANSPARENT)),
-                            text_color: fav_color,
-                            border: Border::default(),
-                            shadow: Shadow::default(),
-                            snap: true,
-                        }
+                    .style(move |_t, _s| button::Style {
+                        background: Some(Background::Color(Color::TRANSPARENT)),
+                        text_color: fav_color,
+                        border: Border::default(),
+                        shadow: Shadow::default(),
+                        snap: true,
                     })
                     .padding([0, 4])
                     .on_press(Message::ToggleFavorite(entry_path.clone()));
@@ -907,14 +901,12 @@ impl ViewerLauncherApp {
                     ]
                     .align_y(Alignment::Center),
                 )
-                .style(move |_t, _s| {
-                    button::Style {
-                        background: Some(Background::Color(Color::TRANSPARENT)),
-                        text_color: theme.text_primary(),
-                        border: Border::default(),
-                        shadow: Shadow::default(),
-                        snap: true,
-                    }
+                .style(move |_t, _s| button::Style {
+                    background: Some(Background::Color(Color::TRANSPARENT)),
+                    text_color: theme.text_primary(),
+                    border: Border::default(),
+                    shadow: Shadow::default(),
+                    snap: true,
                 })
                 .width(Length::Fill)
                 .padding(0)
@@ -1123,16 +1115,14 @@ impl ViewerLauncherApp {
                             .spacing(3),
                         )
                         .padding(8)
-                        .style(move |_| {
-                            container::Style {
-                                background: Some(Background::Color(theme.bg_subtle())),
-                                border: Border {
-                                    color: theme.border_active(),
-                                    width: 1.0,
-                                    radius: iced::border::Radius::from(4.0),
-                                },
-                                ..container::Style::default()
-                            }
+                        .style(move |_| container::Style {
+                            background: Some(Background::Color(theme.bg_subtle())),
+                            border: Border {
+                                color: theme.border_active(),
+                                width: 1.0,
+                                radius: iced::border::Radius::from(4.0),
+                            },
+                            ..container::Style::default()
                         })
                     } else {
                         container(column![verify_btn])

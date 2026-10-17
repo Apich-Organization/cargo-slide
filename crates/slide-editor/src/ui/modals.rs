@@ -5,9 +5,7 @@ use crate::app::ExportPageSelection;
 use crate::app::Message;
 use crate::compiler_bridge::CompilerDiagnostic;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use iced::Alignment;
 use iced::Background;
 use iced::Element;
@@ -302,12 +300,10 @@ pub fn view_open_modal<'a>(
         }
         recents_widget = container(recents_col)
             .padding(8)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_subtle())),
-                    border: iced::border::rounded(6.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(6.0),
+                ..container::Style::default()
             })
             .into();
     }
@@ -395,12 +391,10 @@ pub fn view_error_details_modal<'a>(
         .height(Length::Fixed(200.0)),
     )
     .padding(10)
-    .style(move |_| {
-        container::Style {
-            background: Some(iced::Background::Color(theme.bg_subtle())),
-            border: iced::border::rounded(6.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(theme.bg_subtle())),
+        border: iced::border::rounded(6.0),
+        ..container::Style::default()
     });
 
     let quick_fix_widget: Element<'a, Message> = if let Some(ref qf) = diagnostic.quick_fix {
@@ -425,12 +419,10 @@ pub fn view_error_details_modal<'a>(
             .align_y(Alignment::Center),
         )
         .padding(10)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_subtle())),
-                border: iced::border::rounded(6.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_subtle())),
+            border: iced::border::rounded(6.0),
+            ..container::Style::default()
         })
         .into()
     } else {
@@ -497,12 +489,10 @@ pub fn view_move_block_modal<'a>(
             .color(theme.accent()),
     )
     .padding([4, 10])
-    .style(move |_| {
-        container::Style {
-            background: Some(iced::Background::Color(theme.bg_subtle())),
-            border: iced::border::rounded(6.0),
-            ..Default::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(theme.bg_subtle())),
+        border: iced::border::rounded(6.0),
+        ..Default::default()
     });
 
     let mut quick_nav = row![].spacing(8).align_y(Alignment::Center);
@@ -555,16 +545,14 @@ pub fn view_move_block_modal<'a>(
                 }),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(if is_current {
-                    theme.bg_subtle()
-                } else {
-                    theme.accent()
-                })),
-                border: iced::border::rounded(theme::RADIUS_FULL),
-                ..Default::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(if is_current {
+                theme.bg_subtle()
+            } else {
+                theme.accent()
+            })),
+            border: iced::border::rounded(theme::RADIUS_FULL),
+            ..Default::default()
         });
 
         let label = text(if is_current {
@@ -602,12 +590,10 @@ pub fn view_move_block_modal<'a>(
     let list_container =
         container(scrollable(slide_items.padding([4, 6])).height(Length::Fixed(240.0)))
             .padding(6)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_subtle())),
-                    border: iced::border::rounded(theme::RADIUS_MD),
-                    ..Default::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(theme::RADIUS_MD),
+                ..Default::default()
             });
 
     let cancel_btn = button(text("Cancel").size(13))
@@ -664,11 +650,9 @@ pub fn view_slide_context_menu_modal<'a>(
         container(Space::new())
             .height(Length::Fixed(1.0))
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.border_color())),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.border_color())),
+                ..container::Style::default()
             })
     };
 
@@ -837,11 +821,9 @@ pub fn view_block_context_menu_modal<'a>(
         container(Space::new())
             .height(Length::Fixed(1.0))
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.border_color())),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.border_color())),
+                ..container::Style::default()
             })
     };
 
@@ -1004,12 +986,10 @@ pub fn view_font_selector_modal<'a>(
         let badge = if is_curr {
             container(text("ACTIVE").size(9).color(iced::Color::WHITE))
                 .padding([1, 6])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(iced::Background::Color(theme.accent())),
-                        border: iced::border::rounded(theme::RADIUS_FULL),
-                        ..Default::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(theme.accent())),
+                    border: iced::border::rounded(theme::RADIUS_FULL),
+                    ..Default::default()
                 })
         } else {
             container(
@@ -1018,12 +998,10 @@ pub fn view_font_selector_modal<'a>(
                     .color(theme.text_muted()),
             )
             .padding([1, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_subtle())),
-                    border: iced::border::rounded(theme::RADIUS_FULL),
-                    ..Default::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(theme::RADIUS_FULL),
+                ..Default::default()
             })
         };
 
@@ -1050,12 +1028,10 @@ pub fn view_font_selector_modal<'a>(
 
     let list_box = container(scrollable(font_list.padding([4, 6])).height(Length::Fixed(280.0)))
         .padding(6)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_subtle())),
-                border: iced::border::rounded(theme::RADIUS_MD),
-                ..Default::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_subtle())),
+            border: iced::border::rounded(theme::RADIUS_MD),
+            ..Default::default()
         });
 
     let close_btn = button(text("Close").size(13))
@@ -1202,21 +1178,19 @@ pub fn view_search_replace_bar<'a>(
     container(content)
         .width(Length::Fixed(440.0))
         .padding(10)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_surface())),
-                border: iced::border::Border {
-                    color: theme.accent().scale_alpha(0.7),
-                    width: 1.5,
-                    radius: iced::border::Radius::from(8.0),
-                },
-                shadow: iced::Shadow {
-                    color: iced::Color::BLACK.scale_alpha(0.35),
-                    offset: iced::Vector::new(0.0, 4.0),
-                    blur_radius: 12.0,
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_surface())),
+            border: iced::border::Border {
+                color: theme.accent().scale_alpha(0.7),
+                width: 1.5,
+                radius: iced::border::Radius::from(8.0),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color::BLACK.scale_alpha(0.35),
+                offset: iced::Vector::new(0.0, 4.0),
+                blur_radius: 12.0,
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -1440,12 +1414,10 @@ pub fn view_header_footer_modal<'a>(
     )
     .width(Length::Fill)
     .padding(6)
-    .style(move |_| {
-        container::Style {
-            background: Some(iced::Background::Color(theme.bg_subtle())),
-            border: iced::border::rounded(theme::RADIUS_SM),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(theme.bg_subtle())),
+        border: iced::border::rounded(theme::RADIUS_SM),
+        ..container::Style::default()
     });
 
     let apply_btn = button(text("Apply to Document").size(12))
@@ -1569,12 +1541,10 @@ pub fn view_template_library_modal<'a>(theme: AppTheme) -> Element<'a, Message> 
     for (i, (t_title, t_desc, t_tag, t_idx)) in templates.iter().enumerate() {
         let tag_badge = container(text(*t_tag).size(9).color(theme.accent()))
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_subtle())),
-                    border: iced::border::rounded(theme::RADIUS_FULL),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(theme::RADIUS_FULL),
+                ..container::Style::default()
             });
 
         let card_header = row![
@@ -1602,16 +1572,14 @@ pub fn view_template_library_modal<'a>(theme: AppTheme) -> Element<'a, Message> 
         let card = container(card_content)
             .width(Length::Fixed(290.0))
             .padding(12)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_surface_solid())),
-                    border: iced::border::Border {
-                        color: theme.border_color(),
-                        width: 1.0,
-                        radius: iced::border::Radius::from(theme::RADIUS_MD),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_surface_solid())),
+                border: iced::border::Border {
+                    color: theme.border_color(),
+                    width: 1.0,
+                    radius: iced::border::Radius::from(theme::RADIUS_MD),
+                },
+                ..container::Style::default()
             });
 
         current_row = current_row.push(card);
@@ -1834,12 +1802,10 @@ pub fn view_presentation_health_modal<'a>(
         .spacing(8),
     )
     .padding(12)
-    .style(move |_| {
-        container::Style {
-            background: Some(iced::Background::Color(theme.bg_subtle())),
-            border: iced::border::rounded(6.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(theme.bg_subtle())),
+        border: iced::border::rounded(6.0),
+        ..container::Style::default()
     });
 
     // Per-slide pacing cards
@@ -1870,12 +1836,10 @@ pub fn view_presentation_health_modal<'a>(
                 .color(status_fg),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(status_bg)),
-                border: iced::border::rounded(4.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(status_bg)),
+            border: iced::border::rounded(4.0),
+            ..container::Style::default()
         });
 
         let s_idx = s.slide_index;
@@ -1930,12 +1894,10 @@ pub fn view_presentation_health_modal<'a>(
         let slide_card = container(column![slide_header, metrics_text, rec_text].spacing(3))
             .padding(8)
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_subtle())),
-                    border: iced::border::rounded(6.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_subtle())),
+                border: iced::border::rounded(6.0),
+                ..container::Style::default()
             });
 
         slides_pacing_col = slides_pacing_col.push(slide_card);
@@ -1963,12 +1925,10 @@ pub fn view_presentation_health_modal<'a>(
         )
         .padding(10)
         .width(Length::Fill)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_subtle())),
-                border: iced::border::rounded(6.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_subtle())),
+            border: iced::border::rounded(6.0),
+            ..container::Style::default()
         });
         issues_col = issues_col.push(healthy_card);
     } else {
@@ -1981,12 +1941,10 @@ pub fn view_presentation_health_modal<'a>(
 
             let sev_badge = container(text(badge_text).size(9).color(iced::Color::WHITE))
                 .padding([2, 5])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(iced::Background::Color(badge_color)),
-                        border: iced::border::rounded(theme::RADIUS_FULL),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(badge_color)),
+                    border: iced::border::rounded(theme::RADIUS_FULL),
+                    ..container::Style::default()
                 });
 
             let mut header_row = row![sev_badge].spacing(6).align_y(Alignment::Center);
@@ -2012,12 +1970,10 @@ pub fn view_presentation_health_modal<'a>(
             let issue_card = container(column![header_row, desc, rec].spacing(3))
                 .padding(8)
                 .width(Length::Fill)
-                .style(move |_| {
-                    container::Style {
-                        background: Some(iced::Background::Color(theme.bg_subtle())),
-                        border: iced::border::rounded(6.0),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(theme.bg_subtle())),
+                    border: iced::border::rounded(6.0),
+                    ..container::Style::default()
                 });
 
             issues_col = issues_col.push(issue_card);
@@ -2281,12 +2237,10 @@ pub fn view_command_palette_modal<'a>(
             let is_selected = i == selected_idx.min(filtered_actions.len().saturating_sub(1));
             let category_badge = container(text(action.category).size(9).color(theme.text_muted()))
                 .padding([2, 5])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(iced::Background::Color(theme.bg_subtle())),
-                        border: iced::border::rounded(3.0),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(theme.bg_subtle())),
+                    border: iced::border::rounded(3.0),
+                    ..container::Style::default()
                 });
 
             let shortcut_badge = if action.shortcut.is_empty() {
@@ -2294,12 +2248,10 @@ pub fn view_command_palette_modal<'a>(
             } else {
                 container(text(action.shortcut).size(10).color(theme.text_secondary()))
                     .padding([2, 6])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.bg_subtle())),
-                            border: iced::border::rounded(3.0),
-                            ..container::Style::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(3.0),
+                        ..container::Style::default()
                     })
                     .into()
             };
@@ -2420,16 +2372,14 @@ pub fn view_recovery_draft_modal<'a>(
     )
     .width(Length::Fill)
     .padding(10)
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: iced::Border {
-                color: theme.border_color(),
-                width: 1.0,
-                radius: iced::border::Radius::from(6.0),
-            },
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: iced::Border {
+            color: theme.border_color(),
+            width: 1.0,
+            radius: iced::border::Radius::from(6.0),
+        },
+        ..container::Style::default()
     });
 
     let restore_btn = button(
@@ -2438,30 +2388,26 @@ pub fn view_recovery_draft_modal<'a>(
             .color(iced::Color::WHITE),
     )
     .padding([8, 16])
-    .style(move |_t, _s| {
-        button::Style {
-            background: Some(Background::Color(theme.accent())),
-            border: iced::Border {
-                radius: iced::border::Radius::from(6.0),
-                ..iced::Border::default()
-            },
-            ..button::Style::default()
-        }
+    .style(move |_t, _s| button::Style {
+        background: Some(Background::Color(theme.accent())),
+        border: iced::Border {
+            radius: iced::border::Radius::from(6.0),
+            ..iced::Border::default()
+        },
+        ..button::Style::default()
     })
     .on_press(Message::RestoreRecoveryDraft(draft_content.to_string()));
 
     let discard_btn = button(text("Discard Draft").size(12).color(theme.danger()))
         .padding([8, 16])
-        .style(move |_t, _s| {
-            button::Style {
-                background: Some(Background::Color(theme.bg_card())),
-                border: iced::Border {
-                    color: theme.danger().scale_alpha(0.5),
-                    width: 1.0,
-                    radius: iced::border::Radius::from(6.0),
-                },
-                ..button::Style::default()
-            }
+        .style(move |_t, _s| button::Style {
+            background: Some(Background::Color(theme.bg_card())),
+            border: iced::Border {
+                color: theme.danger().scale_alpha(0.5),
+                width: 1.0,
+                radius: iced::border::Radius::from(6.0),
+            },
+            ..button::Style::default()
         })
         .on_press(Message::DiscardRecoveryDraft);
 

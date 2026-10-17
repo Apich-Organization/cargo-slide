@@ -139,42 +139,36 @@ impl CompilerBridge {
             {
                 let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
             }
-            std::fs::write(&tmp, &processed_source).map_err(|e| {
-                CompilerDiagnostic {
-                    message: format!(
-                        "Failed to write temporary typst file in {}: {e}",
-                        root.display()
-                    ),
-                    line: None,
-                    column: None,
-                    full_stderr: String::new(),
-                    quick_fix: None,
-                }
+            std::fs::write(&tmp, &processed_source).map_err(|e| CompilerDiagnostic {
+                message: format!(
+                    "Failed to write temporary typst file in {}: {e}",
+                    root.display()
+                ),
+                line: None,
+                column: None,
+                full_stderr: String::new(),
+                quick_fix: None,
             })?;
             (tmp.clone(), Cleanup::File(tmp))
         } else {
-            let temp_dir = tempfile::tempdir().map_err(|e| {
-                CompilerDiagnostic {
-                    message: format!("Failed to create temporary directory: {e}"),
-                    line: None,
-                    column: None,
-                    full_stderr: String::new(),
-                    quick_fix: None,
-                }
+            let temp_dir = tempfile::tempdir().map_err(|e| CompilerDiagnostic {
+                message: format!("Failed to create temporary directory: {e}"),
+                line: None,
+                column: None,
+                full_stderr: String::new(),
+                quick_fix: None,
             })?;
             let slide_typ = temp_dir.path().join("slide.typ");
             let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
             let theme_typ = temp_dir.path().join("theme.typ");
             let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
             let tmp = temp_dir.path().join("document.typ");
-            std::fs::write(&tmp, &processed_source).map_err(|e| {
-                CompilerDiagnostic {
-                    message: format!("Failed to write temporary typst file: {e}"),
-                    line: None,
-                    column: None,
-                    full_stderr: String::new(),
-                    quick_fix: None,
-                }
+            std::fs::write(&tmp, &processed_source).map_err(|e| CompilerDiagnostic {
+                message: format!("Failed to write temporary typst file: {e}"),
+                line: None,
+                column: None,
+                full_stderr: String::new(),
+                quick_fix: None,
             })?;
             (tmp, Cleanup::Dir(temp_dir))
         };

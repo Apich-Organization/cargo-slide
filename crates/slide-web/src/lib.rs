@@ -1384,6 +1384,7 @@ pub fn App() -> impl IntoView {
                                         <button
                                             class="btn-action"
                                             title="Toggle True Fullscreen (or double-click video)"
+                                            aria-label="Toggle True Fullscreen"
                                             on:click=move |_| {
                                                 if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
                                                     if doc.fullscreen_element().is_some() {
@@ -1665,7 +1666,6 @@ fn ChartInspectorModal(
         indices
     });
 
-
     let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
@@ -1747,26 +1747,32 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_type.get() == ChartType::Bar { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Bar Chart"
                             on:click=move |_| active_type.set(ChartType::Bar)
                         >"📊 Bar"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Line { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Line Chart"
                             on:click=move |_| active_type.set(ChartType::Line)
                         >"📈 Line"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Area { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Area Chart"
                             on:click=move |_| active_type.set(ChartType::Area)
                         >"📉 Area"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Pie { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Pie Chart"
                             on:click=move |_| active_type.set(ChartType::Pie)
                         >"🥧 Pie"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Donut { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Donut Chart"
                             on:click=move |_| active_type.set(ChartType::Donut)
                         >"🍩 Donut"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Scatter { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Scatter Chart"
                             on:click=move |_| active_type.set(ChartType::Scatter)
                         >"⁖ Scatter"</button>
                     </div>
@@ -1775,41 +1781,48 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_transform.get() == TransformPreset::None { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Original Data"
                             on:click=move |_| active_transform.set(TransformPreset::None)
                         >"ORIG"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Top5 { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Top 5"
                             on:click=move |_| active_transform.set(TransformPreset::Top5)
                         >"TOP 5"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortDesc { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Sort Descending"
                             on:click=move |_| active_transform.set(TransformPreset::SortDesc)
                         >"SORT ▼"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortAsc { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Sort Ascending"
                             on:click=move |_| active_transform.set(TransformPreset::SortAsc)
                         >"SORT ▲"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Cumulative { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Cumulative"
                             on:click=move |_| active_transform.set(TransformPreset::Cumulative)
                         >"CUM"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Percent100 { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Percentage Share"
                             on:click=move |_| active_transform.set(TransformPreset::Percent100)
                         >"% SHARE"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::MovingAvg3 { "btn-chip active" } else { "btn-chip" }
+                            aria-label="3-Period Moving Average"
                             on:click=move |_| active_transform.set(TransformPreset::MovingAvg3)
                         >"MA3"</button>
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
+                    <button class="btn-action" aria-label=move || format!("Cycle format, current format is {}", transformed_data.get().format.display_name()) on:click=on_cycle_format>
                         {move || format!("🔣 {}", transformed_data.get().format.display_name())}
                     </button>
 
                     // Export CSV Button
-                    <button class="btn-action" on:click=on_export_csv>"💾 Export CSV"</button>
+                    <button class="btn-action" aria-label="Export CSV" on:click=on_export_csv>"💾 Export CSV"</button>
                 </div>
 
                 // Series Filter Chips
@@ -1825,6 +1838,7 @@ fn ChartInspectorModal(
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
+                                    aria-label=format!("Toggle visibility for series {}", s.name)
                                     on:click=move |_| {
                                         let n = name.clone();
                                         visible_series.update(|list| {
@@ -1839,7 +1853,7 @@ fn ChartInspectorModal(
                                     }
                                 >
                                     <span class="series-dot" style=format!("background: {color};") />
-                                    {s.name}
+                                    {s.name.clone()}
                                 </button>
                             }
                         }).collect::<Vec<_>>()
@@ -2002,6 +2016,7 @@ fn TextPreviewModal(
                         <button
                             class="btn-action"
                             title="Copy file contents to clipboard"
+                            aria-label=move || if copy_feedback.get() { "Copied!" } else { "Copy file contents" }
                             on:click=on_copy
                         >
                             {move || if copy_feedback.get() { "✓ Copied!" } else { "📋 Copy" }}
@@ -2009,6 +2024,7 @@ fn TextPreviewModal(
                         <button
                             class="btn-action"
                             title="Download file"
+                            aria-label="Download file"
                             on:click=on_download
                         >
                             "💾 Download"
