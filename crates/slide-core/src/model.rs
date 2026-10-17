@@ -159,7 +159,7 @@ pub struct StepFragment {
 }
 
 /// A single presentation slide
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Slide {
     pub page_number: usize,
     pub svg_data: String,
