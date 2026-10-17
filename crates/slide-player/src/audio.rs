@@ -124,6 +124,62 @@ impl AudioEngine {
         Ok(())
     }
 
+    /// Play an in-memory audio track directly from RAM without touching disk.
+    pub fn play_in_memory_track(
+        &mut self,
+        track_name: &str,
+        data: Vec<u8>,
+        loop_audio: bool,
+        volume: f32,
+        fade_in: Duration,
+    ) -> std::io::Result<()> {
+        let sink = match &self._sink {
+            | Some(s) => s,
+            | None => return Ok(()),
+        };
+
+        let cursor = std::io::Cursor::new(data);
+        let decoder = Decoder::try_from(cursor).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to decode in-memory audio: {e}"),
+            )
+        })?;
+
+        if let Some(player) = self.player.take() {
+            player.stop();
+        }
+
+        let player = Player::connect_new(sink.mixer());
+        let initial_vol = if fade_in > Duration::ZERO {
+            0.0
+        } else {
+            volume * self.global_volume
+        };
+        player.set_volume(initial_vol);
+
+        if loop_audio {
+            player.append(decoder.repeat_infinite());
+        } else {
+            player.append(decoder);
+        }
+
+        self.player = Some(player);
+        self.current_source = Some(track_name.to_string());
+
+        if fade_in > Duration::ZERO {
+            self.fade_start_time = Some(Instant::now());
+            self.fade_duration = fade_in;
+            self.fade_start_vol = 0.0;
+            self.fade_target_vol = volume * self.global_volume;
+            self.stop_after_fade = false;
+        } else {
+            self.fade_start_time = None;
+        }
+
+        Ok(())
+    }
+
     /// Fade out and stop the current audio
     pub fn stop_with_fade(
         &mut self,

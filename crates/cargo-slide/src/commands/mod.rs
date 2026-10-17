@@ -9,6 +9,7 @@ pub mod info;
 pub mod init;
 pub mod new;
 pub mod pack;
+pub mod piv;
 pub mod run;
 pub mod serve;
 pub mod stats;

@@ -32,3 +32,20 @@ xz2.workspace = true
 lzma-rs.workspace = true
 slide-theme.workspace = true
 chrono.workspace = true
+aes-gcm.workspace = true
+sha3.workspace = true
+zeroize.workspace = true
+rsa.workspace = true
+p256.workspace = true
+rand.workspace = true
+x509-parser.workspace = true
+rcgen.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hkdf.workspace = true
+time.workspace = true
+libc.workspace = true
+flate2.workspace = true
+
+[features]
+test-mock = []

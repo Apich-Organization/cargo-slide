@@ -14,7 +14,6 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Path to typst file when run directly (default: slides.typ)
-    #[arg(global = true)]
     pub file: Option<PathBuf>,
 
     /// Log format: human (default) or json
@@ -88,6 +87,10 @@ pub enum Commands {
         /// Start presentation player with light HUD theme
         #[arg(long)]
         light: bool,
+
+        /// User PIN for decrypting PIV-protected presentation
+        #[arg(long)]
+        pin: Option<String>,
     },
     /// Alias for run --watch
     Dev {
@@ -114,6 +117,10 @@ pub enum Commands {
         /// Start presentation player with light HUD theme
         #[arg(long)]
         light: bool,
+
+        /// User PIN for decrypting PIV-protected presentation
+        #[arg(long)]
+        pin: Option<String>,
     },
     /// Launch the Typora-style WYSIWYG desktop editor for presentations and documents
     Edit {
@@ -152,6 +159,26 @@ pub enum Commands {
         /// Include original editable Typst source files and templates in the package
         #[arg(long, alias = "origin")]
         source: bool,
+
+        /// Encrypt standalone presentation binary with AES-256 bound to PIV slot
+        #[arg(long)]
+        encrypt: bool,
+
+        /// Recipient PIV slot for decryption (default: 9d)
+        #[arg(long, default_value = "9d")]
+        piv_slot: String,
+
+        /// Signer PIV slot for SHA3-512 integrity signature (default: 9c)
+        #[arg(long, default_value = "9c")]
+        sign_slot: String,
+
+        /// Recipient X.509 certificate or public key file path (PEM/DER)
+        #[arg(long)]
+        cert: Option<PathBuf>,
+
+        /// PIV User PIN
+        #[arg(long)]
+        pin: Option<String>,
     },
     /// Pack presentation into a standalone compressed .slide package (LZMA2)
     Pack {
@@ -170,6 +197,26 @@ pub enum Commands {
         /// Include original editable Typst source files and templates in the package
         #[arg(long, alias = "origin")]
         source: bool,
+
+        /// Encrypt .slide package with AES-256 bound to PIV slot
+        #[arg(long)]
+        encrypt: bool,
+
+        /// Recipient PIV slot for decryption (default: 9d)
+        #[arg(long, default_value = "9d")]
+        piv_slot: String,
+
+        /// Signer PIV slot for SHA3-512 integrity signature (default: 9c)
+        #[arg(long, default_value = "9c")]
+        sign_slot: String,
+
+        /// Recipient X.509 certificate or public key file path (PEM/DER)
+        #[arg(long)]
+        cert: Option<PathBuf>,
+
+        /// PIV User PIN
+        #[arg(long)]
+        pin: Option<String>,
     },
     /// Unpack a .slide package into an editable project directory
     Unpack {
@@ -282,4 +329,78 @@ pub enum Commands {
     InstallViewer,
     /// Audit environment, Typst compiler, media players, and cargo-slide dependencies
     Doctor,
+    /// Manage `YubiKey` PIV card slots, certificates, and SHA3-512 integrity
+    Piv {
+        #[command(subcommand)]
+        action: PivAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PivAction {
+    /// Inspect physical `YubiKey` PIV smartcard readers, slots, and certificates
+    Info {
+        /// User PIN to authenticate session
+        #[arg(long)]
+        pin: Option<String>,
+    },
+    /// Export X.509 certificate from a PIV slot (e.g. 9d or 9c)
+    #[command(alias = "exportcert")]
+    ExportCert {
+        /// PIV slot (9a, 9c, 9d, 9e, default: 9d)
+        #[arg(short, long, default_value = "9d")]
+        slot: String,
+
+        /// Output path for certificate file (PEM format)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// User PIN
+        #[arg(long)]
+        pin: Option<String>,
+    },
+    /// Sign a file with SHA3-512 using the private key in a PIV slot (default: 9c)
+    Sign {
+        /// Path to target file to sign
+        file: PathBuf,
+
+        /// PIV slot to sign with (default: 9c)
+        #[arg(short, long, default_value = "9c")]
+        slot: String,
+
+        /// Output signature file path (default: <file>.sig)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// User PIN
+        #[arg(long)]
+        pin: Option<String>,
+    },
+    /// Verify a file's SHA3-512 signature using a PIV slot or certificate
+    Verify {
+        /// Path to file to verify
+        file: PathBuf,
+
+        /// Path to signature file
+        #[arg(long)]
+        sig: PathBuf,
+
+        /// PIV slot containing verification key (default: 9c)
+        #[arg(short, long, default_value = "9c")]
+        slot: String,
+
+        /// Optional external certificate or public key file to verify with
+        #[arg(short, long)]
+        cert: Option<PathBuf>,
+
+        /// User PIN
+        #[arg(long)]
+        pin: Option<String>,
+    },
+    /// Run self-test verifying AES-256, SHA3-512, and PIV slot hardware crypto
+    Test {
+        /// User PIN
+        #[arg(long)]
+        pin: Option<String>,
+    },
 }

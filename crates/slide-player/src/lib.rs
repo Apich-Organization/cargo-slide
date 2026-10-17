@@ -70,6 +70,7 @@
 pub mod audio;
 pub mod hud;
 pub mod media;
+pub mod pin_dialog;
 pub mod renderer;
 pub mod transition;
 pub mod window;
@@ -77,6 +78,7 @@ pub mod window;
 pub use audio::AudioEngine;
 pub use hud::HudTheme;
 pub use media::MediaPlayer;
+pub use pin_dialog::prompt_pin_gui;
 pub use renderer::RenderMetrics;
 pub use renderer::SvgRenderer;
 pub use transition::TransitionManager;
@@ -91,6 +93,7 @@ pub mod prelude {
     pub use crate::SlideApp;
     pub use crate::SlidePlayer;
     pub use crate::TransitionManager;
+    pub use crate::prompt_pin_gui;
     pub use slide_core::animation::AnimationRegistry;
     pub use slide_core::animation::ComponentAnimation;
     pub use slide_core::animation::RenderContext;

@@ -108,8 +108,18 @@ fn dispatch_command(
             target,
             kiosk,
             light,
+            pin,
         }) => {
-            commands::run::execute(&file, &animation, watch, fullscreen, target, light, kiosk)?;
+            commands::run::execute(
+                &file,
+                &animation,
+                watch,
+                fullscreen,
+                target,
+                light,
+                kiosk,
+                pin.as_deref(),
+            )?;
         },
         | Some(Commands::Dev {
             file,
@@ -118,8 +128,18 @@ fn dispatch_command(
             target,
             kiosk,
             light,
+            pin,
         }) => {
-            commands::run::execute(&file, &animation, true, fullscreen, target, light, kiosk)?;
+            commands::run::execute(
+                &file,
+                &animation,
+                true,
+                fullscreen,
+                target,
+                light,
+                kiosk,
+                pin.as_deref(),
+            )?;
         },
         | Some(Commands::Edit { file, dark }) => {
             commands::edit::execute(file.as_deref(), dark)?;
@@ -131,6 +151,11 @@ fn dispatch_command(
             animation,
             target,
             source,
+            encrypt,
+            piv_slot,
+            sign_slot,
+            cert,
+            pin,
         }) => {
             commands::build::execute(
                 &file,
@@ -139,6 +164,11 @@ fn dispatch_command(
                 &animation,
                 target.as_deref(),
                 source,
+                encrypt,
+                &piv_slot,
+                &sign_slot,
+                cert.as_deref(),
+                pin.as_deref(),
             )?;
         },
         | Some(Commands::Pack {
@@ -146,8 +176,23 @@ fn dispatch_command(
             output,
             animation,
             source,
+            encrypt,
+            piv_slot,
+            sign_slot,
+            cert,
+            pin,
         }) => {
-            commands::pack::execute(&file, output, &animation, source)?;
+            commands::pack::execute(
+                &file,
+                output,
+                &animation,
+                source,
+                encrypt,
+                &piv_slot,
+                &sign_slot,
+                cert.as_deref(),
+                pin.as_deref(),
+            )?;
         },
         | Some(Commands::Unpack { file, output }) => {
             commands::unpack::execute(&file, output)?;
@@ -218,9 +263,12 @@ fn dispatch_command(
         | Some(Commands::Doctor) => {
             commands::doctor::execute()?;
         },
+        | Some(Commands::Piv { action }) => {
+            commands::piv::execute(action)?;
+        },
         | None => {
             let file = default_file.unwrap_or_else(|| PathBuf::from("slides.typ"));
-            commands::run::execute(&file, "fade", false, false, None, false, None)?;
+            commands::run::execute(&file, "fade", false, false, None, false, None, None)?;
         },
     }
 

@@ -53,6 +53,10 @@ struct Args {
     /// Run built-in Geek Demo showcase presentation
     #[arg(long)]
     demo: bool,
+
+    /// User PIN for decrypting PIV-protected presentation
+    #[arg(long)]
+    pin: Option<String>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -96,6 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.fullscreen,
                 hud_theme,
                 args.kiosk,
+                args.pin.as_deref(),
             )?;
             return Ok(());
         }
@@ -144,42 +149,71 @@ pub fn play_presentation_file(
     fullscreen: bool,
     hud_theme: HudTheme,
     kiosk: Option<u64>,
+    pin: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     save_recent_viewer_file(path);
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let (deck, source_dir) = match extension.to_lowercase().as_str() {
-        | "slide" => {
-            let (d, cache) = unpack_deck_and_assets(path)?;
-            (d, Some(cache))
-        },
-        | "json" => {
-            let content = std::fs::read_to_string(path)?;
-            let d: SlideDeck = serde_json::from_str(&content)?;
-            let parent = path.parent().map(Path::to_path_buf);
-            (d, parent)
-        },
-        | "typ" => {
-            let compiler = SlideCompiler::new()?;
-            let d = compiler.compile_file(path)?;
-            let parent = path.parent().map(Path::to_path_buf);
-            (d, parent)
-        },
-        | _ => {
-            if let Ok((d, cache)) = unpack_deck_and_assets(path) {
+
+    let is_encrypted = slide_core::package::is_encrypted_package_file(path);
+    let mut in_memory_asset_store = None;
+
+    let (deck, source_dir) = if is_encrypted {
+        use slide_core::package::unpack_encrypted_deck_and_assets_in_memory;
+        use slide_core::security::PivManager;
+        use slide_core::security::prompt_pin_if_needed;
+
+        let mut card = PivManager::acquire_card(pin)?;
+        if !card.is_authenticated() && pin.is_none() {
+            if let Some(gui_pin) = slide_player::prompt_pin_gui(
+                "Cargo Slide - YubiKey PIV Authentication",
+                "Enter 6-8 digit User PIN to decrypt presentation:",
+            ) {
+                card.verify_pin(&gui_pin)?;
+            }
+        }
+        prompt_pin_if_needed(card.as_mut(), pin)?;
+        let (d, store) = unpack_encrypted_deck_and_assets_in_memory(path, card.as_mut(), None)?;
+        in_memory_asset_store = Some(store);
+        (d, None)
+    } else {
+        match extension.to_lowercase().as_str() {
+            | "slide" => {
+                let (d, cache) = unpack_deck_and_assets(path)?;
                 (d, Some(cache))
-            } else {
+            },
+            | "json" => {
+                let content = std::fs::read_to_string(path)?;
+                let d: SlideDeck = serde_json::from_str(&content)?;
+                let parent = path.parent().map(Path::to_path_buf);
+                (d, parent)
+            },
+            | "typ" => {
                 let compiler = SlideCompiler::new()?;
                 let d = compiler.compile_file(path)?;
                 let parent = path.parent().map(Path::to_path_buf);
                 (d, parent)
-            }
-        },
+            },
+            | _ => {
+                if let Ok((d, cache)) = unpack_deck_and_assets(path) {
+                    (d, Some(cache))
+                } else {
+                    let compiler = SlideCompiler::new()?;
+                    let d = compiler.compile_file(path)?;
+                    let parent = path.parent().map(Path::to_path_buf);
+                    (d, parent)
+                }
+            },
+        }
     };
 
     let mut app = SlideApp::from_deck(deck)
         .default_animation(animation)
         .fullscreen(fullscreen)
         .hud_theme(hud_theme);
+
+    if let Some(store) = in_memory_asset_store {
+        app = app.asset_store(store);
+    }
 
     if let Some(kiosk_secs) = kiosk {
         app = app.kiosk_interval(kiosk_secs);

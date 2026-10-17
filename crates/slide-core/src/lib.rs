@@ -173,6 +173,17 @@ pub mod package;
     clippy::unwrap_used,
     clippy::expect_used
 )]
+pub mod security;
+#[allow(
+    missing_docs,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::single_call_fn,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::unwrap_used,
+    clippy::expect_used
+)]
 pub mod svg;
 #[allow(
     missing_docs,

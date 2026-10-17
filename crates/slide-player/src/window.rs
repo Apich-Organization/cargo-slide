@@ -106,6 +106,7 @@ pub struct SlideApp {
     deck: Option<SlideDeck>,
     config: PlayerConfig,
     registry: AnimationRegistry,
+    asset_store: Option<Arc<slide_core::security::MemoryAssetStore>>,
 }
 
 impl SlideApp {
@@ -116,6 +117,7 @@ impl SlideApp {
             deck: None,
             config: PlayerConfig::default(),
             registry: AnimationRegistry::default(),
+            asset_store: None,
         }
     }
 
@@ -132,7 +134,17 @@ impl SlideApp {
                 ..Default::default()
             },
             registry: AnimationRegistry::default(),
+            asset_store: None,
         }
+    }
+
+    /// Attach an in-memory decrypted asset store for zero-disk asset resolution.
+    pub fn asset_store(
+        mut self,
+        store: Arc<slide_core::security::MemoryAssetStore>,
+    ) -> Self {
+        self.asset_store = Some(store);
+        self
     }
 
     pub fn title(
@@ -269,6 +281,7 @@ impl SlideApp {
             .with_config(self.config)
             .with_source_file(self.source_file)
             .with_registry(self.registry)
+            .with_asset_store(self.asset_store)
             .run()
     }
 }
@@ -278,6 +291,7 @@ pub struct SlidePlayer {
     config: PlayerConfig,
     registry: AnimationRegistry,
     source_file: Option<PathBuf>,
+    asset_store: Option<Arc<slide_core::security::MemoryAssetStore>>,
 }
 
 /// URL percent-decode a UTF-8 string (e.g. `%20` -> `' '`, `%2F` -> `'/'`)
@@ -995,6 +1009,7 @@ impl SlidePlayer {
             },
             registry: AnimationRegistry::default(),
             source_file: None,
+            asset_store: None,
         }
     }
 
@@ -1003,6 +1018,14 @@ impl SlidePlayer {
         config: PlayerConfig,
     ) -> Self {
         self.config = config;
+        self
+    }
+
+    pub fn with_asset_store(
+        mut self,
+        store: Option<Arc<slide_core::security::MemoryAssetStore>>,
+    ) -> Self {
+        self.asset_store = store;
         self
     }
 
@@ -1190,7 +1213,11 @@ impl SlidePlayer {
         let mut exit_requested = false;
 
         let trigger_slide_audio =
-            |deck: &SlideDeck, idx: usize, audio: &mut AudioEngine, sf: Option<&Path>| {
+            |deck: &SlideDeck,
+             idx: usize,
+             audio: &mut AudioEngine,
+             sf: Option<&Path>,
+             store: Option<&slide_core::security::MemoryAssetStore>| {
                 if let Some(slide) = deck.get_slide(idx) {
                     for hs in &slide.hotspots {
                         if let Hotspot::Audio {
@@ -1202,6 +1229,18 @@ impl SlidePlayer {
                         } = hs
                             && *autoplay
                         {
+                            if let Some(s) = store
+                                && let Some(data) = s.get(source)
+                            {
+                                let _ = audio.play_in_memory_track(
+                                    source,
+                                    data,
+                                    *loop_audio,
+                                    *volume,
+                                    Duration::from_millis(600),
+                                );
+                                return;
+                            }
                             let resolved = resolve_media_path(source, sf);
                             let _ = audio.play_track(
                                 &resolved,
@@ -1221,6 +1260,7 @@ impl SlidePlayer {
             current_idx,
             &mut audio_engine,
             self.source_file.as_deref(),
+            self.asset_store.as_deref(),
         );
 
         let mut first_frame = true;
@@ -1921,8 +1961,13 @@ impl SlidePlayer {
                                     }
                                 },
                                 | Hotspot::Video { source, .. } => {
-                                    let resolved =
-                                        resolve_media_path(source, self.source_file.as_deref());
+                                    let resolved = if let Some(ref store) = self.asset_store
+                                        && let Some(memfd_path) = store.create_memfd_path(source)
+                                    {
+                                        memfd_path.to_string_lossy().to_string()
+                                    } else {
+                                        resolve_media_path(source, self.source_file.as_deref())
+                                    };
                                     let _ = MediaPlayer::play_video(&resolved);
                                     volume_dragging = false;
                                     active_pen_stroke = None;
@@ -1934,17 +1979,33 @@ impl SlidePlayer {
                                     volume,
                                     ..
                                 } => {
-                                    let resolved =
-                                        resolve_media_path(source, self.source_file.as_deref());
-                                    if audio_engine.current_source() == Some(&resolved) {
-                                        audio_engine.toggle_pause();
+                                    if let Some(ref store) = self.asset_store
+                                        && let Some(data) = store.get(source)
+                                    {
+                                        if audio_engine.current_source() == Some(source) {
+                                            audio_engine.toggle_pause();
+                                        } else {
+                                            let _ = audio_engine.play_in_memory_track(
+                                                source,
+                                                data,
+                                                *loop_audio,
+                                                *volume,
+                                                Duration::from_millis(500),
+                                            );
+                                        }
                                     } else {
-                                        let _ = audio_engine.play_track(
-                                            &resolved,
-                                            *loop_audio,
-                                            *volume,
-                                            Duration::from_millis(500),
-                                        );
+                                        let resolved =
+                                            resolve_media_path(source, self.source_file.as_deref());
+                                        if audio_engine.current_source() == Some(&resolved) {
+                                            audio_engine.toggle_pause();
+                                        } else {
+                                            let _ = audio_engine.play_track(
+                                                &resolved,
+                                                *loop_audio,
+                                                *volume,
+                                                Duration::from_millis(500),
+                                            );
+                                        }
                                     }
                                 },
                                 | Hotspot::Chart { rect, data } => {
@@ -2849,6 +2910,7 @@ impl SlidePlayer {
                                 current_idx,
                                 &mut audio_engine,
                                 self.source_file.as_deref(),
+                                self.asset_store.as_deref(),
                             );
                         },
                         | Err(e) => {
@@ -2972,6 +3034,7 @@ impl SlidePlayer {
                     current_idx,
                     &mut audio_engine,
                     self.source_file.as_deref(),
+                    self.asset_store.as_deref(),
                 );
             }
 

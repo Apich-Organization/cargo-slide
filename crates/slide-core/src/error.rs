@@ -22,6 +22,12 @@ pub enum SlideError {
     Package(String),
     #[error("File not found: {0}")]
     NotFound(String),
+    #[error("Cryptographic error: {0}")]
+    Crypto(String),
+    #[error("PIV error: {0}")]
+    Piv(String),
+    #[error("Integrity check failed: {0}")]
+    IntegrityCheckFailed(String),
 }
 
 impl From<notify::Error> for SlideError {

@@ -9,6 +9,7 @@ use std::process::Command;
 use std::process::Stdio;
 
 /// Dispatch presentation build by format: binary, slide, or wasm.
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     file: &Path,
     output: Option<PathBuf>,
@@ -16,16 +17,43 @@ pub fn execute(
     animation: &str,
     target: Option<&str>,
     source: bool,
+    encrypt: bool,
+    piv_slot_str: &str,
+    sign_slot_str: &str,
+    cert_path: Option<&Path>,
+    pin: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
     let target_file = resolved_file.as_path();
 
     match format.to_lowercase().as_str() {
         | "slide" | "package" => {
-            crate::commands::pack::execute(target_file, output, animation, source)
+            crate::commands::pack::execute(
+                target_file,
+                output,
+                animation,
+                source,
+                encrypt,
+                piv_slot_str,
+                sign_slot_str,
+                cert_path,
+                pin,
+            )
         },
         | "wasm" | "web" | "csr" => execute_wasm(target_file, output, animation),
-        | "binary" | "exe" | "elf" | "" => execute_binary(target_file, output, animation, target),
+        | "binary" | "exe" | "elf" | "" => {
+            execute_binary(
+                target_file,
+                output,
+                animation,
+                target,
+                encrypt,
+                piv_slot_str,
+                sign_slot_str,
+                cert_path,
+                pin,
+            )
+        },
         | other => {
             Err(
                 format!("Unknown build format: '{other}'. Supported formats: binary, slide, wasm")
@@ -85,12 +113,17 @@ pub fn execute_wasm(
 /// for that Rust target triple (e.g. `x86_64-pc-windows-msvc`) instead of the host's own platform;
 /// the triple must already be installed via `rustup target add` and have a working linker
 /// configured for a non-host target.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn execute_binary(
     file: &Path,
     output: Option<PathBuf>,
     animation: &str,
     target: Option<&str>,
+    encrypt: bool,
+    piv_slot_str: &str,
+    sign_slot_str: &str,
+    cert_path: Option<&Path>,
+    pin: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     // The *target* platform decides the binary's extension, not the host `cargo-slide` itself
     // runs on (`cfg!(windows)` reflects the host, which is always false when cross-compiling
@@ -104,12 +137,14 @@ pub fn execute_binary(
     slide_core::logger::log_event(
         "info",
         &format!(
-            "[PACKAGE] Packaging presentation into single binary: {}",
+            "[PACKAGE] Packaging presentation into single binary (encrypted: {}): {}",
+            encrypt,
             file.display()
         ),
         Some(serde_json::json!({
             "stage": "package_start",
             "source_file": file.display().to_string(),
+            "encrypted": encrypt,
             "percent": 1,
         })),
     );
@@ -157,13 +192,63 @@ pub fn execute_binary(
     let src_dir = build_path.join("src");
     create_dir_all(&src_dir)?;
 
-    // Serialize deck to JSON to be embedded via include_str!
-    let deck_json = serde_json::to_string(&deck)?;
+    let encrypted_bin_file = build_path.join("encrypted_deck.bin");
     let deck_file = build_path.join("deck.json");
-    let should_write_deck =
-        std::fs::read_to_string(&deck_file).map_or(true, |existing| existing != deck_json);
-    if should_write_deck {
-        write(&deck_file, &deck_json)?;
+
+    if encrypt {
+        use slide_core::security::cert::PivPublicKey;
+        use slide_core::security::cert::PivSlot;
+        use slide_core::security::cert::parse_certificate_public_key;
+        use slide_core::security::container::EncryptedSlideContainer;
+        use slide_core::security::piv::PivManager;
+
+        let recipient_slot = PivSlot::parse(piv_slot_str)
+            .ok_or_else(|| format!("Invalid recipient PIV slot: {piv_slot_str}"))?;
+        let signer_slot = PivSlot::parse(sign_slot_str)
+            .ok_or_else(|| format!("Invalid signer PIV slot: {sign_slot_str}"))?;
+
+        let mut card = PivManager::acquire_card(pin)?;
+        slide_core::security::prompt_pin_if_needed(card.as_mut(), pin)?;
+
+        let recipient_pub = if let Some(cp) = cert_path {
+            let raw_data = std::fs::read(cp)?;
+            if let Ok(pubkey) = parse_certificate_public_key(&raw_data) {
+                pubkey
+            } else {
+                PivPublicKey::from_pem_or_der(&raw_data)?
+            }
+        } else {
+            card.get_public_key(recipient_slot)?
+        };
+
+        let base_dir = file.parent();
+        let enc_bytes = EncryptedSlideContainer::pack(
+            &deck,
+            base_dir,
+            &recipient_pub,
+            recipient_slot,
+            card.as_mut(),
+            signer_slot,
+        )?;
+
+        let should_write = std::fs::read(&encrypted_bin_file).map_or(true, |ex| ex != enc_bytes);
+        if should_write {
+            write(&encrypted_bin_file, &enc_bytes)?;
+        }
+        if deck_file.exists() {
+            let _ = std::fs::remove_file(&deck_file);
+        }
+    } else {
+        // Serialize deck to JSON to be embedded via include_str!
+        let deck_json = serde_json::to_string(&deck)?;
+        let should_write_deck =
+            std::fs::read_to_string(&deck_file).map_or(true, |existing| existing != deck_json);
+        if should_write_deck {
+            write(&deck_file, &deck_json)?;
+        }
+        if encrypted_bin_file.exists() {
+            let _ = std::fs::remove_file(&encrypted_bin_file);
+        }
     }
 
     let core_path = repo_root.join("crates/slide-core");
@@ -210,8 +295,70 @@ incremental = true
         write(&cargo_toml_file, &cargo_toml)?;
     }
 
-    let runner_main = format!(
-        r#"use slide_player::prelude::*;
+    let runner_main = if encrypt {
+        format!(
+            r#"use slide_player::prelude::*;
+use slide_core::security::{{EncryptedSlideContainer, PivManager, prompt_pin_if_needed}};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {{
+    let args: Vec<String> = std::env::args().collect();
+    let mut pin: Option<String> = std::env::var("PIV_PIN").ok();
+
+    let mut i = 1;
+    while i < args.len() {{
+        match args[i].as_str() {{
+            "--pin" if i + 1 < args.len() => {{
+                pin = Some(args[i + 1].clone());
+                i += 2;
+            }}
+            "--help" | "-h" => {{
+                println!("Encrypted Standalone Slide Presentation");
+                println!("Usage: {{}} [--pin <PIN>]", args[0]);
+                println!("Hardware requirement: Connected YubiKey PIV smartcard");
+                println!("Environment variables: PIV_PIN");
+                return Ok(());
+            }}
+            _ => {{ i += 1; }}
+        }}
+    }}
+
+    const ENCRYPTED_DATA: &[u8] = include_bytes!("../encrypted_deck.bin");
+
+    let container = EncryptedSlideContainer::parse(ENCRYPTED_DATA)
+        .map_err(|e| format!("Invalid presentation container: {{e}}"))?;
+
+    let mut card = PivManager::acquire_card(pin.as_deref())
+        .map_err(|e| format!("PIV smartcard connection failed: {{e}}"))?;
+
+    // Pop up GUI PIN dialog during presentation playback if PIN is not already supplied
+    if !card.is_authenticated() && pin.is_none() {{
+        if let Some(gui_pin) = prompt_pin_gui(
+            "Cargo Slide - YubiKey PIV Authentication",
+            "Enter 6-8 digit User PIN to decrypt presentation:",
+        ) {{
+            card.verify_pin(&gui_pin)
+                .map_err(|e| format!("PIV authentication failed: {{e}}"))?;
+        }}
+    }}
+
+    prompt_pin_if_needed(card.as_mut(), pin.as_deref())
+        .map_err(|e| format!("PIV authentication failed: {{e}}"))?;
+
+    let (deck, asset_store) = container.decrypt_in_memory(card.as_mut(), None)
+        .map_err(|e| format!("Integrity check or decryption failed: {{e}}"))?;
+
+    SlideApp::from_deck(deck)
+        .asset_store(asset_store)
+        .default_animation("{animation}")
+        .run()?;
+
+    Ok(())
+}}
+"#
+        )
+    } else {
+        format!(
+            r#"use slide_player::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {{
     let deck_json = include_str!("../deck.json");
@@ -224,7 +371,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     Ok(())
 }}
 "#
-    );
+        )
+    };
     let main_file = src_dir.join("main.rs");
     let should_write_main =
         std::fs::read_to_string(&main_file).map_or(true, |existing| existing != runner_main);
@@ -278,10 +426,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     #[allow(clippy::cast_precision_loss)]
     let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
 
+    let enc_suffix = if encrypt {
+        " (AES-256-GCM + YubiKey PIV + SHA3-512 integrity verified)"
+    } else {
+        ""
+    };
     slide_core::logger::log_event(
         "success",
         &format!(
-            "[OK] Single binary generated successfully!\n\
+            "[OK] Single binary generated successfully!{enc_suffix}\n\
              Output: {} ({:.2} MB)\n\
              You can now distribute and run this standalone presentation on any machine!",
             target_binary.display(),
@@ -292,6 +445,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
             "status": "success",
             "output": target_binary.display().to_string(),
             "size_mb": size_mb,
+            "encrypted": encrypt,
             "total_slides": deck.total_slides(),
             "percent": 100,
         })),

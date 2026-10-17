@@ -1,13 +1,16 @@
 //! Command to launch the interactive presentation player.
 
 use slide_core::compiler::SlideCompiler;
+use slide_core::package::is_encrypted_package_file;
 use slide_core::package::unpack_deck_and_assets;
+use slide_core::package::unpack_encrypted_deck_and_assets_in_memory;
+use slide_core::security::piv::PivManager;
 use slide_player::PlayerConfig;
 use slide_player::SlidePlayer;
 use std::path::Path;
 
 /// Launch the presentation viewer for .typ, .slide, or deck.json files.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn execute(
     file: &Path,
     animation: &str,
@@ -16,6 +19,7 @@ pub fn execute(
     target_minutes: Option<u64>,
     light: bool,
     kiosk: Option<u64>,
+    pin: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let resolved_path = slide_core::compiler::resolve_presentation_target(file)?;
     let file = resolved_path.as_path();
@@ -23,7 +27,47 @@ pub fn execute(
     let is_slide_pkg = file.extension().and_then(|e| e.to_str()) == Some("slide");
     let is_json_deck = file.extension().and_then(|e| e.to_str()) == Some("json");
 
-    let (deck, source_dir) = if is_slide_pkg {
+    let is_encrypted = is_slide_pkg && is_encrypted_package_file(file);
+    let mut in_memory_asset_store = None;
+
+    let (deck, source_dir) = if is_encrypted {
+        slide_core::logger::log_event(
+            "info",
+            &format!(
+                "[SECURITY] Decrypting PIV-protected presentation in memory: {}",
+                file.display()
+            ),
+            Some(serde_json::json!({
+                "stage": "package_decrypt_start",
+                "file": file.display().to_string(),
+            })),
+        );
+
+        let mut card = PivManager::acquire_card(pin)?;
+        if !card.is_authenticated() && pin.is_none() {
+            if let Some(gui_pin) = slide_player::prompt_pin_gui(
+                "Cargo Slide - YubiKey PIV Authentication",
+                "Enter 6-8 digit User PIN to decrypt presentation:",
+            ) {
+                card.verify_pin(&gui_pin)?;
+            }
+        }
+        slide_core::security::prompt_pin_if_needed(card.as_mut(), pin)?;
+
+        let (d, store) = unpack_encrypted_deck_and_assets_in_memory(file, card.as_mut(), None)?;
+        in_memory_asset_store = Some(store);
+
+        slide_core::logger::log_event(
+            "success",
+            "[OK] SHA3-512 integrity verified & deck decrypted directly in memory (zero-disk dump prevention)",
+            Some(serde_json::json!({
+                "stage": "package_decrypt_success",
+                "total_slides": d.total_slides(),
+            })),
+        );
+
+        (d, None)
+    } else if is_slide_pkg {
         slide_core::logger::log_event(
             "info",
             &format!("[UNPACK] Unpacking slide package {}...", file.display()),
@@ -98,6 +142,7 @@ pub fn execute(
     SlidePlayer::new(deck)
         .with_config(config)
         .with_source_file(source_dir.or(Some(canonical_file)))
+        .with_asset_store(in_memory_asset_store)
         .with_watch(watch && !is_slide_pkg)
         .run()?;
 
