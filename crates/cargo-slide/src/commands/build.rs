@@ -26,12 +26,10 @@ pub fn execute(
         },
         | "wasm" | "web" | "csr" => execute_wasm(target_file, output, animation),
         | "binary" | "exe" | "elf" | "" => execute_binary(target_file, output, animation, target),
-        | other => {
-            Err(
-                format!("Unknown build format: '{other}'. Supported formats: binary, slide, wasm")
-                    .into(),
-            )
-        },
+        | other => Err(format!(
+            "Unknown build format: '{other}'. Supported formats: binary, slide, wasm"
+        )
+        .into()),
     }
 }
 

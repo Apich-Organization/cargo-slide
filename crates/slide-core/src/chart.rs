@@ -361,12 +361,10 @@ impl ChartData {
             .into_iter()
             .zip(series_values)
             .enumerate()
-            .map(|(idx, (name, values))| {
-                SeriesData {
-                    name,
-                    values,
-                    color: Some(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string()),
-                }
+            .map(|(idx, (name, values))| SeriesData {
+                name,
+                values,
+                color: Some(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string()),
             })
             .collect();
 
@@ -725,12 +723,10 @@ impl ChartData {
             .into_iter()
             .zip(series_values)
             .enumerate()
-            .map(|(idx, (name, values))| {
-                SeriesData {
-                    name,
-                    values,
-                    color: Some(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string()),
-                }
+            .map(|(idx, (name, values))| SeriesData {
+                name,
+                values,
+                color: Some(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string()),
             })
             .collect();
 
@@ -837,23 +833,19 @@ impl ChartData {
 
                     let cat = obj.get(&cat_key).map_or_else(
                         || categories.len().to_string(),
-                        |v| {
-                            match v {
-                                | serde_json::Value::String(s) => s.clone(),
-                                | serde_json::Value::Number(n) => n.to_string(),
-                                | _ => v.to_string(),
-                            }
+                        |v| match v {
+                            | serde_json::Value::String(s) => s.clone(),
+                            | serde_json::Value::Number(n) => n.to_string(),
+                            | _ => v.to_string(),
                         },
                     );
                     categories.push(cat);
 
                     for (s_idx, s_name) in series_names.iter().enumerate() {
-                        let num = obj.get(s_name).map_or(0.0, |v| {
-                            match v {
-                                | serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
-                                | serde_json::Value::String(s) => Self::parse_numeric_cell(s),
-                                | _ => 0.0,
-                            }
+                        let num = obj.get(s_name).map_or(0.0, |v| match v {
+                            | serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
+                            | serde_json::Value::String(s) => Self::parse_numeric_cell(s),
+                            | _ => 0.0,
                         });
                         series_values[s_idx].push(num);
                     }
@@ -863,14 +855,12 @@ impl ChartData {
                     .into_iter()
                     .zip(series_values)
                     .enumerate()
-                    .map(|(idx, (name, values))| {
-                        SeriesData {
-                            name,
-                            values,
-                            color: Some(
-                                DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string(),
-                            ),
-                        }
+                    .map(|(idx, (name, values))| SeriesData {
+                        name,
+                        values,
+                        color: Some(
+                            DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string(),
+                        ),
                     })
                     .collect();
 
@@ -920,11 +910,9 @@ impl ChartData {
                     precision: None,
                 })
             },
-            | _ => {
-                Err(SlideError::Chart(
-                    "Unsupported JSON chart structure".to_string(),
-                ))
-            },
+            | _ => Err(SlideError::Chart(
+                "Unsupported JSON chart structure".to_string(),
+            )),
         }
     }
 
@@ -1104,12 +1092,10 @@ impl ChartData {
             .into_iter()
             .zip(out_series_values)
             .enumerate()
-            .map(|(idx, (name, values))| {
-                SeriesData {
-                    name,
-                    values,
-                    color: Some(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string()),
-                }
+            .map(|(idx, (name, values))| SeriesData {
+                name,
+                values,
+                color: Some(DEFAULT_CHART_COLORS[idx % DEFAULT_CHART_COLORS.len()].to_string()),
             })
             .collect();
 
@@ -1241,27 +1227,24 @@ impl ChartData {
     ) -> Self {
         match transform {
             | ChartTransform::None => self.clone(),
-            | ChartTransform::TopK(k) => {
-                self.apply_dsl(&format!("top_k {k}"))
-                    .unwrap_or_else(|_| self.clone())
-            },
+            | ChartTransform::TopK(k) => self
+                .apply_dsl(&format!("top_k {k}"))
+                .unwrap_or_else(|_| self.clone()),
             | ChartTransform::SortDesc => {
                 self.apply_dsl("sort desc").unwrap_or_else(|_| self.clone())
             },
             | ChartTransform::SortAsc => {
                 self.apply_dsl("sort asc").unwrap_or_else(|_| self.clone())
             },
-            | ChartTransform::Cumulative => {
-                self.apply_dsl("cumulative")
-                    .unwrap_or_else(|_| self.clone())
-            },
+            | ChartTransform::Cumulative => self
+                .apply_dsl("cumulative")
+                .unwrap_or_else(|_| self.clone()),
             | ChartTransform::Percent100 => {
                 self.apply_dsl("percent").unwrap_or_else(|_| self.clone())
             },
-            | ChartTransform::MovingAvg(w) => {
-                self.apply_dsl(&format!("smooth {w}"))
-                    .unwrap_or_else(|_| self.clone())
-            },
+            | ChartTransform::MovingAvg(w) => self
+                .apply_dsl(&format!("smooth {w}"))
+                .unwrap_or_else(|_| self.clone()),
             | ChartTransform::NormalizeMinMax => {
                 let mut cloned = self.clone();
                 for s in &mut cloned.series {
@@ -1448,15 +1431,13 @@ impl ChartData {
         let new_series = self
             .series
             .iter()
-            .map(|s| {
-                SeriesData {
-                    name: s.name.clone(),
-                    values: keep_indices
-                        .iter()
-                        .map(|&i| s.values.get(i).copied().unwrap_or(0.0))
-                        .collect(),
-                    color: s.color.clone(),
-                }
+            .map(|s| SeriesData {
+                name: s.name.clone(),
+                values: keep_indices
+                    .iter()
+                    .map(|&i| s.values.get(i).copied().unwrap_or(0.0))
+                    .collect(),
+                color: s.color.clone(),
             })
             .collect();
 
@@ -1536,15 +1517,13 @@ impl ChartData {
         let new_series = self
             .series
             .iter()
-            .map(|s| {
-                SeriesData {
-                    name: s.name.clone(),
-                    values: row_indices
-                        .iter()
-                        .map(|&i| s.values.get(i).copied().unwrap_or(0.0))
-                        .collect(),
-                    color: s.color.clone(),
-                }
+            .map(|s| SeriesData {
+                name: s.name.clone(),
+                values: row_indices
+                    .iter()
+                    .map(|&i| s.values.get(i).copied().unwrap_or(0.0))
+                    .collect(),
+                color: s.color.clone(),
             })
             .collect();
 
@@ -1570,12 +1549,10 @@ impl ChartData {
         let new_series = self
             .series
             .iter()
-            .map(|s| {
-                SeriesData {
-                    name: s.name.clone(),
-                    values: s.values.iter().take(n).copied().collect(),
-                    color: s.color.clone(),
-                }
+            .map(|s| SeriesData {
+                name: s.name.clone(),
+                values: s.values.iter().take(n).copied().collect(),
+                color: s.color.clone(),
             })
             .collect();
 
@@ -1602,12 +1579,10 @@ impl ChartData {
         let new_series = self
             .series
             .iter()
-            .map(|s| {
-                SeriesData {
-                    name: s.name.clone(),
-                    values: s.values.iter().skip(skip).copied().collect(),
-                    color: s.color.clone(),
-                }
+            .map(|s| SeriesData {
+                name: s.name.clone(),
+                values: s.values.iter().skip(skip).copied().collect(),
+                color: s.color.clone(),
             })
             .collect();
 

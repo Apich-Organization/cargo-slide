@@ -41,11 +41,9 @@ pub fn get_system_fonts() -> &'static HashMap<String, FontFamilyInfo> {
                 // A non-indented line is a font family header
                 if !line.starts_with(' ') && !line.starts_with('\t') {
                     let name = trimmed.to_string();
-                    map.entry(name.clone()).or_insert_with(|| {
-                        FontFamilyInfo {
-                            name: name.clone(),
-                            file_paths: Vec::new(),
-                        }
+                    map.entry(name.clone()).or_insert_with(|| FontFamilyInfo {
+                        name: name.clone(),
+                        file_paths: Vec::new(),
                     });
                     current_family = Some(name);
                 } else if let Some(ref family) = current_family {

@@ -92,13 +92,11 @@ pub fn resolve_presentation_target(requested: &Path) -> Result<PathBuf> {
             );
             Ok(auto)
         },
-        | 0 => {
-            Err(SlideError::NotFound(format!(
-                "Presentation file '{}' does not exist, and no '*.typ' or '*.slide' candidates found in '{}'.\nHint: Run 'cargo slide init <name>' to create a new presentation.",
-                requested.display(),
-                dir.display()
-            )))
-        },
+        | 0 => Err(SlideError::NotFound(format!(
+            "Presentation file '{}' does not exist, and no '*.typ' or '*.slide' candidates found in '{}'.\nHint: Run 'cargo slide init <name>' to create a new presentation.",
+            requested.display(),
+            dir.display()
+        ))),
         | _ => {
             let names: Vec<String> = candidates.iter().map(|c| c.display().to_string()).collect();
             Err(SlideError::NotFound(format!(

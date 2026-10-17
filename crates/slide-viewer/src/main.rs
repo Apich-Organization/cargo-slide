@@ -123,11 +123,9 @@ fn run_launcher_gui(
     )
     .subscription(gui::ViewerLauncherApp::subscription)
     .title(|app: &gui::ViewerLauncherApp| format!("Slide Viewer - {}", app.window_title()))
-    .theme(|app: &gui::ViewerLauncherApp| {
-        match app.theme() {
-            | theme::ViewerTheme::Light => iced::Theme::Light,
-            | theme::ViewerTheme::Dark => iced::Theme::Dark,
-        }
+    .theme(|app: &gui::ViewerLauncherApp| match app.theme() {
+        | theme::ViewerTheme::Light => iced::Theme::Light,
+        | theme::ViewerTheme::Dark => iced::Theme::Dark,
     })
     .window_size(iced::Size::new(1080.0, 720.0))
     .centered()
