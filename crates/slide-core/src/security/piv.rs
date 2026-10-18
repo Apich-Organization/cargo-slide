@@ -966,19 +966,15 @@ fn try_native_desktop_dialog(
                         return Some(res);
                     }
                 }
-            }
-
-            if let Ok(out) = std::process::Command::new("kdialog")
+            } else if let Some(out) = std::process::Command::new("kdialog")
                 .args(["--password", prompt, "--title", title])
-                .output()
+                .output().ok().filter(|o| o.status.success())
             {
-                if out.status.success() {
-                    let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if !s.is_empty() {
-                        let res = Zeroizing::new(s.clone());
-                        s.zeroize();
-                        return Some(res);
-                    }
+                let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() {
+                    let res = Zeroizing::new(s.clone());
+                    s.zeroize();
+                    return Some(res);
                 }
             }
         }
