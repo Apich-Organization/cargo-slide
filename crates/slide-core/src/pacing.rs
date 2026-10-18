@@ -203,22 +203,17 @@ pub fn calculate_slide_pacing(
     slide_index: usize,
     source_chunk: Option<&str>,
 ) -> SlidePacingInfo {
-    let title =
-        slide
-            .hotspots
-            .iter()
-            .find_map(|h| {
-                match h {
-                    | crate::model::Hotspot::Link { target, .. }
-                        if target.starts_with("slide-meta:") =>
-                    {
-                        Some(target.strip_prefix("slide-meta:").unwrap_or("").to_string())
-                    },
-                    | _ => None,
-                }
-            })
-            .filter(|t| !t.trim().is_empty())
-            .unwrap_or_else(|| slide.extract_title());
+    let title = slide
+        .hotspots
+        .iter()
+        .find_map(|h| match h {
+            | crate::model::Hotspot::Link { target, .. } if target.starts_with("slide-meta:") => {
+                Some(target.strip_prefix("slide-meta:").unwrap_or("").to_string())
+            },
+            | _ => None,
+        })
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| slide.extract_title());
 
     let has_speaker_notes = slide.has_notes();
     let (notes_words, notes_cjk_chars) = count_words_and_cjk(slide.notes_text());

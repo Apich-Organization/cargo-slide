@@ -173,20 +173,16 @@ impl PivPublicKey {
     /// Encode public key to SubjectPublicKeyInfo DER bytes.
     pub fn to_der(&self) -> Result<Vec<u8>> {
         match self {
-            | Self::Rsa(k) => {
-                rsa::pkcs8::EncodePublicKey::to_public_key_der(k)
-                    .map(|d| d.as_bytes().to_vec())
-                    .map_err(|e| {
-                        SlideError::Crypto(format!("Failed to encode RSA public key to DER: {e}"))
-                    })
-            },
-            | Self::Ecc(k) => {
-                p256::pkcs8::EncodePublicKey::to_public_key_der(k)
-                    .map(|d| d.as_bytes().to_vec())
-                    .map_err(|e| {
-                        SlideError::Crypto(format!("Failed to encode ECC public key to DER: {e}"))
-                    })
-            },
+            | Self::Rsa(k) => rsa::pkcs8::EncodePublicKey::to_public_key_der(k)
+                .map(|d| d.as_bytes().to_vec())
+                .map_err(|e| {
+                    SlideError::Crypto(format!("Failed to encode RSA public key to DER: {e}"))
+                }),
+            | Self::Ecc(k) => p256::pkcs8::EncodePublicKey::to_public_key_der(k)
+                .map(|d| d.as_bytes().to_vec())
+                .map_err(|e| {
+                    SlideError::Crypto(format!("Failed to encode ECC public key to DER: {e}"))
+                }),
         }
     }
 

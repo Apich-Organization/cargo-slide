@@ -568,7 +568,10 @@ impl MockPivCard {
                 self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1);
                 self.0
             }
-            fn fill_bytes(&mut self, dest: &mut [u8]) {
+            fn fill_bytes(
+                &mut self,
+                dest: &mut [u8],
+            ) {
                 for chunk in dest.chunks_mut(8) {
                     let val = self.next_u64().to_le_bytes();
                     let take = chunk.len();
@@ -957,8 +960,7 @@ fn try_native_desktop_dialog(
             } else if let Ok(out) = std::process::Command::new("zenity")
                 .args(["--password", &zenity_title])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
                     if !s.is_empty() {
                         let res = Zeroizing::new(s.clone());
@@ -966,13 +968,11 @@ fn try_native_desktop_dialog(
                         return Some(res);
                     }
                 }
-            }
 
             if let Ok(out) = std::process::Command::new("kdialog")
                 .args(["--password", prompt, "--title", title])
                 .output()
-            {
-                if out.status.success() {
+                && out.status.success() {
                     let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
                     if !s.is_empty() {
                         let res = Zeroizing::new(s.clone());
@@ -980,7 +980,6 @@ fn try_native_desktop_dialog(
                         return Some(res);
                     }
                 }
-            }
         }
     }
 

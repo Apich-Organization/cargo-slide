@@ -3,9 +3,7 @@ use crate::document::EditorDocument;
 use crate::model::ast_engine::WysiwygBlock;
 use crate::model::ast_engine::WysiwygSlide;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use crate::ui::typst_highlighter::TypstHighlightSettings;
 use crate::ui::typst_highlighter::TypstHighlighter;
 use crate::ui::typst_highlighter::to_typst_format;
@@ -85,8 +83,9 @@ pub fn view_focus_mode<'a>(
     .align_y(Alignment::Center)
     .padding([8, 16]);
 
-    let nav_container = container(nav_row).width(Length::Fill).style(move |_| {
-        container::Style {
+    let nav_container = container(nav_row)
+        .width(Length::Fill)
+        .style(move |_| container::Style {
             background: Some(iced::Background::Color(theme.bg_surface())),
             border: iced::border::Border {
                 color: theme.border_color(),
@@ -94,8 +93,7 @@ pub fn view_focus_mode<'a>(
                 radius: iced::border::Radius::from(0.0),
             },
             ..container::Style::default()
-        }
-    });
+        });
 
     // Left pane: Syntax-highlighted Editor for current slide
     let editor_header = row![
@@ -166,21 +164,19 @@ pub fn view_focus_mode<'a>(
             .spacing(6),
         )
         .padding(10)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_surface())),
-                border: iced::border::Border {
-                    color: theme.accent().scale_alpha(0.7),
-                    width: 1.5,
-                    radius: iced::border::Radius::from(6.0),
-                },
-                shadow: iced::Shadow {
-                    color: iced::Color::BLACK.scale_alpha(0.35),
-                    offset: iced::Vector::new(0.0, 3.0),
-                    blur_radius: 8.0,
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_surface())),
+            border: iced::border::Border {
+                color: theme.accent().scale_alpha(0.7),
+                width: 1.5,
+                radius: iced::border::Radius::from(6.0),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color::BLACK.scale_alpha(0.35),
+                offset: iced::Vector::new(0.0, 3.0),
+                blur_radius: 8.0,
+            },
+            ..container::Style::default()
         });
 
         Some(
@@ -291,12 +287,10 @@ pub fn view_focus_mode<'a>(
         .height(Length::Fixed(preview_h))
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_subtle())),
-                border: iced::border::rounded(6.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_subtle())),
+            border: iced::border::rounded(6.0),
+            ..container::Style::default()
         })
         .into()
     };
@@ -402,30 +396,24 @@ pub fn view_focus_mode<'a>(
                 let btn = button(Space::new().width(Length::Fill).height(Length::Fill))
                     .width(Length::Fixed(sw))
                     .height(Length::Fixed(sh))
-                    .style(move |_t, status| {
-                        match status {
-                            | button::Status::Hovered | button::Status::Pressed => {
-                                button::Style {
-                                    background: Some(iced::Background::Color(iced::Color {
-                                        a: 0.12,
-                                        ..theme.accent()
-                                    })),
-                                    border: iced::border::Border {
-                                        color: theme.accent().scale_alpha(0.65),
-                                        width: 1.5,
-                                        radius: iced::border::Radius::from(4.0),
-                                    },
-                                    ..button::Style::default()
-                                }
+                    .style(move |_t, status| match status {
+                        | button::Status::Hovered | button::Status::Pressed => button::Style {
+                            background: Some(iced::Background::Color(iced::Color {
+                                a: 0.12,
+                                ..theme.accent()
+                            })),
+                            border: iced::border::Border {
+                                color: theme.accent().scale_alpha(0.65),
+                                width: 1.5,
+                                radius: iced::border::Radius::from(4.0),
                             },
-                            | _ => {
-                                button::Style {
-                                    background: None,
-                                    border: iced::border::Border::default(),
-                                    ..button::Style::default()
-                                }
-                            },
-                        }
+                            ..button::Style::default()
+                        },
+                        | _ => button::Style {
+                            background: None,
+                            border: iced::border::Border::default(),
+                            ..button::Style::default()
+                        },
                     })
                     .on_press(Message::JumpToFocusBlock {
                         slide_idx: active_slide,
@@ -459,11 +447,9 @@ pub fn view_focus_mode<'a>(
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .padding(20)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_canvas())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_canvas())),
+            ..container::Style::default()
         });
 
     let preview_col = column![preview_header, preview_container]

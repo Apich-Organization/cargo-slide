@@ -128,11 +128,9 @@ fn run_launcher_gui(
     )
     .subscription(gui::ViewerLauncherApp::subscription)
     .title(|app: &gui::ViewerLauncherApp| format!("Slide Viewer - {}", app.window_title()))
-    .theme(|app: &gui::ViewerLauncherApp| {
-        match app.theme() {
-            | theme::ViewerTheme::Light => iced::Theme::Light,
-            | theme::ViewerTheme::Dark => iced::Theme::Dark,
-        }
+    .theme(|app: &gui::ViewerLauncherApp| match app.theme() {
+        | theme::ViewerTheme::Light => iced::Theme::Light,
+        | theme::ViewerTheme::Dark => iced::Theme::Dark,
     })
     .window_size(iced::Size::new(1080.0, 720.0))
     .centered()
@@ -163,14 +161,13 @@ pub fn play_presentation_file(
         use slide_core::security::prompt_pin_if_needed;
 
         let mut card = PivManager::acquire_card(pin)?;
-        if !card.is_authenticated() && pin.is_none() {
-            if let Some(gui_pin) = slide_player::prompt_pin_gui(
+        if !card.is_authenticated() && pin.is_none()
+            && let Some(gui_pin) = slide_player::prompt_pin_gui(
                 "Cargo Slide - YubiKey PIV Authentication",
                 "Enter 6-8 digit User PIN to decrypt presentation:",
             ) {
                 card.verify_pin(&gui_pin)?;
             }
-        }
         prompt_pin_if_needed(card.as_mut(), pin)?;
         let (d, store) = unpack_encrypted_deck_and_assets_in_memory(path, card.as_mut(), None)?;
         in_memory_asset_store = Some(store);

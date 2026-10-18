@@ -7,9 +7,7 @@ use crate::app::Message;
 use crate::model::ast_engine::ElementTransition;
 use crate::model::ast_engine::WysiwygBlock;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use crate::ui::typst_highlighter::TypstHighlightSettings;
 use crate::ui::typst_highlighter::TypstHighlighter;
 use crate::ui::typst_highlighter::to_typst_format;
@@ -19,9 +17,7 @@ use iced::Color;
 use iced::Element;
 use iced::Length;
 use iced::border::Border;
-use iced::border::{
-    self,
-};
+use iced::border::{self};
 use iced::widget::Space;
 use iced::widget::button;
 use iced::widget::column;
@@ -468,13 +464,11 @@ pub fn view_active_block_editor<'a>(
     transition: Option<&'a ElementTransition>,
 ) -> Element<'a, Message> {
     let (font_size, top_margin, bottom_margin) = match block {
-        | WysiwygBlock::Heading { level, .. } => {
-            match level {
-                | 1 => ((24.0 * scale).max(18.0), 8.0 * scale, 6.0 * scale),
-                | 2 => ((19.0 * scale).max(15.0), 6.0 * scale, 4.0 * scale),
-                | 3 => ((15.0 * scale).max(13.0), 4.0 * scale, 3.0 * scale),
-                | _ => ((13.0 * scale).max(11.0), 2.0 * scale, 2.0 * scale),
-            }
+        | WysiwygBlock::Heading { level, .. } => match level {
+            | 1 => ((24.0 * scale).max(18.0), 8.0 * scale, 6.0 * scale),
+            | 2 => ((19.0 * scale).max(15.0), 6.0 * scale, 4.0 * scale),
+            | 3 => ((15.0 * scale).max(13.0), 4.0 * scale, 3.0 * scale),
+            | _ => ((13.0 * scale).max(11.0), 2.0 * scale, 2.0 * scale),
         },
         | WysiwygBlock::ListItem { .. } | WysiwygBlock::EnumItem { .. } => {
             ((14.0 * scale).max(12.0), 2.0 * scale, 2.0 * scale)
@@ -496,22 +490,20 @@ pub fn view_active_block_editor<'a>(
             .height(Length::Shrink)
             .min_height(font_size * 1.35)
             .padding([2.0, 4.0])
-            .style(move |_t, _s| {
-                text_editor::Style {
-                    background: Background::Color(if theme.is_dark() {
-                        Color::from_rgba(0.10, 0.13, 0.20, 0.95)
-                    } else {
-                        Color::from_rgba(0.97, 0.98, 1.0, 0.98)
-                    }),
-                    border: Border {
-                        color: theme.accent(),
-                        width: 1.0,
-                        radius: border::Radius::from(4.0),
-                    },
-                    placeholder: theme.text_muted(),
-                    value: theme.text_primary(),
-                    selection: Color::from_rgba(0.2, 0.5, 0.9, 0.25),
-                }
+            .style(move |_t, _s| text_editor::Style {
+                background: Background::Color(if theme.is_dark() {
+                    Color::from_rgba(0.10, 0.13, 0.20, 0.95)
+                } else {
+                    Color::from_rgba(0.97, 0.98, 1.0, 0.98)
+                }),
+                border: Border {
+                    color: theme.accent(),
+                    width: 1.0,
+                    radius: border::Radius::from(4.0),
+                },
+                placeholder: theme.text_muted(),
+                value: theme.text_primary(),
+                selection: Color::from_rgba(0.2, 0.5, 0.9, 0.25),
             })
             .highlight_with::<TypstHighlighter>(
                 TypstHighlightSettings {
@@ -2486,17 +2478,15 @@ fn render_table_block<'a>(
     container(column![top_bar, table_col].spacing(4))
         .width(Length::Fill)
         .padding([6, 8])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_card())),
-                border: Border {
-                    color: theme.border_color(),
-                    width: 1.0,
-                    radius: border::Radius::from(theme::RADIUS_MD),
-                },
-                shadow: theme::elevation_subtle(theme),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_card())),
+            border: Border {
+                color: theme.border_color(),
+                width: 1.0,
+                radius: border::Radius::from(theme::RADIUS_MD),
+            },
+            shadow: theme::elevation_subtle(theme),
+            ..container::Style::default()
         })
         .into()
 }
@@ -2696,16 +2686,14 @@ fn render_grid_block<'a>(
         let col_card = container(column![card_top, col_content].spacing(3))
             .width(Length::FillPortion(portion.max(1)))
             .padding([6, 8])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.04))),
-                    border: Border {
-                        color: Color::from_rgba(0.5, 0.5, 0.5, 0.15),
-                        width: 0.5,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.04))),
+                border: Border {
+                    color: Color::from_rgba(0.5, 0.5, 0.5, 0.15),
+                    width: 0.5,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             });
 
         cols_row = cols_row.push(col_card);
@@ -2714,16 +2702,14 @@ fn render_grid_block<'a>(
     container(column![top_bar, cols_row].spacing(4))
         .width(Length::Fill)
         .padding([6, 8])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_color(),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_color(),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -3028,12 +3014,10 @@ pub fn render_callout_body<'a>(
                         .color(theme.text_muted()),
                 )
                 .padding([1, 5])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(theme.bg_subtle())),
-                        border: border::rounded(theme::RADIUS_XS),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(theme.bg_subtle())),
+                    border: border::rounded(theme::RADIUS_XS),
+                    ..container::Style::default()
                 });
 
                 let code_header = row![Space::new().width(Length::Fill), lang_badge,]
@@ -3053,20 +3037,18 @@ pub fn render_callout_body<'a>(
 
                 let code_card = container(column![code_header, code_content].spacing(1))
                     .width(Length::Fill)
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(Background::Color(if theme.is_dark() {
-                                Color::from_rgb(0.07, 0.09, 0.12)
-                            } else {
-                                Color::from_rgb(0.95, 0.96, 0.98)
-                            })),
-                            border: Border {
-                                color: theme.border_subtle(),
-                                width: 0.5,
-                                radius: border::Radius::from(theme::RADIUS_SM),
-                            },
-                            ..container::Style::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(if theme.is_dark() {
+                            Color::from_rgb(0.07, 0.09, 0.12)
+                        } else {
+                            Color::from_rgb(0.95, 0.96, 0.98)
+                        })),
+                        border: Border {
+                            color: theme.border_subtle(),
+                            width: 0.5,
+                            radius: border::Radius::from(theme::RADIUS_SM),
+                        },
+                        ..container::Style::default()
                     });
 
                 col = col.push(code_card);
@@ -3242,12 +3224,10 @@ fn render_callout_block<'a>(
             .width(Length::Fixed(3.5))
             .height(Length::Fixed(14.0)),
     )
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(accent_color)),
-            border: border::rounded(theme::RADIUS_FULL),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(accent_color)),
+        border: border::rounded(theme::RADIUS_FULL),
+        ..container::Style::default()
     });
 
     let badge = container(
@@ -3260,12 +3240,10 @@ fn render_callout_block<'a>(
             }),
     )
     .padding([1.5, 6.0])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(accent_color)),
-            border: border::rounded(theme::RADIUS_XS),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(accent_color)),
+        border: border::rounded(theme::RADIUS_XS),
+        ..container::Style::default()
     });
 
     let title_widget = if data.title.is_empty() {
@@ -3482,16 +3460,14 @@ fn render_box_block<'a>(
     container(column![top_bar, body_display].spacing(4))
         .width(Length::Fill)
         .padding([6, 10])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(bg_color)),
-                border: Border {
-                    color: border_color,
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(bg_color)),
+            border: Border {
+                color: border_color,
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -3611,16 +3587,14 @@ fn render_link_block<'a>(
     container(column![top_bar, body_display].spacing(4))
         .width(Length::Fill)
         .padding([6, 10])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.05))),
-                border: Border {
-                    color: Color::from_rgba(0.2, 0.5, 0.9, 0.25),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.05))),
+            border: Border {
+                color: Color::from_rgba(0.2, 0.5, 0.9, 0.25),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -3682,21 +3656,19 @@ fn render_badge_block<'a>(
             .color(Color::WHITE),
     )
     .padding([3, 12])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(pill_color)),
-            border: Border {
-                color: pill_color,
-                width: 1.0,
-                radius: border::Radius::from(theme::RADIUS_FULL),
-            },
-            shadow: iced::Shadow {
-                color: pill_color.scale_alpha(0.35),
-                offset: iced::Vector::new(0.0, 1.5),
-                blur_radius: 6.0,
-            },
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(pill_color)),
+        border: Border {
+            color: pill_color,
+            width: 1.0,
+            radius: border::Radius::from(theme::RADIUS_FULL),
+        },
+        shadow: iced::Shadow {
+            color: pill_color.scale_alpha(0.35),
+            offset: iced::Vector::new(0.0, 1.5),
+            blur_radius: 6.0,
+        },
+        ..container::Style::default()
     });
 
     let btn_modal = button(text("Edit Badge").size(9))
@@ -3759,20 +3731,17 @@ fn render_badge_block<'a>(
     container(column![top_bar, body_display].spacing(4))
         .width(Length::Fill)
         .padding([6, 10])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.05))),
-                border: Border {
-                    color: Color::from_rgba(0.2, 0.5, 0.9, 0.25),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.2, 0.5, 0.9, 0.05))),
+            border: Border {
+                color: Color::from_rgba(0.2, 0.5, 0.9, 0.25),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
-
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TitleSlideData {
@@ -3991,12 +3960,10 @@ fn render_title_slide_block<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([1, 5])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_subtle())),
-                    border: border::rounded(3.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: border::rounded(3.0),
+                ..container::Style::default()
             }),
         );
     }
@@ -4026,11 +3993,9 @@ fn render_title_slide_block<'a>(
 
     let divider = container(Space::new().height(1.0))
         .width(Length::Fill)
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.border_color())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.border_color())),
+            ..container::Style::default()
         });
 
     let mut meta_row = row![].spacing(14).align_y(Alignment::Center);
@@ -4111,12 +4076,10 @@ fn render_title_slide_block<'a>(
             extra_row = extra_row.push(
                 container(text(format!("{k}: {v}")).size(9).color(theme.text_muted()))
                     .padding([1, 4])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(Background::Color(theme.bg_subtle())),
-                            border: border::rounded(3.0),
-                            ..container::Style::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(theme.bg_subtle())),
+                        border: border::rounded(3.0),
+                        ..container::Style::default()
                     }),
             );
         }
@@ -4150,16 +4113,14 @@ fn render_title_slide_block<'a>(
     let hero_card = container(hero_col)
         .width(Length::Fill)
         .padding([(10.0 * scale).max(8.0), (14.0 * scale).max(10.0)])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.accent().scale_alpha(0.35),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.accent().scale_alpha(0.35),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         });
 
     container(column![top_bar, hero_card].spacing(4))
@@ -4199,12 +4160,10 @@ fn render_chart_block<'a>(
         .padding([2, 5])
         .width(Length::Fixed(120.0 * scale.max(1.0)))
         .style(move |_t, _s| bordered_input_style(theme, theme.text_primary()))
-        .on_input(move |new_title| {
-            Message::UpdateBlockRange {
-                slide_idx: Some(slide_idx),
-                range: r_title.clone(),
-                new_text: update_chart_title(&raw_title, &new_title),
-            }
+        .on_input(move |new_title| Message::UpdateBlockRange {
+            slide_idx: Some(slide_idx),
+            range: r_title.clone(),
+            new_text: update_chart_title(&raw_title, &new_title),
         });
 
     let title_row = row![
@@ -4320,15 +4279,13 @@ fn render_chart_block<'a>(
             let segment = container(Space::new())
                 .width(Length::FillPortion(portion))
                 .height(Length::Fill)
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(color)),
-                        border: Border {
-                            radius: border::Radius::from(2.0),
-                            ..Border::default()
-                        },
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(color)),
+                    border: Border {
+                        radius: border::Radius::from(2.0),
+                        ..Border::default()
+                    },
+                    ..container::Style::default()
                 });
             bar_row = bar_row.push(segment);
 
@@ -4380,15 +4337,13 @@ fn render_chart_block<'a>(
             let bar_fill = container(Space::new())
                 .width(Length::FillPortion(bar_portion))
                 .height(Length::Fixed(12.0))
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(color)),
-                        border: Border {
-                            radius: border::Radius::from(3.0),
-                            ..Border::default()
-                        },
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(color)),
+                    border: Border {
+                        radius: border::Radius::from(3.0),
+                        ..Border::default()
+                    },
+                    ..container::Style::default()
                 });
 
             let bar_empty = Space::new().width(Length::FillPortion(remain_portion));
@@ -4398,15 +4353,13 @@ fn render_chart_block<'a>(
 
             let val_pill = container(text(format!("{val:.0}")).size(9).color(color))
                 .padding([1, 4])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(Color { a: 0.12, ..color })),
-                        border: Border {
-                            radius: border::Radius::from(3.0),
-                            ..Border::default()
-                        },
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(Color { a: 0.12, ..color })),
+                    border: Border {
+                        radius: border::Radius::from(3.0),
+                        ..Border::default()
+                    },
+                    ..container::Style::default()
                 });
 
             let item_row = row![lbl_widget, bar_container, val_pill]
@@ -4428,15 +4381,13 @@ fn render_chart_block<'a>(
         let dot = container(Space::new())
             .width(Length::Fixed(8.0))
             .height(Length::Fixed(8.0))
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(color)),
-                    border: Border {
-                        radius: border::Radius::from(4.0),
-                        ..Border::default()
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(color)),
+                border: Border {
+                    radius: border::Radius::from(4.0),
+                    ..Border::default()
+                },
+                ..container::Style::default()
             });
 
         let r_lbl = block.range();
@@ -4446,12 +4397,10 @@ fn render_chart_block<'a>(
             .padding([2, 4])
             .width(Length::Fixed(80.0))
             .style(move |_t, _s| bordered_input_style(theme, theme.text_primary()))
-            .on_input(move |new_lbl| {
-                Message::UpdateBlockRange {
-                    slide_idx: Some(slide_idx),
-                    range: r_lbl.clone(),
-                    new_text: update_chart_item_label(&raw_lbl, i, &new_lbl),
-                }
+            .on_input(move |new_lbl| Message::UpdateBlockRange {
+                slide_idx: Some(slide_idx),
+                range: r_lbl.clone(),
+                new_text: update_chart_item_label(&raw_lbl, i, &new_lbl),
             });
 
         let r_val = block.range();
@@ -4501,16 +4450,14 @@ fn render_chart_block<'a>(
     container(column![top_bar, chart_graphic, data_edit_col].spacing(6))
         .width(Length::Fill)
         .padding([6, 10])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_color(),
-                    width: 1.0,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_color(),
+                width: 1.0,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -4725,16 +4672,14 @@ fn render_video_block<'a>(
                 .color(Color::from_rgb(0.95, 0.25, 0.25)),
         )
         .padding([2, 5])
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.95, 0.25, 0.25, 0.2))),
-                border: Border {
-                    color: Color::from_rgb(0.95, 0.25, 0.25),
-                    width: 1.0,
-                    radius: border::Radius::from(3.0),
-                },
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.95, 0.25, 0.25, 0.2))),
+            border: Border {
+                color: Color::from_rgb(0.95, 0.25, 0.25),
+                width: 1.0,
+                radius: border::Radius::from(3.0),
+            },
+            ..container::Style::default()
         });
 
         let q_pill = container(
@@ -4743,12 +4688,10 @@ fn render_video_block<'a>(
                 .color(theme.text_secondary()),
         )
         .padding([2, 5])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let mut meta_right = row![q_pill].spacing(4).align_y(Alignment::Center);
@@ -4759,12 +4702,10 @@ fn render_video_block<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([2, 5])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
-                    border: border::rounded(3.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.1))),
+                border: border::rounded(3.0),
+                ..container::Style::default()
             });
             meta_right = meta_right.push(dur_pill);
         }
@@ -4777,12 +4718,10 @@ fn render_video_block<'a>(
             .height(Length::Fixed(36.0 * scale))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(|_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgb(0.98, 0.45, 0.09))),
-                    border: border::rounded(18.0),
-                    ..container::Style::default()
-                }
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgb(0.98, 0.45, 0.09))),
+                border: border::rounded(18.0),
+                ..container::Style::default()
             });
 
         let center = column![
@@ -4801,16 +4740,14 @@ fn render_video_block<'a>(
         container(column![header, Space::new().height(Length::Fixed(6.0)), center].spacing(4))
             .padding([8, 12])
             .width(Length::Fill)
-            .style(|_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgb(0.03, 0.04, 0.06))),
-                    border: Border {
-                        color: Color::from_rgb(0.98, 0.45, 0.09),
-                        width: 1.5,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(|_| container::Style {
+                background: Some(Background::Color(Color::from_rgb(0.03, 0.04, 0.06))),
+                border: Border {
+                    color: Color::from_rgb(0.98, 0.45, 0.09),
+                    width: 1.5,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             })
             .into()
     } else if is_minimal {
@@ -4819,12 +4756,10 @@ fn render_video_block<'a>(
             .height(Length::Fixed(24.0 * scale))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.accent())),
-                    border: border::rounded(12.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.accent())),
+                border: border::rounded(12.0),
+                ..container::Style::default()
             });
 
         let play_badge = container(
@@ -4833,12 +4768,10 @@ fn render_video_block<'a>(
                 .color(theme.accent()),
         )
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let body = row![
@@ -4861,16 +4794,14 @@ fn render_video_block<'a>(
         container(body)
             .padding([6, 10])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: theme.border_color(),
-                        width: 1.0,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: theme.border_color(),
+                    width: 1.0,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             })
             .into()
     } else {
@@ -4880,12 +4811,10 @@ fn render_video_block<'a>(
             .height(Length::Fixed(38.0 * scale))
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.accent())),
-                    border: border::rounded(19.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.accent())),
+                border: border::rounded(19.0),
+                ..container::Style::default()
             });
 
         let q_badge = container(
@@ -4894,16 +4823,14 @@ fn render_video_block<'a>(
                 .color(theme.accent()),
         )
         .padding([2, 5])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: Border {
-                    color: theme.border_active(),
-                    width: 0.8,
-                    radius: border::Radius::from(3.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: Border {
+                color: theme.border_active(),
+                width: 0.8,
+                radius: border::Radius::from(3.0),
+            },
+            ..container::Style::default()
         });
 
         let mut badges = row![q_badge].spacing(4).align_y(Alignment::Center);
@@ -4914,12 +4841,10 @@ fn render_video_block<'a>(
                     .color(theme.text_secondary()),
             )
             .padding([2, 5])
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
-                    border: border::rounded(3.0),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+                border: border::rounded(3.0),
+                ..container::Style::default()
             });
             badges = badges.push(dur_pill);
         }
@@ -4943,16 +4868,14 @@ fn render_video_block<'a>(
             .padding([10, 14])
             .width(Length::Fill)
             .align_x(Alignment::Center)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: theme.border_active(),
-                        width: 1.2,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: theme.border_active(),
+                    width: 1.2,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             })
             .into()
     };
@@ -4960,16 +4883,14 @@ fn render_video_block<'a>(
     container(column![top_bar, card_content].spacing(4))
         .width(Length::Fill)
         .padding([4, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),
-                border: Border {
-                    color: theme.border_subtle(),
-                    width: 0.8,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),
+            border: Border {
+                color: theme.border_subtle(),
+                width: 0.8,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -5059,28 +4980,24 @@ fn render_audio_block<'a>(
         .height(Length::Fixed(28.0 * scale))
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.2))),
-                border: Border {
-                    color: Color::from_rgb(0.02, 0.71, 0.83),
-                    width: 1.0,
-                    radius: border::Radius::from(14.0),
-                },
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.2))),
+            border: Border {
+                color: Color::from_rgb(0.02, 0.71, 0.83),
+                width: 1.0,
+                radius: border::Radius::from(14.0),
+            },
+            ..container::Style::default()
         });
 
         let bar = |h: f32| {
             container(Space::new())
                 .width(Length::Fixed(2.5))
                 .height(Length::Fixed(h))
-                .style(|_| {
-                    container::Style {
-                        background: Some(Background::Color(Color::from_rgb(0.02, 0.71, 0.83))),
-                        border: border::rounded(1.0),
-                        ..container::Style::default()
-                    }
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgb(0.02, 0.71, 0.83))),
+                    border: border::rounded(1.0),
+                    ..container::Style::default()
                 })
         };
 
@@ -5094,12 +5011,10 @@ fn render_audio_block<'a>(
                 .color(Color::from_rgb(0.02, 0.71, 0.83)),
         )
         .padding([2, 5])
-        .style(|_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.15))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.02, 0.71, 0.83, 0.15))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let auto_badge = container(
@@ -5112,12 +5027,10 @@ fn render_audio_block<'a>(
             .color(theme.text_secondary()),
         )
         .padding([2, 4])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let loop_badge = container(
@@ -5130,12 +5043,10 @@ fn render_audio_block<'a>(
             .color(theme.text_secondary()),
         )
         .padding([2, 4])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
-                border: border::rounded(3.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+            border: border::rounded(3.0),
+            ..container::Style::default()
         });
 
         let right_items = row![eq, vol_badge, auto_badge, loop_badge]
@@ -5162,16 +5073,14 @@ fn render_audio_block<'a>(
         container(row_body)
             .padding([8, 12])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: Color::from_rgb(0.02, 0.71, 0.83),
-                        width: 1.2,
-                        radius: border::Radius::from(6.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: Color::from_rgb(0.02, 0.71, 0.83),
+                    width: 1.2,
+                    radius: border::Radius::from(6.0),
+                },
+                ..container::Style::default()
             })
             .into()
     } else {
@@ -5211,16 +5120,14 @@ fn render_audio_block<'a>(
         container(trigger_row)
             .padding([6, 10])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(theme.bg_card())),
-                    border: Border {
-                        color: theme.border_color(),
-                        width: 1.0,
-                        radius: border::Radius::from(5.0),
-                    },
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(Background::Color(theme.bg_card())),
+                border: Border {
+                    color: theme.border_color(),
+                    width: 1.0,
+                    radius: border::Radius::from(5.0),
+                },
+                ..container::Style::default()
             })
             .into()
     };
@@ -5228,16 +5135,14 @@ fn render_audio_block<'a>(
     container(column![top_bar, card_content].spacing(4))
         .width(Length::Fill)
         .padding([4, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),
-                border: Border {
-                    color: theme.border_subtle(),
-                    width: 0.8,
-                    radius: border::Radius::from(6.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),
+            border: Border {
+                color: theme.border_subtle(),
+                width: 0.8,
+                radius: border::Radius::from(6.0),
+            },
+            ..container::Style::default()
         })
         .into()
 }
@@ -5262,54 +5167,42 @@ pub fn view_visual_block<'a>(
     let inner_content: Element<'a, Message> = match block {
         | WysiwygBlock::Heading { level, title, .. } => {
             let (font_size, top_margin, bottom_margin, font_color) = match level {
-                | 1 => {
-                    (
-                        (26.0 * scale).max(20.0),
-                        10.0 * scale,
-                        6.0 * scale,
-                        theme.accent(),
-                    )
-                },
-                | 2 => {
-                    (
-                        (21.0 * scale).max(17.0),
-                        8.0 * scale,
-                        5.0 * scale,
-                        theme.text_primary(),
-                    )
-                },
-                | 3 => {
-                    (
-                        (17.0 * scale).max(14.0),
-                        6.0 * scale,
-                        4.0 * scale,
-                        theme.text_primary(),
-                    )
-                },
-                | 4 => {
-                    (
-                        (14.5 * scale).max(12.5),
-                        5.0 * scale,
-                        3.0 * scale,
-                        theme.text_secondary(),
-                    )
-                },
-                | 5 => {
-                    (
-                        (13.0 * scale).max(11.5),
-                        4.0 * scale,
-                        2.0 * scale,
-                        theme.text_secondary(),
-                    )
-                },
-                | _ => {
-                    (
-                        (11.5 * scale).max(10.5),
-                        3.0 * scale,
-                        2.0 * scale,
-                        theme.text_muted(),
-                    )
-                },
+                | 1 => (
+                    (26.0 * scale).max(20.0),
+                    10.0 * scale,
+                    6.0 * scale,
+                    theme.accent(),
+                ),
+                | 2 => (
+                    (21.0 * scale).max(17.0),
+                    8.0 * scale,
+                    5.0 * scale,
+                    theme.text_primary(),
+                ),
+                | 3 => (
+                    (17.0 * scale).max(14.0),
+                    6.0 * scale,
+                    4.0 * scale,
+                    theme.text_primary(),
+                ),
+                | 4 => (
+                    (14.5 * scale).max(12.5),
+                    5.0 * scale,
+                    3.0 * scale,
+                    theme.text_secondary(),
+                ),
+                | 5 => (
+                    (13.0 * scale).max(11.5),
+                    4.0 * scale,
+                    2.0 * scale,
+                    theme.text_secondary(),
+                ),
+                | _ => (
+                    (11.5 * scale).max(10.5),
+                    3.0 * scale,
+                    2.0 * scale,
+                    theme.text_muted(),
+                ),
             };
 
             let heading_text = render_rich_text(title, font_size, font_color, theme);
@@ -5385,36 +5278,30 @@ pub fn view_visual_block<'a>(
                         .width(Length::Fixed(6.0))
                         .height(Length::Fixed(6.0)),
                 )
-                .style(|_| {
-                    container::Style {
-                        background: Some(Background::Color(Color::from_rgb(1.0, 0.37, 0.34))),
-                        border: border::rounded(theme::RADIUS_FULL),
-                        ..container::Style::default()
-                    }
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgb(1.0, 0.37, 0.34))),
+                    border: border::rounded(theme::RADIUS_FULL),
+                    ..container::Style::default()
                 });
                 let dot_yellow = container(
                     Space::new()
                         .width(Length::Fixed(6.0))
                         .height(Length::Fixed(6.0)),
                 )
-                .style(|_| {
-                    container::Style {
-                        background: Some(Background::Color(Color::from_rgb(1.0, 0.74, 0.18))),
-                        border: border::rounded(theme::RADIUS_FULL),
-                        ..container::Style::default()
-                    }
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgb(1.0, 0.74, 0.18))),
+                    border: border::rounded(theme::RADIUS_FULL),
+                    ..container::Style::default()
                 });
                 let dot_green = container(
                     Space::new()
                         .width(Length::Fixed(6.0))
                         .height(Length::Fixed(6.0)),
                 )
-                .style(|_| {
-                    container::Style {
-                        background: Some(Background::Color(Color::from_rgb(0.15, 0.79, 0.25))),
-                        border: border::rounded(theme::RADIUS_FULL),
-                        ..container::Style::default()
-                    }
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgb(0.15, 0.79, 0.25))),
+                    border: border::rounded(theme::RADIUS_FULL),
+                    ..container::Style::default()
                 });
                 let dots = row![dot_red, dot_yellow, dot_green]
                     .spacing(5)
@@ -5433,12 +5320,10 @@ pub fn view_visual_block<'a>(
                         .color(theme.text_muted()),
                 )
                 .padding([1, 6])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(theme.bg_subtle())),
-                        border: border::rounded(theme::RADIUS_XS),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(theme.bg_subtle())),
+                    border: border::rounded(theme::RADIUS_XS),
+                    ..container::Style::default()
                 });
 
                 let window_header = row![dots, Space::new().width(Length::Fill), lang_badge,]
@@ -5484,23 +5369,19 @@ pub fn view_visual_block<'a>(
             }
         },
 
-        | WysiwygBlock::Paragraph { text: body_text, .. } => {
-            render_rich_text(
-                body_text,
-                (14.0 * scale).max(12.0),
-                theme.text_primary(),
-                theme,
-            )
-        },
+        | WysiwygBlock::Paragraph { text: body_text, .. } => render_rich_text(
+            body_text,
+            (14.0 * scale).max(12.0),
+            theme.text_primary(),
+            theme,
+        ),
 
-        | WysiwygBlock::SetRule { target, .. } => {
-            row![
-                text("#set").size(10).color(theme.accent()),
-                text(target).size(10).color(theme.text_muted()),
-            ]
-            .spacing(4)
-            .into()
-        },
+        | WysiwygBlock::SetRule { target, .. } => row![
+            text("#set").size(10).color(theme.accent()),
+            text(target).size(10).color(theme.text_muted()),
+        ]
+        .spacing(4)
+        .into(),
 
         | WysiwygBlock::ShowRule { target, .. } => {
             let tgt = target.as_deref().unwrap_or("rule");
@@ -5512,23 +5393,19 @@ pub fn view_visual_block<'a>(
             .into()
         },
 
-        | WysiwygBlock::LetBinding { name, .. } => {
-            row![
-                text("#let").size(10).color(theme.accent()),
-                text(name).size(10).color(theme.text_muted()),
-            ]
-            .spacing(4)
-            .into()
-        },
+        | WysiwygBlock::LetBinding { name, .. } => row![
+            text("#let").size(10).color(theme.accent()),
+            text(name).size(10).color(theme.text_muted()),
+        ]
+        .spacing(4)
+        .into(),
 
-        | WysiwygBlock::Module { path, .. } => {
-            row![
-                text("#import").size(10).color(theme.accent()),
-                text(path).size(10).color(theme.text_muted()),
-            ]
-            .spacing(4)
-            .into()
-        },
+        | WysiwygBlock::Module { path, .. } => row![
+            text("#import").size(10).color(theme.accent()),
+            text(path).size(10).color(theme.text_muted()),
+        ]
+        .spacing(4)
+        .into(),
 
         | WysiwygBlock::FuncCall { callee, args, .. } => {
             if callee == "image" {
@@ -5697,26 +5574,20 @@ pub fn view_visual_block<'a>(
             }
         },
 
-        | WysiwygBlock::PureCode { body, .. } => {
-            text(format!("{{ {body} }}"))
-                .size(11)
-                .color(theme.text_muted())
-                .into()
-        },
+        | WysiwygBlock::PureCode { body, .. } => text(format!("{{ {body} }}"))
+            .size(11)
+            .color(theme.text_muted())
+            .into(),
 
-        | WysiwygBlock::ContentBlock { body, .. } => {
-            text(format!("[ {body} ]"))
-                .size(12)
-                .color(theme.text_primary())
-                .into()
-        },
+        | WysiwygBlock::ContentBlock { body, .. } => text(format!("[ {body} ]"))
+            .size(12)
+            .color(theme.text_primary())
+            .into(),
 
-        | WysiwygBlock::ControlFlow { kind, .. } => {
-            text(format!("#{kind}"))
-                .size(10)
-                .color(theme.accent())
-                .into()
-        },
+        | WysiwygBlock::ControlFlow { kind, .. } => text(format!("#{kind}"))
+            .size(10)
+            .color(theme.accent())
+            .into(),
 
         | WysiwygBlock::Expression { raw, .. } => {
             text(raw).size(11).color(theme.text_muted()).into()
@@ -5800,24 +5671,22 @@ pub fn view_visual_block<'a>(
             )
             .padding([6, 8])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(if theme.is_dark() {
-                        Color::from_rgba(0.98, 0.75, 0.25, 0.06)
+            .style(move |_| container::Style {
+                background: Some(Background::Color(if theme.is_dark() {
+                    Color::from_rgba(0.98, 0.75, 0.25, 0.06)
+                } else {
+                    Color::from_rgba(0.98, 0.75, 0.25, 0.08)
+                })),
+                border: Border {
+                    color: if theme.is_dark() {
+                        Color::from_rgba(0.98, 0.75, 0.25, 0.30)
                     } else {
-                        Color::from_rgba(0.98, 0.75, 0.25, 0.08)
-                    })),
-                    border: Border {
-                        color: if theme.is_dark() {
-                            Color::from_rgba(0.98, 0.75, 0.25, 0.30)
-                        } else {
-                            Color::from_rgba(0.98, 0.75, 0.25, 0.35)
-                        },
-                        width: 1.0,
-                        radius: border::Radius::from(4.0),
+                        Color::from_rgba(0.98, 0.75, 0.25, 0.35)
                     },
-                    ..container::Style::default()
-                }
+                    width: 1.0,
+                    radius: border::Radius::from(4.0),
+                },
+                ..container::Style::default()
             });
 
             column![
@@ -5902,24 +5771,22 @@ pub fn view_visual_block<'a>(
             )
             .padding([6, 8])
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(Background::Color(if theme.is_dark() {
-                        Color::from_rgba(0.20, 0.60, 0.95, 0.06)
+            .style(move |_| container::Style {
+                background: Some(Background::Color(if theme.is_dark() {
+                    Color::from_rgba(0.20, 0.60, 0.95, 0.06)
+                } else {
+                    Color::from_rgba(0.15, 0.50, 0.90, 0.06)
+                })),
+                border: Border {
+                    color: if theme.is_dark() {
+                        Color::from_rgba(0.20, 0.60, 0.95, 0.28)
                     } else {
-                        Color::from_rgba(0.15, 0.50, 0.90, 0.06)
-                    })),
-                    border: Border {
-                        color: if theme.is_dark() {
-                            Color::from_rgba(0.20, 0.60, 0.95, 0.28)
-                        } else {
-                            Color::from_rgba(0.15, 0.50, 0.90, 0.30)
-                        },
-                        width: 1.0,
-                        radius: border::Radius::from(4.0),
+                        Color::from_rgba(0.15, 0.50, 0.90, 0.30)
                     },
-                    ..container::Style::default()
-                }
+                    width: 1.0,
+                    radius: border::Radius::from(4.0),
+                },
+                ..container::Style::default()
             });
 
             column![
@@ -6136,7 +6003,6 @@ pub fn view_visual_block<'a>(
             .into()
     };
 
-
     let trans_badge: Option<Element<'a, Message>> = if let Some(tr) = transition {
         Some(
             button(text(format!("Step {} • {}", tr.order, tr.effect)).size((9.0 * scale).max(8.0)))
@@ -6201,16 +6067,14 @@ pub fn view_visual_block<'a>(
                 .color(theme.text_muted().scale_alpha(0.7)),
         )
         .padding([1, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.08))),
-                border: Border {
-                    color: Color::from_rgba(0.5, 0.5, 0.5, 0.18),
-                    width: 0.5,
-                    radius: border::Radius::from(3.0),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.08))),
+            border: Border {
+                color: Color::from_rgba(0.5, 0.5, 0.5, 0.18),
+                width: 0.5,
+                radius: border::Radius::from(3.0),
+            },
+            ..container::Style::default()
         }),
     )
     .interaction(iced::mouse::Interaction::ResizingVertically)
@@ -6320,16 +6184,14 @@ pub fn view_insert_bar<'a>(
     container(insert_col)
         .width(Length::Fill)
         .padding([2, 4])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),
-                border: Border {
-                    color: theme.border_subtle(),
-                    width: 1.0,
-                    radius: border::Radius::from(theme::RADIUS_MD),
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle().scale_alpha(0.5))),
+            border: Border {
+                color: theme.border_subtle(),
+                width: 1.0,
+                radius: border::Radius::from(theme::RADIUS_MD),
+            },
+            ..container::Style::default()
         })
         .into()
 }

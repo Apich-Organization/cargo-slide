@@ -44,14 +44,13 @@ pub fn execute(
         );
 
         let mut card = PivManager::acquire_card(pin)?;
-        if !card.is_authenticated() && pin.is_none() {
-            if let Some(gui_pin) = slide_player::prompt_pin_gui(
+        if !card.is_authenticated() && pin.is_none()
+            && let Some(gui_pin) = slide_player::prompt_pin_gui(
                 "Cargo Slide - YubiKey PIV Authentication",
                 "Enter 6-8 digit User PIN to decrypt presentation:",
             ) {
                 card.verify_pin(&gui_pin)?;
             }
-        }
         slide_core::security::prompt_pin_if_needed(card.as_mut(), pin)?;
 
         let (d, store) = unpack_encrypted_deck_and_assets_in_memory(file, card.as_mut(), None)?;

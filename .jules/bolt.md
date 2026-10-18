@@ -1,0 +1,3 @@
+## 2024-05-24 - [Leptos Reactivity: Signal::derive vs Memo::new]
+**Learning:** In Leptos 0.8, `Signal::derive` re-evaluates its closure on *every* reactive read. When deriving state based on heavy structs (like `Slide` with large embedded SVG strings) that are read multiple times per render cycle, this causes massive redundant cloning and allocation overhead.
+**Action:** Use `Memo::new(move |_| { ... })` instead for computationally expensive or allocation-heavy derived state. This caches the value and skips downward renders if the new value equals the old value (requires `PartialEq` on the derived struct type).

@@ -9,9 +9,7 @@ use crate::ui::theme::RADIUS_FULL;
 use crate::ui::theme::RADIUS_MD;
 use crate::ui::theme::RADIUS_SM;
 use crate::ui::theme::RADIUS_XS;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use iced::Alignment;
 use iced::Element;
 use iced::Length;
@@ -48,12 +46,10 @@ pub fn view_sidebar<'a>(
         .color(theme.text_secondary()),
     )
     .padding([2, 7])
-    .style(move |_| {
-        container::Style {
-            background: Some(iced::Background::Color(theme.bg_subtle())),
-            border: iced::border::rounded(RADIUS_FULL),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(theme.bg_subtle())),
+        border: iced::border::rounded(RADIUS_FULL),
+        ..container::Style::default()
     });
 
     let mode_toggle_btn = button(
@@ -109,19 +105,15 @@ pub fn view_sidebar<'a>(
 
         let div_line_left = container(Space::new().height(Length::Fixed(1.0)))
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.border_subtle())),
-                    ..Default::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.border_subtle())),
+                ..Default::default()
             });
         let div_line_right = container(Space::new().height(Length::Fixed(1.0)))
             .width(Length::Fill)
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.border_subtle())),
-                    ..Default::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.border_subtle())),
+                ..Default::default()
             });
 
         row![div_line_left, add_btn, div_line_right]
@@ -180,12 +172,10 @@ pub fn view_sidebar<'a>(
                             .color(theme.accent_cyan()),
                     )
                     .padding([1, 4])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.bg_subtle())),
-                            border: iced::border::rounded(RADIUS_XS),
-                            ..Default::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(RADIUS_XS),
+                        ..Default::default()
                     })
                 } else {
                     container(Space::new().width(Length::Shrink))
@@ -205,12 +195,10 @@ pub fn view_sidebar<'a>(
                     .width(Length::Fill),
             )
             .padding([3, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.bg_surface_solid())),
-                    border: iced::border::rounded(RADIUS_SM),
-                    ..Default::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(theme.bg_surface_solid())),
+                border: iced::border::rounded(RADIUS_SM),
+                ..Default::default()
             });
 
             let card_preview: Element<'a, Message> = if let Some(img_handle) = slide_images.get(idx)
@@ -225,30 +213,24 @@ pub fn view_sidebar<'a>(
             } else {
                 let line1 = container(Space::new().height(Length::Fixed(6.0)))
                     .width(Length::Fixed(80.0))
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.border_subtle())),
-                            border: iced::border::rounded(RADIUS_FULL),
-                            ..Default::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(theme.border_subtle())),
+                        border: iced::border::rounded(RADIUS_FULL),
+                        ..Default::default()
                     });
                 let line2 = container(Space::new().height(Length::Fixed(5.0)))
                     .width(Length::Fixed(120.0))
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.border_subtle())),
-                            border: iced::border::rounded(RADIUS_FULL),
-                            ..Default::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(theme.border_subtle())),
+                        border: iced::border::rounded(RADIUS_FULL),
+                        ..Default::default()
                     });
                 let line3 = container(Space::new().height(Length::Fixed(5.0)))
                     .width(Length::Fixed(100.0))
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.border_subtle())),
-                            border: iced::border::rounded(RADIUS_FULL),
-                            ..Default::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(theme.border_subtle())),
+                        border: iced::border::rounded(RADIUS_FULL),
+                        ..Default::default()
                     });
 
                 container(
@@ -260,16 +242,14 @@ pub fn view_sidebar<'a>(
                     .height(Length::Fixed(116.0)),
                 )
                 .width(Length::Fill)
-                .style(move |_| {
-                    container::Style {
-                        background: Some(iced::Background::Color(if theme.is_dark() {
-                            iced::Color::from_rgb8(18, 22, 30)
-                        } else {
-                            iced::Color::from_rgb8(245, 247, 250)
-                        })),
-                        border: iced::border::rounded(RADIUS_SM),
-                        ..Default::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(if theme.is_dark() {
+                        iced::Color::from_rgb8(18, 22, 30)
+                    } else {
+                        iced::Color::from_rgb8(245, 247, 250)
+                    })),
+                    border: iced::border::rounded(RADIUS_SM),
+                    ..Default::default()
                 })
                 .into()
             };
@@ -313,16 +293,14 @@ pub fn view_sidebar<'a>(
                     .width(Length::Fixed(3.0))
                     .height(Length::Fixed(22.0)),
             )
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(if is_selected {
-                        theme.accent()
-                    } else {
-                        iced::Color::TRANSPARENT
-                    })),
-                    border: iced::border::rounded(RADIUS_FULL),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(if is_selected {
+                    theme.accent()
+                } else {
+                    iced::Color::TRANSPARENT
+                })),
+                border: iced::border::rounded(RADIUS_FULL),
+                ..container::Style::default()
             });
 
             let num_str = format!("{slide_num:02}");
@@ -332,16 +310,14 @@ pub fn view_sidebar<'a>(
                 theme.text_secondary()
             }))
             .padding([2, 6])
-            .style(move |_| {
-                container::Style {
-                    background: Some(iced::Background::Color(if is_selected {
-                        theme.accent()
-                    } else {
-                        theme.bg_subtle()
-                    })),
-                    border: iced::border::rounded(RADIUS_FULL),
-                    ..container::Style::default()
-                }
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(if is_selected {
+                    theme.accent()
+                } else {
+                    theme.bg_subtle()
+                })),
+                border: iced::border::rounded(RADIUS_FULL),
+                ..container::Style::default()
             });
 
             let title_label = text(title).size(12).color(if is_selected {
@@ -353,12 +329,10 @@ pub fn view_sidebar<'a>(
             let trans_tag: Option<Element<'a, Message>> = slide_trans.map(|t| {
                 container(text(t.to_uppercase()).size(9).color(theme.accent_cyan()))
                     .padding([1, 5])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.bg_subtle())),
-                            border: iced::border::rounded(RADIUS_XS),
-                            ..container::Style::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(RADIUS_XS),
+                        ..container::Style::default()
                     })
                     .into()
             });

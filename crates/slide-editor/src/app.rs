@@ -2710,46 +2710,44 @@ impl SlideEditorApp {
                     task = self.trigger_recompile_task();
                 }
             },
-            | Message::InsertSnippet(snippet) => {
-                match self.mode {
-                    | EditorMode::LivePreview => {
-                        let offset = if let Some(ref range) = self.active_block_range {
-                            range.end
-                        } else {
-                            self.engine
-                                .get_slide_content_insert_offset(self.active_slide)
-                        };
-                        self.commit_active_block();
-                        self.engine.insert_block_after(offset, snippet);
-                        self.doc.source_text = self.engine.source_text.clone();
-                        self.doc.is_dirty = true;
-                        self.doc.sync_chunks_from_source();
-                        self.sync_editors_from_doc();
-                        task = self.trigger_recompile_task();
-                    },
-                    | EditorMode::FocusMode => {
-                        let mut chunk = self.focus_slide_content.text();
-                        chunk.push('\n');
-                        chunk.push_str(snippet);
-                        self.doc.update_slide_chunk(self.active_slide, &chunk);
-                        self.engine.source_text = self.doc.source_text.clone();
-                        self.engine.reparse();
-                        self.focus_slide_content = text_editor::Content::with_text(&chunk);
-                        task = self.trigger_recompile_task();
-                    },
-                    | EditorMode::SourceMode => {
-                        let mut full = self.source_content.text();
-                        full.push('\n');
-                        full.push_str(snippet);
-                        self.doc.source_text = full.clone();
-                        self.doc.is_dirty = true;
-                        self.doc.sync_chunks_from_source();
-                        self.engine.source_text = full.clone();
-                        self.engine.reparse();
-                        self.source_content = text_editor::Content::with_text(&full);
-                        task = self.trigger_recompile_task();
-                    },
-                }
+            | Message::InsertSnippet(snippet) => match self.mode {
+                | EditorMode::LivePreview => {
+                    let offset = if let Some(ref range) = self.active_block_range {
+                        range.end
+                    } else {
+                        self.engine
+                            .get_slide_content_insert_offset(self.active_slide)
+                    };
+                    self.commit_active_block();
+                    self.engine.insert_block_after(offset, snippet);
+                    self.doc.source_text = self.engine.source_text.clone();
+                    self.doc.is_dirty = true;
+                    self.doc.sync_chunks_from_source();
+                    self.sync_editors_from_doc();
+                    task = self.trigger_recompile_task();
+                },
+                | EditorMode::FocusMode => {
+                    let mut chunk = self.focus_slide_content.text();
+                    chunk.push('\n');
+                    chunk.push_str(snippet);
+                    self.doc.update_slide_chunk(self.active_slide, &chunk);
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    self.focus_slide_content = text_editor::Content::with_text(&chunk);
+                    task = self.trigger_recompile_task();
+                },
+                | EditorMode::SourceMode => {
+                    let mut full = self.source_content.text();
+                    full.push('\n');
+                    full.push_str(snippet);
+                    self.doc.source_text = full.clone();
+                    self.doc.is_dirty = true;
+                    self.doc.sync_chunks_from_source();
+                    self.engine.source_text = full.clone();
+                    self.engine.reparse();
+                    self.source_content = text_editor::Content::with_text(&full);
+                    task = self.trigger_recompile_task();
+                },
             },
             | Message::ZoomIn => {
                 if self.zoom_percent < 200 {
@@ -2960,13 +2958,11 @@ impl SlideEditorApp {
                             ))
                         }
                     },
-                    | ExportFormat::SlidePackage => {
-                        self.compiler.export_slide_package(
-                            &self.doc,
-                            self.export_include_source,
-                            &target,
-                        )
-                    },
+                    | ExportFormat::SlidePackage => self.compiler.export_slide_package(
+                        &self.doc,
+                        self.export_include_source,
+                        &target,
+                    ),
                 };
 
                 match result {
@@ -4255,56 +4251,50 @@ impl SlideEditorApp {
         let formatting_bar = view_formatting_bar(self.theme, self.active_slide, win_w);
 
         let main_view: Element<'_, Message> = match self.mode {
-            | EditorMode::LivePreview => {
-                view_live_preview(
-                    self.theme,
-                    &self.engine.slides,
-                    &self.slide_images,
-                    &self.equation_images,
-                    &self.code_images,
-                    self.active_slide,
-                    self.active_block_id.as_deref(),
-                    if self.active_block_id.is_some() {
-                        Some(&self.active_block_content)
-                    } else {
-                        None
-                    },
-                    self.in_place_editing_slide,
-                    if self.in_place_editing_slide.is_some() {
-                        Some(&self.in_place_content)
-                    } else {
-                        None
-                    },
-                    self.zoom_percent,
-                    &self.slide_view_vector,
-                    self.dragging_block.map(|(s, b, _, _)| (s, b)),
-                    &self.raw_code_blocks,
-                    &self.engine,
-                )
-            },
-            | EditorMode::FocusMode => {
-                view_focus_mode(
-                    self.theme,
-                    &self.doc,
-                    &self.slide_images,
-                    self.active_slide,
-                    &self.focus_slide_content,
-                    self.zoom_percent,
-                    &self.engine.slides,
-                    self.active_hover_formula.as_deref(),
-                    &self.equation_images,
-                )
-            },
-            | EditorMode::SourceMode => {
-                view_source_mode(
-                    self.theme,
-                    &self.source_content,
-                    self.doc.file_path.as_deref(),
-                    self.doc.source_text.lines().count(),
-                    self.active_hover_formula.as_deref(),
-                    &self.equation_images,
-                )
-            },
+            | EditorMode::LivePreview => view_live_preview(
+                self.theme,
+                &self.engine.slides,
+                &self.slide_images,
+                &self.equation_images,
+                &self.code_images,
+                self.active_slide,
+                self.active_block_id.as_deref(),
+                if self.active_block_id.is_some() {
+                    Some(&self.active_block_content)
+                } else {
+                    None
+                },
+                self.in_place_editing_slide,
+                if self.in_place_editing_slide.is_some() {
+                    Some(&self.in_place_content)
+                } else {
+                    None
+                },
+                self.zoom_percent,
+                &self.slide_view_vector,
+                self.dragging_block.map(|(s, b, _, _)| (s, b)),
+                &self.raw_code_blocks,
+                &self.engine,
+            ),
+            | EditorMode::FocusMode => view_focus_mode(
+                self.theme,
+                &self.doc,
+                &self.slide_images,
+                self.active_slide,
+                &self.focus_slide_content,
+                self.zoom_percent,
+                &self.engine.slides,
+                self.active_hover_formula.as_deref(),
+                &self.equation_images,
+            ),
+            | EditorMode::SourceMode => view_source_mode(
+                self.theme,
+                &self.source_content,
+                self.doc.file_path.as_deref(),
+                self.doc.source_text.lines().count(),
+                self.active_hover_formula.as_deref(),
+                &self.equation_images,
+            ),
         };
 
         let center_content: Element<'_, Message> = if self.sidebar_visible {
@@ -4379,82 +4369,70 @@ impl SlideEditorApp {
         // Check if any modal is active
         if let Some(ref modal) = self.active_modal {
             let modal_element: Element<'_, Message> = match modal {
-                | ActiveModal::Export => {
-                    view_export_modal(
-                        self.theme,
-                        self.export_format,
-                        &self.export_path,
-                        self.export_png_scale,
-                        self.export_page_selection,
-                        &self.export_custom_range,
-                        self.export_include_source,
-                        self.active_slide,
-                        self.engine.slides.len(),
-                        self.export_status.as_deref(),
-                    )
-                },
-                | ActiveModal::Open => {
-                    view_open_modal(
-                        self.theme,
-                        &self.open_path,
-                        self.open_error.as_deref(),
-                        &self.recent_files,
-                    )
-                },
+                | ActiveModal::Export => view_export_modal(
+                    self.theme,
+                    self.export_format,
+                    &self.export_path,
+                    self.export_png_scale,
+                    self.export_page_selection,
+                    &self.export_custom_range,
+                    self.export_include_source,
+                    self.active_slide,
+                    self.engine.slides.len(),
+                    self.export_status.as_deref(),
+                ),
+                | ActiveModal::Open => view_open_modal(
+                    self.theme,
+                    &self.open_path,
+                    self.open_error.as_deref(),
+                    &self.recent_files,
+                ),
                 | ActiveModal::ErrorDetails(diag) => view_error_details_modal(self.theme, diag),
-                | ActiveModal::ComplexElement(modal) => {
-                    view_complex_element_modal(
-                        self.theme,
-                        modal,
-                        Some(&self.modal_col_editors),
-                        Some(&self.modal_box_editor),
-                        Some(&self.modal_title_slide_editor),
-                        Some(&self.modal_callout_editor),
-                    )
-                },
+                | ActiveModal::ComplexElement(modal) => view_complex_element_modal(
+                    self.theme,
+                    modal,
+                    Some(&self.modal_col_editors),
+                    Some(&self.modal_box_editor),
+                    Some(&self.modal_title_slide_editor),
+                    Some(&self.modal_callout_editor),
+                ),
                 | ActiveModal::SlideTransition {
                     slide_idx,
                     current_transition,
                     ..
-                } => {
-                    crate::ui::wysiwyg::transition_modal::view_slide_transition_modal(
-                        self.theme,
-                        *slide_idx,
-                        current_transition.as_deref(),
-                        self.engine.slides.len(),
-                    )
-                },
+                } => crate::ui::wysiwyg::transition_modal::view_slide_transition_modal(
+                    self.theme,
+                    *slide_idx,
+                    current_transition.as_deref(),
+                    self.engine.slides.len(),
+                ),
                 | ActiveModal::ElementTransition {
                     slide_idx,
                     block_idx,
                     order,
                     effect,
                     is_existing,
-                } => {
-                    crate::ui::wysiwyg::transition_modal::view_element_transition_modal(
-                        self.theme,
-                        *slide_idx,
-                        *block_idx,
-                        *order,
-                        effect,
-                        *is_existing,
-                    )
-                },
+                } => crate::ui::wysiwyg::transition_modal::view_element_transition_modal(
+                    self.theme,
+                    *slide_idx,
+                    *block_idx,
+                    *order,
+                    effect,
+                    *is_existing,
+                ),
                 | ActiveModal::MoveBlockToSlide {
                     from_slide_idx,
                     range,
                     block_label,
                     ..
-                } => {
-                    crate::ui::modals::view_move_block_modal(
-                        self.theme,
-                        *from_slide_idx,
-                        range.clone(),
-                        block_label,
-                        &self.slide_titles,
-                        self.doc.total_slides(),
-                    )
-                },
+                } => crate::ui::modals::view_move_block_modal(
+                    self.theme,
+                    *from_slide_idx,
+                    range.clone(),
+                    block_label,
+                    &self.slide_titles,
+                    self.doc.total_slides(),
+                ),
                 | ActiveModal::SlideContextMenu { slide_idx, position } => {
                     crate::ui::modals::view_slide_context_menu_modal(
                         self.theme,
@@ -4471,28 +4449,24 @@ impl SlideEditorApp {
                     block_label,
                     block_id,
                     position,
-                } => {
-                    crate::ui::modals::view_block_context_menu_modal(
-                        self.theme,
-                        *slide_idx,
-                        *block_idx,
-                        range.clone(),
-                        block_label,
-                        block_id,
-                        *position,
-                        self.window_size,
-                    )
-                },
+                } => crate::ui::modals::view_block_context_menu_modal(
+                    self.theme,
+                    *slide_idx,
+                    *block_idx,
+                    range.clone(),
+                    block_label,
+                    block_id,
+                    *position,
+                    self.window_size,
+                ),
                 | ActiveModal::FontSelector {
                     search_query,
                     current_font,
-                } => {
-                    crate::ui::modals::view_font_selector_modal(
-                        self.theme,
-                        search_query,
-                        current_font,
-                    )
-                },
+                } => crate::ui::modals::view_font_selector_modal(
+                    self.theme,
+                    search_query,
+                    current_font,
+                ),
                 | ActiveModal::HeaderFooter {
                     header_enabled,
                     header_left,
@@ -4501,18 +4475,16 @@ impl SlideEditorApp {
                     footer_left,
                     footer_right_mode,
                     footer_right_custom,
-                } => {
-                    crate::ui::modals::view_header_footer_modal(
-                        self.theme,
-                        *header_enabled,
-                        header_left,
-                        header_right,
-                        *footer_enabled,
-                        footer_left,
-                        *footer_right_mode,
-                        footer_right_custom,
-                    )
-                },
+                } => crate::ui::modals::view_header_footer_modal(
+                    self.theme,
+                    *header_enabled,
+                    header_left,
+                    header_right,
+                    *footer_enabled,
+                    footer_left,
+                    *footer_right_mode,
+                    footer_right_custom,
+                ),
                 | ActiveModal::TemplateLibrary => view_template_library_modal(self.theme),
                 | ActiveModal::PresentationHealth(issues, pacing) => {
                     view_presentation_health_modal(self.theme, issues, pacing)
