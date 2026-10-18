@@ -41,11 +41,9 @@ fn main() -> iced::Result {
             app.doc.format.label()
         )
     })
-    .theme(|app: &SlideEditorApp| {
-        match app.theme {
-            | AppTheme::Light => iced::Theme::Light,
-            | AppTheme::Dark => iced::Theme::Dark,
-        }
+    .theme(|app: &SlideEditorApp| match app.theme {
+        | AppTheme::Light => iced::Theme::Light,
+        | AppTheme::Dark => iced::Theme::Dark,
     })
     .window_size(iced::Size::new(1280.0, 820.0))
     .centered()

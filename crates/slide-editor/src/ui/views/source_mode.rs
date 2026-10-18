@@ -2,9 +2,7 @@
 
 use crate::app::Message;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use crate::ui::typst_highlighter::TypstHighlightSettings;
 use crate::ui::typst_highlighter::TypstHighlighter;
 use crate::ui::typst_highlighter::to_typst_format;
@@ -103,21 +101,19 @@ pub fn view_source_mode<'a>(
             .spacing(6),
         )
         .padding(10)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_surface())),
-                border: iced::border::Border {
-                    color: theme.accent().scale_alpha(0.7),
-                    width: 1.5,
-                    radius: iced::border::Radius::from(6.0),
-                },
-                shadow: iced::Shadow {
-                    color: iced::Color::BLACK.scale_alpha(0.35),
-                    offset: iced::Vector::new(0.0, 3.0),
-                    blur_radius: 8.0,
-                },
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_surface())),
+            border: iced::border::Border {
+                color: theme.accent().scale_alpha(0.7),
+                width: 1.5,
+                radius: iced::border::Radius::from(6.0),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color::BLACK.scale_alpha(0.35),
+                offset: iced::Vector::new(0.0, 3.0),
+                blur_radius: 8.0,
+            },
+            ..container::Style::default()
         });
 
         Some(
@@ -171,11 +167,9 @@ pub fn view_source_mode<'a>(
     container(content_col)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(move |_| {
-            container::Style {
-                background: Some(iced::Background::Color(theme.bg_canvas())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(theme.bg_canvas())),
+            ..container::Style::default()
         })
         .into()
 }

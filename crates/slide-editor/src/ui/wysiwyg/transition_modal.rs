@@ -5,9 +5,7 @@
 
 use crate::app::Message;
 use crate::ui::theme::AppTheme;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use iced::Alignment;
 use iced::Background;
 use iced::Border;
@@ -145,12 +143,10 @@ pub fn view_slide_transition_modal<'a>(
     // 1. Header
     let badge = container(text("PAGE TRANSITION").size(10).color(theme.accent()))
         .padding([2, 8])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(4.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(4.0),
+            ..container::Style::default()
         });
 
     let target_pill = container(
@@ -163,12 +159,10 @@ pub fn view_slide_transition_modal<'a>(
         .color(theme.text_secondary()),
     )
     .padding([2, 8])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(4.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: border::rounded(4.0),
+        ..container::Style::default()
     });
 
     let title_row = row![
@@ -232,12 +226,10 @@ pub fn view_slide_transition_modal<'a>(
 
             let item_badge = container(text(item.badge).size(9).color(badge_fg))
                 .padding([2, 6])
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(badge_bg)),
-                        border: border::rounded(3.0),
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(badge_bg)),
+                    border: border::rounded(3.0),
+                    ..container::Style::default()
                 });
 
             let name_label = text(item.name).size(13).color(if is_selected {
@@ -260,23 +252,19 @@ pub fn view_slide_transition_modal<'a>(
             let status_tag: Element<'a, Message> = if is_selected {
                 container(text("ACTIVE").size(10).color(Color::WHITE))
                     .padding([3, 8])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(Background::Color(theme.accent())),
-                            border: border::rounded(4.0),
-                            ..container::Style::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(theme.accent())),
+                        border: border::rounded(4.0),
+                        ..container::Style::default()
                     })
                     .into()
             } else {
                 container(text("Select").size(10).color(theme.text_muted()))
                     .padding([3, 8])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(Background::Color(theme.bg_subtle())),
-                            border: border::rounded(4.0),
-                            ..container::Style::default()
-                        }
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(theme.bg_subtle())),
+                        border: border::rounded(4.0),
+                        ..container::Style::default()
                     })
                     .into()
             };
@@ -420,12 +408,10 @@ pub fn view_element_transition_modal<'a>(
             .color(theme.accent()),
     )
     .padding([2, 8])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(4.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: border::rounded(4.0),
+        ..container::Style::default()
     });
 
     let target_pill = container(
@@ -438,12 +424,10 @@ pub fn view_element_transition_modal<'a>(
         .color(theme.text_secondary()),
     )
     .padding([2, 8])
-    .style(move |_| {
-        container::Style {
-            background: Some(Background::Color(theme.bg_subtle())),
-            border: border::rounded(4.0),
-            ..container::Style::default()
-        }
+    .style(move |_| container::Style {
+        background: Some(Background::Color(theme.bg_subtle())),
+        border: border::rounded(4.0),
+        ..container::Style::default()
     });
 
     let title_row = row![
@@ -483,12 +467,10 @@ pub fn view_element_transition_modal<'a>(
         }));
     let order_display = container(text(format!("Step {order}")).size(13).color(theme.accent()))
         .padding([3, 12])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(4.0),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(4.0),
+            ..container::Style::default()
         });
     let btn_inc = button(text("+").size(12))
         .padding([2, 8])

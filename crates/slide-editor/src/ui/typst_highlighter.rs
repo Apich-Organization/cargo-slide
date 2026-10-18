@@ -7,9 +7,7 @@ use iced::Color;
 use iced::Font;
 use iced::advanced::text::Highlighter;
 use iced::advanced::text::highlighter::Format;
-use iced::advanced::text::highlighter::{
-    self,
-};
+use iced::advanced::text::highlighter::{self};
 use std::ops::Range;
 use typst_syntax::LinkedNode;
 use typst_syntax::SyntaxKind;

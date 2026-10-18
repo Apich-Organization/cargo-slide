@@ -7,9 +7,7 @@ use crate::document::DocumentFormat;
 use crate::ui::theme::AppTheme;
 use crate::ui::theme::RADIUS_FULL;
 use crate::ui::theme::RADIUS_XS;
-use crate::ui::theme::{
-    self,
-};
+use crate::ui::theme::{self};
 use iced::Alignment;
 use iced::Background;
 use iced::Border;
@@ -88,11 +86,9 @@ pub fn view_statusbar<'a>(
                 .width(Length::Fixed(1.0))
                 .height(Length::Fixed(10.0)),
         )
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.border_color())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.border_color())),
+            ..container::Style::default()
         })
     };
 
@@ -115,20 +111,18 @@ pub fn view_statusbar<'a>(
             let dot = container(Space::new())
                 .width(Length::Fixed(7.0))
                 .height(Length::Fixed(7.0))
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(theme.success())),
-                        border: Border {
-                            radius: border::Radius::from(RADIUS_FULL),
-                            ..Border::default()
-                        },
-                        shadow: Shadow {
-                            color: theme.success().scale_alpha(0.55),
-                            offset: Vector::ZERO,
-                            blur_radius: 5.0,
-                        },
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(theme.success())),
+                    border: Border {
+                        radius: border::Radius::from(RADIUS_FULL),
+                        ..Border::default()
+                    },
+                    shadow: Shadow {
+                        color: theme.success().scale_alpha(0.55),
+                        offset: Vector::ZERO,
+                        blur_radius: 5.0,
+                    },
+                    ..container::Style::default()
                 });
             row![
                 dot,
@@ -142,20 +136,18 @@ pub fn view_statusbar<'a>(
             let dot = container(Space::new())
                 .width(Length::Fixed(7.0))
                 .height(Length::Fixed(7.0))
-                .style(move |_| {
-                    container::Style {
-                        background: Some(Background::Color(theme.accent())),
-                        border: Border {
-                            radius: border::Radius::from(RADIUS_FULL),
-                            ..Border::default()
-                        },
-                        shadow: Shadow {
-                            color: theme.accent().scale_alpha(0.60),
-                            offset: Vector::ZERO,
-                            blur_radius: 6.0,
-                        },
-                        ..container::Style::default()
-                    }
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(theme.accent())),
+                    border: Border {
+                        radius: border::Radius::from(RADIUS_FULL),
+                        ..Border::default()
+                    },
+                    shadow: Shadow {
+                        color: theme.accent().scale_alpha(0.60),
+                        offset: Vector::ZERO,
+                        blur_radius: 6.0,
+                    },
+                    ..container::Style::default()
                 });
             row![dot, text("Compiling...").size(11).color(theme.accent())]
                 .spacing(7)
@@ -210,22 +202,18 @@ pub fn view_statusbar<'a>(
 
     let mode_badge = container(text(mode_str).size(10).color(theme.text_secondary()))
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(RADIUS_XS),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(RADIUS_XS),
+            ..container::Style::default()
         });
 
     let format_badge = container(text(format.label()).size(10).color(theme.text_muted()))
         .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(RADIUS_XS),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(RADIUS_XS),
+            ..container::Style::default()
         });
 
     let zoom_out = button(text("-").size(11))
@@ -257,11 +245,9 @@ pub fn view_statusbar<'a>(
                 .width(Length::Fixed(1.0))
                 .height(Length::Fixed(10.0)),
         )
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.border_color())),
-                ..container::Style::default()
-            }
+        .style(move |_| container::Style {
+            background: Some(Background::Color(theme.border_color())),
+            ..container::Style::default()
         })
     };
 
@@ -276,17 +262,15 @@ pub fn view_statusbar<'a>(
             .align_y(Alignment::Center),
         )
         .padding([2, 6])
-        .style(move |_theme, _status| {
-            button::Style {
-                background: Some(Background::Color(Color::from_rgba8(245, 158, 11, 0.12))),
-                border: Border {
-                    color: Color::from_rgba8(245, 158, 11, 0.35),
-                    width: 1.0,
-                    radius: border::Radius::from(RADIUS_XS),
-                },
-                text_color: amber,
-                ..button::Style::default()
-            }
+        .style(move |_theme, _status| button::Style {
+            background: Some(Background::Color(Color::from_rgba8(245, 158, 11, 0.12))),
+            border: Border {
+                color: Color::from_rgba8(245, 158, 11, 0.35),
+                width: 1.0,
+                radius: border::Radius::from(RADIUS_XS),
+            },
+            text_color: amber,
+            ..button::Style::default()
         })
         .on_press(Message::SaveDocument)
     } else {
@@ -300,17 +284,15 @@ pub fn view_statusbar<'a>(
             .align_y(Alignment::Center),
         )
         .padding([2, 6])
-        .style(move |_theme, _status| {
-            button::Style {
-                background: Some(Background::Color(Color::from_rgba8(34, 197, 94, 0.10))),
-                border: Border {
-                    color: Color::from_rgba8(34, 197, 94, 0.25),
-                    width: 1.0,
-                    radius: border::Radius::from(RADIUS_XS),
-                },
-                text_color: green,
-                ..button::Style::default()
-            }
+        .style(move |_theme, _status| button::Style {
+            background: Some(Background::Color(Color::from_rgba8(34, 197, 94, 0.10))),
+            border: Border {
+                color: Color::from_rgba8(34, 197, 94, 0.25),
+                width: 1.0,
+                radius: border::Radius::from(RADIUS_XS),
+            },
+            text_color: green,
+            ..button::Style::default()
         })
     };
 

@@ -27,39 +27,33 @@ pub fn execute(
     let target_file = resolved_file.as_path();
 
     match format.to_lowercase().as_str() {
-        | "slide" | "package" => {
-            crate::commands::pack::execute(
-                target_file,
-                output,
-                animation,
-                source,
-                encrypt,
-                piv_slot_str,
-                sign_slot_str,
-                cert_path,
-                pin,
-            )
-        },
+        | "slide" | "package" => crate::commands::pack::execute(
+            target_file,
+            output,
+            animation,
+            source,
+            encrypt,
+            piv_slot_str,
+            sign_slot_str,
+            cert_path,
+            pin,
+        ),
         | "wasm" | "web" | "csr" => execute_wasm(target_file, output, animation),
-        | "binary" | "exe" | "elf" | "" => {
-            execute_binary(
-                target_file,
-                output,
-                animation,
-                target,
-                encrypt,
-                piv_slot_str,
-                sign_slot_str,
-                cert_path,
-                pin,
-            )
-        },
-        | other => {
-            Err(
-                format!("Unknown build format: '{other}'. Supported formats: binary, slide, wasm")
-                    .into(),
-            )
-        },
+        | "binary" | "exe" | "elf" | "" => execute_binary(
+            target_file,
+            output,
+            animation,
+            target,
+            encrypt,
+            piv_slot_str,
+            sign_slot_str,
+            cert_path,
+            pin,
+        ),
+        | other => Err(format!(
+            "Unknown build format: '{other}'. Supported formats: binary, slide, wasm"
+        )
+        .into()),
     }
 }
 

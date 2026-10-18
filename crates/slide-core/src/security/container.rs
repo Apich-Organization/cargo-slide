@@ -153,8 +153,7 @@ impl EncryptedSlideContainer {
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
                         && ASSET_EXTS.iter().any(|&e| e.eq_ignore_ascii_case(ext))
                         && let Some(name) = path.file_name().and_then(|s| s.to_str())
-                    {
-                        if name != "deck.json"
+                        && name != "deck.json"
                             && name != "manifest.json"
                             && !name.ends_with(".slide")
                             && !name.contains("presentation")
@@ -167,7 +166,6 @@ impl EncryptedSlideContainer {
                             header.set_cksum();
                             let _ = tar_builder.append_data(&mut header, name, &data[..]);
                         }
-                    }
                 }
             }
         }

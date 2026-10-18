@@ -158,10 +158,7 @@ impl PcscLibrary {
                     let s = CString::new($str).map_err(|e| e.to_string())?;
                     let ptr = unsafe { GetProcAddress(handle, s.as_ptr()) };
                     if ptr.is_null() {
-                        return Err(format!(
-                            "Symbol {} not found in winscard.dll",
-                            $str
-                        ));
+                        return Err(format!("Symbol {} not found in winscard.dll", $str));
                     }
                     unsafe { std::mem::transmute(ptr) }
                 }};
@@ -243,10 +240,7 @@ impl PcscLibrary {
                     let s = CString::new($str).map_err(|e| e.to_string())?;
                     let ptr = unsafe { libc::dlsym(handle, s.as_ptr()) };
                     if ptr.is_null() {
-                        return Err(format!(
-                            "Symbol {} not found in PC/SC library",
-                            $str
-                        ));
+                        return Err(format!("Symbol {} not found in PC/SC library", $str));
                     }
                     unsafe { std::mem::transmute(ptr) }
                 }};

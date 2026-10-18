@@ -1488,13 +1488,11 @@ fn test_interactive_editing_and_inserting_complex_elements() {
         let table_block = app.engine.slides[0]
             .blocks
             .iter()
-            .find(|b| {
-                match b {
-                    | slide_editor::model::ast_engine::WysiwygBlock::FuncCall {
-                        callee, ..
-                    } => callee == "table",
-                    | _ => false,
-                }
+            .find(|b| match b {
+                | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
+                    callee == "table"
+                },
+                | _ => false,
             })
             .expect("Table block must exist");
         table_block.range()
@@ -1513,13 +1511,11 @@ fn test_interactive_editing_and_inserting_complex_elements() {
         let re_table_block = app.engine.slides[0]
             .blocks
             .iter()
-            .find(|b| {
-                match b {
-                    | slide_editor::model::ast_engine::WysiwygBlock::FuncCall {
-                        callee, ..
-                    } => callee == "table",
-                    | _ => false,
-                }
+            .find(|b| match b {
+                | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
+                    callee == "table"
+                },
+                | _ => false,
             })
             .expect("Re-parsed table block must exist");
         (
@@ -2546,13 +2542,11 @@ fn test_table_editing_on_page_preserves_active_slide_and_syntax() {
     let table_block = app.engine.slides[2]
         .blocks
         .iter()
-        .find(|b| {
-            match b {
-                | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
-                    callee == "table"
-                },
-                | _ => false,
-            }
+        .find(|b| match b {
+            | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
+                callee == "table"
+            },
+            | _ => false,
         })
         .expect("Table block must exist on slide 2");
 
@@ -2634,13 +2628,11 @@ fn test_table_editing_on_page_preserves_active_slide_and_syntax() {
     let slide2_table = app.engine.slides[2]
         .blocks
         .iter()
-        .find(|b| {
-            match b {
-                | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
-                    callee == "table"
-                },
-                | _ => false,
-            }
+        .find(|b| match b {
+            | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
+                callee == "table"
+            },
+            | _ => false,
         })
         .expect("Table block must exist on slide 2");
 
@@ -3038,13 +3030,11 @@ fn test_apply_complex_modal_anchors_active_slide() {
     let table_block = app.engine.slides[1]
         .blocks
         .iter()
-        .find(|b| {
-            match b {
-                | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
-                    callee == "table"
-                },
-                | _ => false,
-            }
+        .find(|b| match b {
+            | slide_editor::model::ast_engine::WysiwygBlock::FuncCall { callee, .. } => {
+                callee == "table"
+            },
+            | _ => false,
         })
         .expect("Table block on slide 2 must exist");
 
