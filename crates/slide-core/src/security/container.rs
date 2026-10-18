@@ -153,20 +153,18 @@ impl EncryptedSlideContainer {
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
                         && ASSET_EXTS.iter().any(|&e| e.eq_ignore_ascii_case(ext))
                         && let Some(name) = path.file_name().and_then(|s| s.to_str())
+                        && name != "deck.json"
+                        && name != "manifest.json"
+                        && !name.ends_with(".slide")
+                        && !name.contains("presentation")
+                        && added_paths.insert(name.to_string())
+                        && let Ok(data) = std::fs::read(&path)
                     {
-                        if name != "deck.json"
-                            && name != "manifest.json"
-                            && !name.ends_with(".slide")
-                            && !name.contains("presentation")
-                            && added_paths.insert(name.to_string())
-                            && let Ok(data) = std::fs::read(&path)
-                        {
-                            let mut header = tar::Header::new_gnu();
-                            header.set_size(data.len() as u64);
-                            header.set_mode(0o644);
-                            header.set_cksum();
-                            let _ = tar_builder.append_data(&mut header, name, &data[..]);
-                        }
+                        let mut header = tar::Header::new_gnu();
+                        header.set_size(data.len() as u64);
+                        header.set_mode(0o644);
+                        header.set_cksum();
+                        let _ = tar_builder.append_data(&mut header, name, &data[..]);
                     }
                 }
             }

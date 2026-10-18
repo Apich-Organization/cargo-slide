@@ -281,8 +281,8 @@ pub fn rsa_verify_sha3_512(
     }
 
     let mut sep_idx = None;
-    for i in 2..em.len() {
-        if em[i] == 0x00 {
+    for (i, &byte) in em.iter().enumerate().skip(2) {
+        if byte == 0x00 {
             if i < 10 {
                 return Err(SlideError::IntegrityCheckFailed(
                     "RSA PKCS#1 v1.5 verification failed: insufficient padding bytes".to_string(),
@@ -290,7 +290,7 @@ pub fn rsa_verify_sha3_512(
             }
             sep_idx = Some(i);
             break;
-        } else if em[i] != 0xFF {
+        } else if byte != 0xFF {
             return Err(SlideError::IntegrityCheckFailed(
                 "RSA PKCS#1 v1.5 verification failed: corrupted padding (expected 0xFF)"
                     .to_string(),
@@ -323,9 +323,9 @@ pub fn rsa_verify_sha3_512(
     let prefix = &digest_info[..digest_info.len() - 64];
     let is_valid_prefix = prefix == &SHA3_512_DIGEST_INFO_PREFIX[..]
         || (prefix.len() == 19
-            && &prefix[..14] == &SHA3_512_DIGEST_INFO_PREFIX[..14]
+            && prefix[..14] == SHA3_512_DIGEST_INFO_PREFIX[..14]
             && (prefix[14] == 0x0A || prefix[14] == 0x03)
-            && &prefix[15..] == &SHA3_512_DIGEST_INFO_PREFIX[15..]);
+            && prefix[15..] == SHA3_512_DIGEST_INFO_PREFIX[15..]);
 
     if !is_valid_prefix {
         return Err(SlideError::IntegrityCheckFailed(
