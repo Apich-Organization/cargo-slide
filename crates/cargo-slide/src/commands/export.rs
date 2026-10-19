@@ -75,13 +75,23 @@ pub fn parse_page_selection(
 }
 
 /// Export presentation to PDF, SVG, PNG, .slide, or WASM CSR formats.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn execute(
     file: &Path,
     format: &str,
     output: Option<PathBuf>,
     pages: Option<&str>,
     scale: f32,
+    encrypt: bool,
+    auth_mode: &str,
+    passphrase: Option<&str>,
+    mnemonic: Option<&str>,
+    mnemonic_words: usize,
+    token_ttl: u64,
+    piv_slot: &str,
+    sign_slot: &str,
+    cert: Option<&Path>,
+    pin: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let resolved_file = slide_core::compiler::resolve_presentation_target(file)?;
     let target_file = resolved_file.as_path();
@@ -275,15 +285,29 @@ pub fn execute(
                 output,
                 "fade",
                 false,
-                false,
-                "9d",
-                "9c",
-                None,
-                None,
+                encrypt,
+                auth_mode,
+                passphrase,
+                mnemonic,
+                mnemonic_words,
+                piv_slot,
+                sign_slot,
+                cert,
+                pin,
             )?;
         },
         | "wasm" | "web" | "csr" => {
-            crate::commands::build::execute_wasm(target_file, output, "fade")?;
+            crate::commands::build::execute_wasm(
+                target_file,
+                output,
+                "fade",
+                encrypt,
+                auth_mode,
+                passphrase,
+                mnemonic,
+                mnemonic_words,
+                token_ttl,
+            )?;
         },
         | "markdown" | "md" => {
             let out_file = output.unwrap_or_else(|| PathBuf::from(format!("{stem}-handout.md")));

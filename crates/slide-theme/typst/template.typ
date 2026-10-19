@@ -23,7 +23,7 @@
     [
       === The Cargo Slide Solution
       #callout(title: "Modern Geek Stack")[
-        - *Typst*: Blazing fast compile, gorgeous math & layout.
+        - *Typst*: Fast compile, precise math & typography.
         - *Rust*: Native GUI runtime, 60 FPS vector rendering.
         - *Zero Dependency*: Standalone single binary output!
       ]

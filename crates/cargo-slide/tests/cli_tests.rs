@@ -495,3 +495,19 @@ fn test_cli_check_target_duration_and_json() {
     assert_eq!(parsed.get("target_minutes").unwrap(), 10);
     assert!(parsed.get("estimated_minutes").is_some());
 }
+
+#[test]
+fn test_cli_build_cross_platform_flags_and_help() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let help_res = Command::new(bin)
+        .arg("build")
+        .arg("--help")
+        .output()
+        .expect("cargo-slide build --help");
+    assert!(help_res.status.success());
+    let help_txt = String::from_utf8_lossy(&help_res.stdout);
+    assert!(help_txt.contains("--target"));
+    assert!(help_txt.contains("--cross"));
+    assert!(help_txt.contains("--cross-tool"));
+    assert!(help_txt.contains("--all-targets"));
+}

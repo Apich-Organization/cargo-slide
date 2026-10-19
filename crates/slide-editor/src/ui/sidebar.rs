@@ -130,6 +130,7 @@ pub fn view_sidebar<'a>(
             .padding([1, 4])
     };
 
+    let has_source = doc.has_editable_source();
     let mut items = column![].spacing(6);
     let total = doc.total_slides();
 
@@ -145,8 +146,10 @@ pub fn view_sidebar<'a>(
 
         let slide_trans = slides.get(idx).and_then(|s| s.transition.as_deref());
 
-        // Quick insert button above this slide
-        items = items.push(insert_divider(idx));
+        // Quick insert button above this slide only if package has editable source
+        if has_source {
+            items = items.push(insert_divider(idx));
+        }
 
         let item_element: Element<'a, Message> = if view_mode == SidebarViewMode::Thumbnails {
             // Rendered Page Thumbnail Card (16:9 ratio)
@@ -303,16 +306,22 @@ pub fn view_sidebar<'a>(
                 })
                 .on_press(Message::SelectSlide(idx));
 
-            mouse_area(card_btn)
-                .on_right_press(Message::OpenSlideContextMenu(idx))
-                .into()
+            if has_source {
+                mouse_area(card_btn)
+                    .on_right_press(Message::OpenSlideContextMenu(idx))
+                    .into()
+            } else {
+                card_btn.into()
+            }
         } else {
             // Outline list item
-            let active_bar = container(
-                Space::new()
-                    .width(Length::Fixed(3.0))
-                    .height(Length::Fixed(22.0)),
-            )
+            let active_bar = container(Space::new().width(Length::Fixed(3.0)).height(
+                Length::Fixed(if slide_trans.is_some() {
+                    32.0
+                } else {
+                    22.0
+                }),
+            ))
             .style(move |_| {
                 container::Style {
                     background: Some(iced::Background::Color(if is_selected {
@@ -344,37 +353,47 @@ pub fn view_sidebar<'a>(
                 }
             });
 
-            let title_label = text(title).size(12).color(if is_selected {
-                theme.accent()
-            } else {
-                theme.text_primary()
-            });
+            let title_label = text(title)
+                .size(12)
+                .color(if is_selected {
+                    theme.accent()
+                } else {
+                    theme.text_primary()
+                })
+                .width(Length::Fill);
 
             let trans_tag: Option<Element<'a, Message>> = slide_trans.map(|t| {
-                container(text(t.to_uppercase()).size(9).color(theme.accent_cyan()))
-                    .padding([1, 5])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.bg_subtle())),
-                            border: iced::border::rounded(RADIUS_XS),
-                            ..container::Style::default()
-                        }
-                    })
-                    .into()
+                container(
+                    row![
+                        text("⚡").size(8).color(theme.accent_cyan()),
+                        text(t.to_uppercase()).size(9).color(theme.accent_cyan()),
+                    ]
+                    .spacing(3)
+                    .align_y(Alignment::Center),
+                )
+                .padding([1, 6])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(RADIUS_XS),
+                        ..container::Style::default()
+                    }
+                })
+                .into()
             });
 
-            let mut right_info = row![title_label].spacing(6).align_y(Alignment::Center);
+            let mut info_col = column![title_label].spacing(4).width(Length::Fill);
             if let Some(tag) = trans_tag {
-                right_info = right_info.push(tag);
+                info_col = info_col.push(tag);
             }
 
             let item_inner = row![
                 active_bar,
                 Space::new().width(Length::Fixed(2.0)),
                 num_badge,
-                right_info,
+                info_col,
             ]
-            .spacing(6)
+            .spacing(8)
             .align_y(Alignment::Center);
 
             let item_btn = button(item_inner)
@@ -412,45 +431,59 @@ pub fn view_sidebar<'a>(
                 })
                 .on_press(Message::SelectSlide(idx));
 
-            mouse_area(item_btn)
-                .on_right_press(Message::OpenSlideContextMenu(idx))
-                .into()
+            if has_source {
+                mouse_area(item_btn)
+                    .on_right_press(Message::OpenSlideContextMenu(idx))
+                    .into()
+            } else {
+                item_btn.into()
+            }
         };
 
         items = items.push(item_element);
     }
 
-    // Insert divider at the very end
-    items = items.push(insert_divider(total));
+    if has_source {
+        // Insert divider at the very end
+        items = items.push(insert_divider(total));
+    }
 
-    let add_slide_btn = button(
-        row![
-            text("+").size(14).color(theme.accent()),
-            text("New Slide").size(12).color(theme.accent())
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding([8, 12])
-    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-    .on_press(Message::InsertSlide);
-
-    let content = column![
+    let mut content = column![
         header,
         scrollable(items.padding([4, 10]))
             .id(iced::widget::Id::new("sidebar_scrollable"))
             .height(Length::Fill),
-        container(add_slide_btn).padding([8, 10])
     ];
+
+    if has_source {
+        let add_slide_btn = button(
+            row![
+                text("+").size(14).color(theme.accent()),
+                text("New Slide").size(12).color(theme.accent())
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding([8, 12])
+        .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+        .on_press(Message::InsertSlide);
+
+        content = content.push(container(add_slide_btn).padding([8, 10]));
+    }
 
     let base_width = if view_mode == SidebarViewMode::Thumbnails {
         260.0
     } else {
-        240.0
+        280.0
     };
-    // Proportional sidebar: shrink at narrow widths, never exceed base, never go below 160px
-    let sidebar_width = (window_width * 0.2).clamp(160.0, base_width);
+    // Proportional sidebar: shrink at narrow widths, never exceed base, never go below min_width
+    let min_width = if view_mode == SidebarViewMode::Thumbnails {
+        180.0
+    } else {
+        220.0
+    };
+    let sidebar_width = (window_width * 0.22).clamp(min_width, base_width);
 
     container(content)
         .width(Length::Fixed(sidebar_width))

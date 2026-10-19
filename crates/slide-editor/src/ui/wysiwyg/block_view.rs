@@ -147,7 +147,29 @@ pub enum FormatAction {
 /// - `*bold text*`
 /// - `_italic text_`
 /// - `` `code` ``
+fn intern_font_name(name: &str) -> &'static str {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static INTERNED: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+    let mut lock = INTERNED.lock().unwrap_or_else(|p| p.into_inner());
+    let set = lock.get_or_insert_with(HashSet::new);
+    if let Some(&s) = set.get(name) {
+        s
+    } else {
+        let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+        set.insert(leaked);
+        leaked
+    }
+}
+
+/// Helper to parse Typst inline markup into iced Rich text Spans:
+/// Supports:
+/// - `*bold text*`
+/// - `_italic text_`
+/// - `` `code` ``
 /// - `$math$`
+/// - `#font("Font Name")[custom font text]`
+/// - `#text(font: "Font Name")[custom font text]`
 #[must_use]
 pub fn render_rich_text<'a>(
     raw_text: &'a str,
@@ -158,9 +180,9 @@ pub fn render_rich_text<'a>(
     let mut spans = Vec::new();
     let mut segments = Vec::new();
 
-    parse_typst_segments(raw_text, false, false, &mut segments);
+    parse_typst_segments(raw_text, None, false, false, &mut segments);
 
-    for (seg_text, bold, italic, code, math) in segments {
+    for (seg_text, custom_font, bold, italic, code, math) in segments {
         if seg_text.is_empty() {
             continue;
         }
@@ -190,8 +212,14 @@ pub fn render_rich_text<'a>(
             } else {
                 iced::font::Style::Normal
             };
+            let family = if let Some(fname) = custom_font {
+                iced::font::Family::Name(intern_font_name(fname))
+            } else {
+                iced::font::Family::SansSerif
+            };
             (
                 iced::Font {
+                    family,
                     weight,
                     style,
                     ..iced::Font::DEFAULT
@@ -219,15 +247,16 @@ pub fn render_rich_text<'a>(
 
 fn parse_typst_segments<'a>(
     input: &'a str,
+    font_family: Option<&'a str>,
     is_bold: bool,
     is_italic: bool,
-    out: &mut Vec<(&'a str, bool, bool, bool, bool)>,
+    out: &mut Vec<(&'a str, Option<&'a str>, bool, bool, bool, bool)>,
 ) {
     if input.is_empty() {
         return;
     }
 
-    let mut earliest_delim: Option<(usize, char, usize, usize)> = None;
+    let mut earliest_delim: Option<(usize, char, usize, usize, Option<&'a str>, usize)> = None;
 
     // Check inline `...` (single backtick, not part of ``` code fences)
     let bytes = input.as_bytes();
@@ -248,7 +277,7 @@ fn parse_typst_segments<'a>(
                 if !close_is_fence {
                     let end_pos = pos + 1 + close_pos;
                     if earliest_delim.is_none() || pos < earliest_delim.unwrap().0 {
-                        earliest_delim = Some((pos, '`', pos + 1, end_pos));
+                        earliest_delim = Some((pos, '`', pos + 1, end_pos, None, end_pos));
                     }
                     break;
                 }
@@ -265,7 +294,7 @@ fn parse_typst_segments<'a>(
     {
         let end_pos = pos + 1 + end_rel;
         if earliest_delim.is_none() || pos < earliest_delim.unwrap().0 {
-            earliest_delim = Some((pos, '$', pos + 1, end_pos));
+            earliest_delim = Some((pos, '$', pos + 1, end_pos, None, end_pos));
         }
     }
 
@@ -288,7 +317,7 @@ fn parse_typst_segments<'a>(
                     && !inner.ends_with('\n')
                 {
                     if earliest_delim.is_none() || pos < earliest_delim.unwrap().0 {
-                        earliest_delim = Some((pos, '*', pos + 1, end_pos));
+                        earliest_delim = Some((pos, '*', pos + 1, end_pos, None, end_pos));
                     }
                     break;
                 }
@@ -316,7 +345,7 @@ fn parse_typst_segments<'a>(
                     && !inner.ends_with('\n')
                 {
                     if earliest_delim.is_none() || pos < earliest_delim.unwrap().0 {
-                        earliest_delim = Some((pos, '_', pos + 1, end_pos));
+                        earliest_delim = Some((pos, '_', pos + 1, end_pos, None, end_pos));
                     }
                     break;
                 }
@@ -325,26 +354,102 @@ fn parse_typst_segments<'a>(
         }
     }
 
-    if let Some((start_pos, delim, inner_start, inner_end)) = earliest_delim {
+    // Check #font("...")[...]
+    if let Some(pos) = input.find("#font(") {
+        let after_call = &input[pos + 6..];
+        if let Some(first_quote) = after_call.find('"')
+            && let Some(second_quote) = after_call[first_quote + 1..].find('"')
+        {
+            let font_name = &after_call[first_quote + 1..first_quote + 1 + second_quote];
+            let after_quotes = &after_call[first_quote + 1 + second_quote + 1..];
+            if let Some(bracket_start_rel) = after_quotes.find('[') {
+                let bracket_start =
+                    pos + 6 + (first_quote + 1 + second_quote + 1) + bracket_start_rel;
+                let inside_brackets = &input[bracket_start + 1..];
+                if let Some(bracket_end_rel) =
+                    crate::model::ast_engine::find_balanced_closing_bracket(inside_brackets)
+                {
+                    let inner_start = bracket_start + 1;
+                    let inner_end = bracket_start + 1 + bracket_end_rel;
+                    let full_end = inner_end;
+                    if earliest_delim.is_none() || pos < earliest_delim.unwrap().0 {
+                        earliest_delim =
+                            Some((pos, 'F', inner_start, inner_end, Some(font_name), full_end));
+                    }
+                }
+            }
+        }
+    }
+
+    // Check #text(font: "...")[...]
+    if let Some(pos) = input.find("#text(") {
+        let after_call = &input[pos + 6..];
+        if let Some(closing_paren_rel) =
+            crate::model::ast_engine::find_balanced_closing_paren(after_call)
+        {
+            let args_slice = &after_call[..closing_paren_rel];
+            if let Some(font_pos) = args_slice.find("font:") {
+                let after_font = &args_slice[font_pos + 5..];
+                if let Some(first_quote) = after_font.find('"')
+                    && let Some(second_quote) = after_font[first_quote + 1..].find('"')
+                {
+                    let font_name = &after_font[first_quote + 1..first_quote + 1 + second_quote];
+                    let after_paren = &after_call[closing_paren_rel + 1..];
+                    if let Some(bracket_start_rel) = after_paren.find('[') {
+                        let bracket_start = pos + 6 + closing_paren_rel + 1 + bracket_start_rel;
+                        let inside_brackets = &input[bracket_start + 1..];
+                        if let Some(bracket_end_rel) =
+                            crate::model::ast_engine::find_balanced_closing_bracket(inside_brackets)
+                        {
+                            let inner_start = bracket_start + 1;
+                            let inner_end = bracket_start + 1 + bracket_end_rel;
+                            let full_end = inner_end;
+                            if earliest_delim.is_none() || pos < earliest_delim.unwrap().0 {
+                                earliest_delim = Some((
+                                    pos,
+                                    'T',
+                                    inner_start,
+                                    inner_end,
+                                    Some(font_name),
+                                    full_end,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some((start_pos, delim, inner_start, inner_end, custom_font, full_end)) = earliest_delim
+    {
         if start_pos > 0 {
-            out.push((&input[..start_pos], is_bold, is_italic, false, false));
+            out.push((
+                &input[..start_pos],
+                font_family,
+                is_bold,
+                is_italic,
+                false,
+                false,
+            ));
         }
 
         let inner_text = &input[inner_start..inner_end];
         match delim {
-            | '`' => out.push((inner_text, false, false, true, false)),
-            | '$' => out.push((inner_text, false, false, false, true)),
-            | '*' => parse_typst_segments(inner_text, true, is_italic, out),
-            | '_' => parse_typst_segments(inner_text, is_bold, true, out),
-            | _ => out.push((inner_text, is_bold, is_italic, false, false)),
+            | '`' => out.push((inner_text, font_family, false, false, true, false)),
+            | '$' => out.push((inner_text, font_family, false, false, false, true)),
+            | '*' => parse_typst_segments(inner_text, font_family, true, is_italic, out),
+            | '_' => parse_typst_segments(inner_text, font_family, is_bold, true, out),
+            | 'F' | 'T' => parse_typst_segments(inner_text, custom_font, is_bold, is_italic, out),
+            | _ => out.push((inner_text, font_family, is_bold, is_italic, false, false)),
         }
 
-        let next_start = inner_end + 1;
+        let next_start = full_end + 1;
         if next_start < input.len() {
-            parse_typst_segments(&input[next_start..], is_bold, is_italic, out);
+            parse_typst_segments(&input[next_start..], font_family, is_bold, is_italic, out);
         }
     } else {
-        out.push((input, is_bold, is_italic, false, false));
+        out.push((input, font_family, is_bold, is_italic, false, false));
     }
 }
 

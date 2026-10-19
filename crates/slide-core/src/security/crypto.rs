@@ -198,14 +198,22 @@ pub const SHA3_512_DIGEST_INFO_PREFIX: [u8; 19] = [
 ];
 
 /// Pad a 64-byte SHA3-512 digest into standard EMSA-PKCS1-v1_5 format for on-chip RSA hardware signing.
-pub fn pkcs1v15_pad_sha3_512(
+/// Standard legacy NIST SHA-512 DigestInfo prefix (OID: 2.16.840.1.101.3.4.2.3).
+pub const SHA512_LEGACY_DIGEST_INFO_PREFIX: [u8; 19] = [
+    0x30, 0x51, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+    0x00, 0x04, 0x40,
+];
+
+/// Pad a 64-byte digest into standard EMSA-PKCS1-v1_5 format with the specified DigestInfo prefix.
+pub fn pkcs1v15_pad_with_prefix(
     digest: &[u8; 64],
+    prefix: &[u8],
     key_len: usize,
 ) -> Result<Vec<u8>> {
-    let digest_info_len = SHA3_512_DIGEST_INFO_PREFIX.len() + digest.len();
-    if key_len < digest_info_len + 3 {
+    let digest_info_len = prefix.len().saturating_add(digest.len());
+    if key_len < digest_info_len.saturating_add(3) {
         return Err(SlideError::Crypto(format!(
-            "RSA modulus length {key_len} too small for SHA3-512 signature"
+            "RSA modulus length {key_len} too small for signature digest"
         )));
     }
     let pad_len = key_len - digest_info_len - 3;
@@ -214,9 +222,17 @@ pub fn pkcs1v15_pad_sha3_512(
     block.push(0x01);
     block.resize(2 + pad_len, 0xFF);
     block.push(0x00);
-    block.extend_from_slice(&SHA3_512_DIGEST_INFO_PREFIX);
+    block.extend_from_slice(prefix);
     block.extend_from_slice(digest);
     Ok(block)
+}
+
+/// Pad a 64-byte SHA3-512 digest into standard EMSA-PKCS1-v1_5 format for on-chip RSA hardware signing.
+pub fn pkcs1v15_pad_sha3_512(
+    digest: &[u8; 64],
+    key_len: usize,
+) -> Result<Vec<u8>> {
+    pkcs1v15_pad_with_prefix(digest, &SHA3_512_DIGEST_INFO_PREFIX, key_len)
 }
 
 /// Sign a SHA3-512 digest using an RSA private key with PKCS#1 v1.5 padding.
@@ -240,7 +256,8 @@ pub fn rsa_sign_sha3_512(
 }
 
 /// Verify an RSA PKCS#1 v1.5 signature against a SHA3-512 digest (RSAVP1).
-/// Validates modular exponentiation s^e mod n directly against standard EMSA-PKCS1-v1_5 formatting.
+/// Validates modular exponentiation s^e mod n using strictly constant-time canonical
+/// comparison (`subtle::ConstantTimeEq`) to eliminate Bleichenbacher and Marvin timing side-channels.
 pub fn rsa_verify_sha3_512(
     pub_key: &RsaPublicKey,
     digest_sha3_512: &[u8; 64],
@@ -248,6 +265,7 @@ pub fn rsa_verify_sha3_512(
 ) -> Result<()> {
     use rsa::BigUint;
     use rsa::traits::PublicKeyParts as _;
+    use subtle::ConstantTimeEq as _;
 
     let k = pub_key.size();
     if signature_bytes.len() != k {
@@ -272,70 +290,26 @@ pub fn rsa_verify_sha3_512(
     let offset = k.saturating_sub(m_bytes.len());
     em[offset..].copy_from_slice(&m_bytes);
 
-    // Verify EMSA-PKCS1-v1_5 format: 00 01 FF ... FF 00 [DigestInfo]
-    if em.len() < 11 || em[0] != 0x00 || em[1] != 0x01 {
+    // Precompute the expected canonical EMSA-PKCS1-v1_5 blocks
+    let expected_sha3 = pkcs1v15_pad_sha3_512(digest_sha3_512, k)?;
+    let expected_legacy =
+        pkcs1v15_pad_with_prefix(digest_sha3_512, &SHA512_LEGACY_DIGEST_INFO_PREFIX, k)?;
+
+    // Strict constant-time comparison against canonical padded representations
+    let valid_sha3 = em.ct_eq(&expected_sha3);
+    let valid_legacy = em.ct_eq(&expected_legacy);
+    let is_valid: bool = (valid_sha3 | valid_legacy).into();
+
+    if !is_valid {
         return Err(SlideError::IntegrityCheckFailed(
-            "RSA PKCS#1 v1.5 verification failed: invalid block header (expected 0x00 0x01)"
-                .to_string(),
-        ));
-    }
-
-    let mut sep_idx = None;
-    for i in 2..em.len() {
-        if em[i] == 0x00 {
-            if i < 10 {
-                return Err(SlideError::IntegrityCheckFailed(
-                    "RSA PKCS#1 v1.5 verification failed: insufficient padding bytes".to_string(),
-                ));
-            }
-            sep_idx = Some(i);
-            break;
-        } else if em[i] != 0xFF {
-            return Err(SlideError::IntegrityCheckFailed(
-                "RSA PKCS#1 v1.5 verification failed: corrupted padding (expected 0xFF)"
-                    .to_string(),
-            ));
-        }
-    }
-
-    let sep = sep_idx.ok_or_else(|| {
-        SlideError::IntegrityCheckFailed(
-            "RSA PKCS#1 v1.5 verification failed: missing 0x00 delimiter".to_string(),
-        )
-    })?;
-
-    let digest_info = &em[sep + 1..];
-    if digest_info.len() < 64 {
-        return Err(SlideError::IntegrityCheckFailed(
-            "RSA PKCS#1 v1.5 verification failed: DigestInfo truncated".to_string(),
-        ));
-    }
-
-    // Verify that the trailing 64 bytes match the SHA3-512 digest
-    let extracted_digest = &digest_info[digest_info.len() - 64..];
-    if extracted_digest != digest_sha3_512.as_slice() {
-        return Err(SlideError::IntegrityCheckFailed(
-            "RSA SHA3-512 signature verification failed: digest mismatch".to_string(),
-        ));
-    }
-
-    // Accept both SHA3-512 (0x0A) and legacy SHA-512 (0x03) AlgorithmIdentifier prefixes
-    let prefix = &digest_info[..digest_info.len() - 64];
-    let is_valid_prefix = prefix == &SHA3_512_DIGEST_INFO_PREFIX[..]
-        || (prefix.len() == 19
-            && &prefix[..14] == &SHA3_512_DIGEST_INFO_PREFIX[..14]
-            && (prefix[14] == 0x0A || prefix[14] == 0x03)
-            && &prefix[15..] == &SHA3_512_DIGEST_INFO_PREFIX[15..]);
-
-    if !is_valid_prefix {
-        return Err(SlideError::IntegrityCheckFailed(
-            "RSA SHA3-512 signature verification failed: unrecognized DigestInfo prefix"
+            "RSA SHA3-512 signature verification failed: signature invalid or digest mismatch"
                 .to_string(),
         ));
     }
 
     Ok(())
 }
+
 
 /// Encapsulate a 32-byte AES key using NIST P-256 ECDH and HKDF-SHA256.
 /// Format of returned bytes: `[33-byte ephemeral compressed pubkey] + [32-byte wrapped key]`.

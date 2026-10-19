@@ -433,6 +433,33 @@ pub fn pack_encrypted_deck_to_file(
     Ok(())
 }
 
+/// Package a `SlideDeck` into an encrypted standalone `.slide` file bound to a PIV slot with explicit `include_source` control.
+pub fn pack_encrypted_deck_to_file_with_source(
+    deck: &SlideDeck,
+    assets_dir: Option<&Path>,
+    output_path: &Path,
+    recipient_pub_key: &crate::security::PivPublicKey,
+    recipient_slot: crate::security::PivSlot,
+    signer_card: &mut dyn crate::security::PivCard,
+    signer_slot: crate::security::PivSlot,
+    include_source: bool,
+) -> Result<()> {
+    if let Some(parent) = output_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+    let data = crate::security::EncryptedSlideContainer::pack_with_source(
+        deck,
+        assets_dir,
+        recipient_pub_key,
+        recipient_slot,
+        signer_card,
+        signer_slot,
+        include_source,
+    )?;
+    std::fs::write(output_path, data)?;
+    Ok(())
+}
+
 /// Check if a `.slide` file on disk is an encrypted package.
 #[must_use]
 pub fn is_encrypted_package_file(input_path: &Path) -> bool {
@@ -454,6 +481,16 @@ pub fn unpack_encrypted_deck_and_assets_in_memory(
     let bytes = std::fs::read(input_path)?;
     let container = crate::security::EncryptedSlideContainer::parse(&bytes)?;
     container.decrypt_in_memory(card, signer_key_override)
+}
+
+/// Unpack an encrypted presentation deck and its assets directly into memory using a software passphrase or mnemonic.
+pub fn unpack_encrypted_deck_with_secret_in_memory(
+    input_path: &Path,
+    secret: &str,
+) -> Result<(SlideDeck, std::sync::Arc<crate::security::MemoryAssetStore>)> {
+    let bytes = std::fs::read(input_path)?;
+    let container = crate::security::EncryptedSlideContainer::parse(&bytes)?;
+    container.decrypt_with_secret(secret)
 }
 
 /// Helper to compute deterministic temporary cache directory for a package
@@ -503,10 +540,25 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
 
     // Check if encrypted package
     if is_encrypted_package_file(input_path) {
-        let pin = std::env::var("PIV_PIN").ok();
-        let mut card = crate::security::PivManager::acquire_card(pin.as_deref())?;
-        let (deck, _store) =
-            unpack_encrypted_deck_and_assets_in_memory(input_path, card.as_mut(), None)?;
+        let bytes = std::fs::read(input_path)?;
+        let container = crate::security::EncryptedSlideContainer::parse(&bytes)?;
+        let (deck, _store) = match container.header.auth_mode {
+            | crate::security::AuthMode::Passphrase | crate::security::AuthMode::Mnemonic => {
+                let secret = std::env::var("SLIDE_PASSPHRASE")
+                    .or_else(|_| std::env::var("SLIDE_SECRET"))
+                    .map_err(|_| {
+                        SlideError::Crypto(
+                            "Encrypted presentation requires passphrase or mnemonic. Set SLIDE_PASSPHRASE or launch using 'cargo slide run'".to_string(),
+                        )
+                    })?;
+                container.decrypt_with_secret(&secret)?
+            },
+            | crate::security::AuthMode::Piv => {
+                let pin = std::env::var("PIV_PIN").ok();
+                let mut card = crate::security::PivManager::acquire_card(pin.as_deref())?;
+                container.decrypt_in_memory(card.as_mut(), None)?
+            },
+        };
         let cache_dir = get_package_cache_dir(input_path);
         return Ok((deck, cache_dir));
     }

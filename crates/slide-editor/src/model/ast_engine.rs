@@ -2599,6 +2599,74 @@ impl Default for HeaderFooterConfig {
     }
 }
 
+/// Find the matching closing parenthesis ')' for an opening parenthesis that preceded `s`.
+/// Handles nested parentheses, string literals, and escape sequences.
+#[must_use]
+pub fn find_balanced_closing_paren(s: &str) -> Option<usize> {
+    let mut depth: usize = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, c) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if !in_string {
+            if c == '(' {
+                depth = depth.saturating_add(1);
+            } else if c == ')' {
+                if depth == 0 {
+                    return Some(i);
+                }
+                depth = depth.saturating_sub(1);
+            }
+        }
+    }
+    None
+}
+
+/// Find the matching closing bracket ']' for an opening bracket that preceded `s`.
+/// Handles nested brackets, string literals, and escape sequences.
+#[must_use]
+pub fn find_balanced_closing_bracket(s: &str) -> Option<usize> {
+    let mut depth: usize = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, c) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if !in_string {
+            if c == '[' {
+                depth = depth.saturating_add(1);
+            } else if c == ']' {
+                if depth == 0 {
+                    return Some(i);
+                }
+                depth = depth.saturating_sub(1);
+            }
+        }
+    }
+    None
+}
+
 /// Extract header and footer settings from document Typst source
 #[must_use]
 pub fn extract_header_footer_from_source(source: &str) -> HeaderFooterConfig {
@@ -2609,7 +2677,7 @@ pub fn extract_header_footer_from_source(source: &str) -> HeaderFooterConfig {
     };
 
     let after_show = &source[show_pos + "slide-theme.with(".len()..];
-    let Some(closing_paren) = after_show.find(')') else {
+    let Some(closing_paren) = find_balanced_closing_paren(after_show) else {
         return config;
     };
     let args_str = &after_show[..closing_paren];
@@ -2720,7 +2788,7 @@ pub fn update_header_footer_in_source(
 
     if let Some(show_pos) = source.find("slide-theme.with(") {
         let after_show = &source[show_pos + "slide-theme.with(".len()..];
-        if let Some(closing_paren) = after_show.find(')') {
+        if let Some(closing_paren) = find_balanced_closing_paren(after_show) {
             let full_end = show_pos + "slide-theme.with(".len() + closing_paren;
             let existing_args = &after_show[..closing_paren];
 

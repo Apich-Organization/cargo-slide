@@ -222,3 +222,147 @@ fn test_build_encrypted_standalone_binary_embed() {
     assert!(help_txt.contains("--pin"));
     assert!(help_txt.contains("Connected YubiKey PIV smartcard"));
 }
+
+#[test]
+fn test_pack_and_unpack_software_passphrase_package() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let dir = tempdir().expect("tempdir");
+
+    // Initialize presentation
+    let init_res = slide_cmd(bin)
+        .arg("init")
+        .current_dir(dir.path())
+        .output()
+        .expect("cargo-slide init");
+    assert!(init_res.status.success());
+
+    let out_slide = dir.path().join("passphrase_protected.slide");
+    let test_pass = "V3ry$Tr0ng&ComplexSecret!";
+
+    // Pack with software passphrase mode
+    let pack_res = slide_cmd(bin)
+        .arg("pack")
+        .arg("slides.typ")
+        .arg("--encrypt")
+        .arg("--auth")
+        .arg("passphrase")
+        .arg("--passphrase")
+        .arg(test_pass)
+        .arg("--output")
+        .arg(&out_slide)
+        .current_dir(dir.path())
+        .output()
+        .expect("cargo-slide pack --encrypt --auth passphrase");
+    assert!(
+        pack_res.status.success(),
+        "Pack failed: {:?}",
+        String::from_utf8_lossy(&pack_res.stderr)
+    );
+    assert!(out_slide.exists());
+
+    // Verify unpack using unpack_encrypted_deck_with_secret_in_memory
+    let (deck, asset_store) =
+        slide_core::package::unpack_encrypted_deck_with_secret_in_memory(&out_slide, test_pass)
+            .unwrap();
+    assert!(deck.total_slides() > 0);
+    assert!(asset_store.contains("assets/data.csv"));
+
+    // Verify wrong passphrase fails
+    let bad_unpack = slide_core::package::unpack_encrypted_deck_with_secret_in_memory(
+        &out_slide,
+        "WrongPassword#123",
+    );
+    assert!(bad_unpack.is_err());
+}
+
+#[test]
+fn test_pack_and_unpack_software_mnemonic_package() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let dir = tempdir().expect("tempdir");
+
+    // Initialize presentation
+    let init_res = slide_cmd(bin)
+        .arg("init")
+        .current_dir(dir.path())
+        .output()
+        .expect("cargo-slide init");
+    assert!(init_res.status.success());
+
+    let out_slide = dir.path().join("mnemonic_protected.slide");
+    let known_mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    // Pack with specified BIP-39 mnemonic
+    let pack_res = slide_cmd(bin)
+        .arg("pack")
+        .arg("slides.typ")
+        .arg("--encrypt")
+        .arg("--auth")
+        .arg("mnemonic")
+        .arg("--mnemonic")
+        .arg(known_mnemonic)
+        .arg("--output")
+        .arg(&out_slide)
+        .current_dir(dir.path())
+        .output()
+        .expect("cargo-slide pack --encrypt --auth mnemonic");
+    assert!(
+        pack_res.status.success(),
+        "Pack failed: {:?}",
+        String::from_utf8_lossy(&pack_res.stderr)
+    );
+    assert!(out_slide.exists());
+
+    // Unpack with known mnemonic
+    let (deck, _store) = slide_core::package::unpack_encrypted_deck_with_secret_in_memory(
+        &out_slide,
+        known_mnemonic,
+    )
+    .unwrap();
+    assert!(deck.total_slides() > 0);
+
+    // Unpack with wrong mnemonic fails
+    let wrong_mnemonic =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    let bad_unpack = slide_core::package::unpack_encrypted_deck_with_secret_in_memory(
+        &out_slide,
+        wrong_mnemonic,
+    );
+    assert!(bad_unpack.is_err());
+}
+
+#[test]
+fn test_passphrase_complexity_enforcement() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+    let dir = tempdir().expect("tempdir");
+
+    let _ = slide_cmd(bin).arg("init").current_dir(dir.path()).output();
+
+    let out_slide = dir.path().join("weak.slide");
+    // Weak password: too short and simple
+    let pack_res = slide_cmd(bin)
+        .arg("pack")
+        .arg("slides.typ")
+        .arg("--encrypt")
+        .arg("--auth")
+        .arg("passphrase")
+        .arg("--passphrase")
+        .arg("12345")
+        .arg("--output")
+        .arg(&out_slide)
+        .current_dir(dir.path())
+        .output()
+        .expect("cargo-slide pack weak passphrase");
+
+    assert!(
+        !pack_res.status.success(),
+        "Weak passphrase should be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&pack_res.stderr);
+    assert!(
+        stderr.contains("complexity")
+            || stderr.contains("minimum 10 required")
+            || stderr.contains("too short")
+            || stderr.contains("Passphrase"),
+        "Expected complexity error message, got: {stderr}"
+    );
+}

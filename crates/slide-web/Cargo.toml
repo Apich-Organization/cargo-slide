@@ -48,6 +48,14 @@ web-sys = { workspace = true, features = [
     "Navigator",
     "Clipboard",
     "TouchEvent",
+    "Storage",
     "TouchList",
     "Touch",
 ] }
+aes-gcm.workspace = true
+sha2.workspace = true
+hkdf.workspace = true
+pbkdf2 = { workspace = true, features = ["hmac"] }
+zeroize.workspace = true
+base64.workspace = true
+getrandom = { version = "0.4", features = ["wasm_js"] }

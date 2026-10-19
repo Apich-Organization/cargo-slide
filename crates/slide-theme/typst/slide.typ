@@ -734,6 +734,16 @@
 /// Pill badge alias
 #let pill(label, fill: rgb("1f6feb"), text-color: rgb("ffffff")) = badge(label, fill: fill, text-color: text-color)
 
+/// Inline font macro to customize font family, size, or color for specific text words/spans
+#let font(name, body, size: auto, fill: auto, weight: auto, style: auto) = {
+  let kwargs = (:)
+  if size != auto { kwargs = kwargs + (size: size) }
+  if fill != auto { kwargs = kwargs + (fill: fill) }
+  if weight != auto { kwargs = kwargs + (weight: weight) }
+  if style != auto { kwargs = kwargs + (style: style) }
+  text(font: name, ..kwargs, body)
+}
+
 /// Callout box
 #let callout(title: none, body, stroke-color: rgb("58a6ff")) = {
   rect(

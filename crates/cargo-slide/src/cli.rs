@@ -91,6 +91,10 @@ pub enum Commands {
         /// User PIN for decrypting PIV-protected presentation
         #[arg(long)]
         pin: Option<String>,
+
+        /// Passphrase or recovery mnemonic for decrypting presentation
+        #[arg(long, alias = "secret")]
+        passphrase: Option<String>,
     },
     /// Alias for run --watch
     Dev {
@@ -121,6 +125,10 @@ pub enum Commands {
         /// User PIN for decrypting PIV-protected presentation
         #[arg(long)]
         pin: Option<String>,
+
+        /// Passphrase or recovery mnemonic for decrypting presentation
+        #[arg(long, alias = "secret")]
+        passphrase: Option<String>,
     },
     /// Launch the Typora-style WYSIWYG desktop editor for presentations and documents
     Edit {
@@ -150,19 +158,51 @@ pub enum Commands {
         animation: String,
 
         /// Cross-compile for a different Rust target triple (e.g.
-        /// `x86_64-pc-windows-msvc`, `aarch64-unknown-linux-musl`) instead of the host's own
-        /// platform. The target must already be installed (`rustup target add <triple>`) and,
-        /// for a non-host target, have a working linker configured (see `.cargo/config.toml`).
+        /// `x86_64-pc-windows-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-pc-windows-gnullvm`),
+        /// or 'all' to build for all standard desktop platforms.
         #[arg(long)]
         target: Option<String>,
+
+        /// Enable cross-compilation toolchain (auto-detects Zig toolchain or Cross container engine)
+        #[arg(long)]
+        cross: bool,
+
+        /// Explicit cross-compilation toolchain backend: 'auto' (default: smart auto-detection),
+        /// 'zig' (cargo-zigbuild / Zig toolchain), 'cross' (cross container engine), or 'cargo'
+        #[arg(long, default_value = "auto")]
+        cross_tool: String,
+
+        /// Cross-compile for all supported desktop targets (Linux x86_64, Linux aarch64, Windows x86_64, Windows aarch64)
+        #[arg(long)]
+        all_targets: bool,
 
         /// Include original editable Typst source files and templates in the package
         #[arg(long, alias = "origin")]
         source: bool,
 
-        /// Encrypt standalone presentation binary with AES-256 bound to PIV slot
+        /// Encrypt standalone presentation binary with AES-256
         #[arg(long)]
         encrypt: bool,
+
+        /// Encryption authentication mode: piv (default hardware token), passphrase, mnemonic
+        #[arg(long, default_value = "piv")]
+        auth: String,
+
+        /// Passphrase for software encryption mode (must meet complexity requirements)
+        #[arg(long, alias = "secret")]
+        passphrase: Option<String>,
+
+        /// BIP-39 recovery mnemonic for software encryption (12 or 24 words, auto-generated if omitted)
+        #[arg(long)]
+        mnemonic: Option<String>,
+
+        /// Number of BIP-39 mnemonic words to generate (12 or 24, default: 12)
+        #[arg(long, default_value_t = 12)]
+        mnemonic_words: usize,
+
+        /// Access token survival duration in hours for protected Web presentation (default: 24)
+        #[arg(long, default_value_t = 24)]
+        token_ttl: u64,
 
         /// Recipient PIV slot for decryption (default: 9d)
         #[arg(long, default_value = "9d")]
@@ -198,9 +238,25 @@ pub enum Commands {
         #[arg(long, alias = "origin")]
         source: bool,
 
-        /// Encrypt .slide package with AES-256 bound to PIV slot
+        /// Encrypt .slide package with AES-256
         #[arg(long)]
         encrypt: bool,
+
+        /// Encryption authentication mode: piv (default hardware token), passphrase, mnemonic
+        #[arg(long, default_value = "piv")]
+        auth: String,
+
+        /// Passphrase for software encryption mode (must meet complexity requirements)
+        #[arg(long, alias = "secret")]
+        passphrase: Option<String>,
+
+        /// BIP-39 recovery mnemonic for software encryption (12 or 24 words, auto-generated if omitted)
+        #[arg(long)]
+        mnemonic: Option<String>,
+
+        /// Number of BIP-39 mnemonic words to generate (12 or 24, default: 12)
+        #[arg(long, default_value_t = 12)]
+        mnemonic_words: usize,
 
         /// Recipient PIV slot for decryption (default: 9d)
         #[arg(long, default_value = "9d")]
@@ -252,6 +308,30 @@ pub enum Commands {
         /// Watch source Typst file and assets, hot-recompiling bundle on change
         #[arg(short, long)]
         watch: bool,
+
+        /// Deploy web presentation in encrypted protection mode
+        #[arg(long)]
+        encrypt: bool,
+
+        /// Encryption authentication mode: passphrase (default), mnemonic
+        #[arg(long, default_value = "passphrase")]
+        auth: String,
+
+        /// Passphrase for protected web presentation
+        #[arg(long, alias = "secret")]
+        passphrase: Option<String>,
+
+        /// BIP-39 recovery mnemonic for protected web presentation
+        #[arg(long)]
+        mnemonic: Option<String>,
+
+        /// Number of BIP-39 mnemonic words to generate (12 or 24, default: 12)
+        #[arg(long, default_value_t = 12)]
+        mnemonic_words: usize,
+
+        /// Access token survival duration in hours for protected Web presentation (default: 24)
+        #[arg(long, default_value_t = 24)]
+        token_ttl: u64,
     },
     /// Inspect presentation package or Typst file metadata, slide count, and integrity
     Info {
@@ -324,6 +404,46 @@ pub enum Commands {
         /// Render resolution scale factor for PNG export (e.g. 1.0, 2.0 for Retina/4K, default: 2.0)
         #[arg(long, default_value_t = 2.0)]
         scale: f32,
+
+        /// Encrypt exported presentation (.slide or wasm CSR)
+        #[arg(long)]
+        encrypt: bool,
+
+        /// Encryption authentication mode: passphrase (default), mnemonic, piv
+        #[arg(long, default_value = "passphrase")]
+        auth: String,
+
+        /// Passphrase for software encryption mode
+        #[arg(long, alias = "secret")]
+        passphrase: Option<String>,
+
+        /// BIP-39 recovery mnemonic for software encryption
+        #[arg(long)]
+        mnemonic: Option<String>,
+
+        /// Number of BIP-39 mnemonic words to generate (12 or 24, default: 12)
+        #[arg(long, default_value_t = 12)]
+        mnemonic_words: usize,
+
+        /// Access token survival duration in hours for protected Web presentation (default: 24)
+        #[arg(long, default_value_t = 24)]
+        token_ttl: u64,
+
+        /// Recipient PIV slot for decryption (default: 9d)
+        #[arg(long, default_value = "9d")]
+        piv_slot: String,
+
+        /// Signer PIV slot for SHA3-512 integrity signature (default: 9c)
+        #[arg(long, default_value = "9c")]
+        sign_slot: String,
+
+        /// Recipient X.509 certificate or public key file path (PEM/DER)
+        #[arg(long)]
+        cert: Option<PathBuf>,
+
+        /// PIV User PIN
+        #[arg(long)]
+        pin: Option<String>,
     },
     /// Install universal slide-viewer player and desktop integration to system
     InstallViewer,
@@ -375,6 +495,10 @@ pub enum PivAction {
         /// User PIN
         #[arg(long)]
         pin: Option<String>,
+
+        /// Prompt for PIN using graphical desktop popup dialog window
+        #[arg(long)]
+        gui: bool,
     },
     /// Verify a file's SHA3-512 signature using a PIV slot or certificate
     Verify {
@@ -402,5 +526,9 @@ pub enum PivAction {
         /// User PIN
         #[arg(long)]
         pin: Option<String>,
+
+        /// Prompt for PIN using graphical desktop popup dialog window
+        #[arg(long)]
+        gui: bool,
     },
 }

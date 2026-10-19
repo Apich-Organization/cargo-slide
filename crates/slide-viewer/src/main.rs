@@ -8,6 +8,7 @@ use slide_core::package::unpack_deck_and_assets;
 use slide_core::package::unpack_deck_and_assets_from_bytes;
 use slide_player::SlideApp;
 use slide_player::hud::HudTheme;
+use std::io::IsTerminal as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -57,6 +58,10 @@ struct Args {
     /// User PIN for decrypting PIV-protected presentation
     #[arg(long)]
     pin: Option<String>,
+
+    /// Passphrase or recovery mnemonic for decrypting presentation
+    #[arg(long, alias = "secret")]
+    passphrase: Option<String>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -101,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hud_theme,
                 args.kiosk,
                 args.pin.as_deref(),
+                args.passphrase.as_deref(),
             )?;
             return Ok(());
         }
@@ -150,6 +156,7 @@ pub fn play_presentation_file(
     hud_theme: HudTheme,
     kiosk: Option<u64>,
     pin: Option<&str>,
+    passphrase: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     save_recent_viewer_file(path);
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
@@ -158,21 +165,156 @@ pub fn play_presentation_file(
     let mut in_memory_asset_store = None;
 
     let (deck, source_dir) = if is_encrypted {
-        use slide_core::package::unpack_encrypted_deck_and_assets_in_memory;
+        use slide_core::security::AuthMode;
+        use slide_core::security::EncryptedSlideContainer;
         use slide_core::security::PivManager;
         use slide_core::security::prompt_pin_if_needed;
+        use slide_core::security::read_masked_secret;
 
-        let mut card = PivManager::acquire_card(pin)?;
-        if !card.is_authenticated() && pin.is_none() {
-            if let Some(gui_pin) = slide_player::prompt_pin_gui(
-                "Cargo Slide - YubiKey PIV Authentication",
-                "Enter 6-8 digit User PIN to decrypt presentation:",
-            ) {
-                card.verify_pin(&gui_pin)?;
-            }
-        }
-        prompt_pin_if_needed(card.as_mut(), pin)?;
-        let (d, store) = unpack_encrypted_deck_and_assets_in_memory(path, card.as_mut(), None)?;
+        let bytes = std::fs::read(path)?;
+        let container = EncryptedSlideContainer::parse(&bytes)?;
+
+        let (d, store) = match container.header.auth_mode {
+            | AuthMode::Passphrase | AuthMode::Mnemonic => {
+                let max_attempts = 3;
+                let mut last_err = None;
+                let mut decrypted = None;
+
+                let mut initial_secret = if let Some(p) = passphrase {
+                    Some(slide_core::security::Zeroizing::new(p.to_string()))
+                } else if let Ok(env_pass) =
+                    std::env::var("SLIDE_PASSPHRASE").or_else(|_| std::env::var("SLIDE_SECRET"))
+                {
+                    Some(slide_core::security::Zeroizing::new(env_pass))
+                } else {
+                    None
+                };
+
+                for attempt in 0..max_attempts {
+                    let secret: slide_core::security::Zeroizing<String> = if let Some(s) =
+                        initial_secret.take()
+                    {
+                        s
+                    } else {
+                        let attempts_left = max_attempts - attempt;
+                        let is_mnemonic = container.header.auth_mode == AuthMode::Mnemonic;
+                        let title = if attempt == 0 {
+                            "Cargo Slide - Presentation Decryption"
+                        } else {
+                            "Authentication Failed - Please Re-enter"
+                        };
+                        let gui_subtitle = if attempt == 0 {
+                            if is_mnemonic {
+                                "Enter 12/24-word BIP-39 recovery mnemonic:".to_string()
+                            } else {
+                                "Enter passphrase to decrypt presentation:".to_string()
+                            }
+                        } else if is_mnemonic {
+                            format!(
+                                "Incorrect mnemonic ({attempts_left} attempts remaining). Please re-enter:"
+                            )
+                        } else {
+                            format!(
+                                "Incorrect passphrase ({attempts_left} attempts remaining). Please re-enter:"
+                            )
+                        };
+
+                        if let Some(gui_secret) = slide_player::prompt_pin_gui(title, &gui_subtitle)
+                        {
+                            gui_secret
+                        } else if std::io::stdin().is_terminal() {
+                            let term_prompt = if attempt == 0 {
+                                if is_mnemonic {
+                                    "Enter 12/24-word recovery mnemonic: ".to_string()
+                                } else {
+                                    "Enter passphrase: ".to_string()
+                                }
+                            } else if is_mnemonic {
+                                format!(
+                                    "\x1b[33mIncorrect mnemonic ({attempts_left} attempts remaining). Please re-enter:\x1b[0m "
+                                )
+                            } else {
+                                format!(
+                                    "\x1b[33mIncorrect passphrase ({attempts_left} attempts remaining). Please re-enter:\x1b[0m "
+                                )
+                            };
+                            read_masked_secret(&term_prompt)?
+                        } else {
+                            break;
+                        }
+                    };
+
+                    match container.decrypt_with_secret(&secret) {
+                        | Ok(res) => {
+                            decrypted = Some(res);
+                            break;
+                        },
+                        | Err(e) => {
+                            last_err = Some(e);
+                            if attempt + 1 < max_attempts {
+                                eprintln!(
+                                    "[WARNING] Authentication failed. Please try again ({} attempts remaining).",
+                                    max_attempts - 1 - attempt
+                                );
+                            }
+                        },
+                    }
+                }
+
+                decrypted.ok_or_else(|| {
+                    last_err.unwrap_or_else(|| {
+                        slide_core::error::SlideError::Crypto(
+                            "Authentication canceled or retries exhausted".to_string(),
+                        )
+                    })
+                })?
+            },
+            | AuthMode::Piv => {
+                let mut card = PivManager::acquire_card(pin)?;
+                if !card.is_authenticated() && pin.is_none() {
+                    let max_attempts = 3;
+                    for attempt in 0..max_attempts {
+                        let attempts_left = match card.check_pin_status() {
+                            | Ok(slide_core::security::piv::PinStatus::NotVerified {
+                                tries_remaining,
+                            }) => (tries_remaining as usize).min(max_attempts - attempt),
+                            | _ => max_attempts - attempt,
+                        };
+                        let title = if attempt == 0 {
+                            "Cargo Slide - YubiKey PIV Authentication"
+                        } else {
+                            "PIN Verification Failed - Please Re-enter"
+                        };
+                        let subtitle = if attempt == 0 {
+                            format!(
+                                "Enter 6-8 digit User PIN to decrypt presentation ({attempts_left} attempts remaining):"
+                            )
+                        } else {
+                            format!(
+                                "Incorrect PIN ({attempts_left} attempts remaining). Please re-enter:"
+                            )
+                        };
+
+                        if let Some(gui_pin) = slide_player::prompt_pin_gui(title, &subtitle) {
+                            match card.verify_pin(&gui_pin) {
+                                | Ok(()) => break,
+                                | Err(e) => {
+                                    if attempt + 1 == max_attempts {
+                                        return Err(e.into());
+                                    }
+                                    eprintln!("[WARNING] Incorrect PIN. Please try again.");
+                                },
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                prompt_pin_if_needed(card.as_mut(), pin)?;
+                container.decrypt_in_memory(card.as_mut(), None)?
+            },
+        };
+
         in_memory_asset_store = Some(store);
         (d, None)
     } else {

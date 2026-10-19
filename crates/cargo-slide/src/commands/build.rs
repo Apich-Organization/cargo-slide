@@ -8,6 +8,14 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
+/// Standard desktop cross-compilation targets supported by cargo-slide
+pub const SUPPORTED_CROSS_TARGETS: &[(&str, &str)] = &[
+    ("x86_64-unknown-linux-gnu", "linux-x86_64"),
+    ("aarch64-unknown-linux-gnu", "linux-aarch64"),
+    ("x86_64-pc-windows-gnu", "windows-x86_64"),
+    ("aarch64-pc-windows-gnullvm", "windows-aarch64"),
+];
+
 /// Dispatch presentation build by format: binary, slide, or wasm.
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
@@ -16,8 +24,16 @@ pub fn execute(
     format: &str,
     animation: &str,
     target: Option<&str>,
+    cross: bool,
+    cross_tool: &str,
+    all_targets: bool,
     source: bool,
     encrypt: bool,
+    auth_mode_str: &str,
+    passphrase: Option<&str>,
+    mnemonic: Option<&str>,
+    mnemonic_words: usize,
+    token_ttl: u64,
     piv_slot_str: &str,
     sign_slot_str: &str,
     cert_path: Option<&Path>,
@@ -34,25 +50,99 @@ pub fn execute(
                 animation,
                 source,
                 encrypt,
+                auth_mode_str,
+                passphrase,
+                mnemonic,
+                mnemonic_words,
                 piv_slot_str,
                 sign_slot_str,
                 cert_path,
                 pin,
             )
         },
-        | "wasm" | "web" | "csr" => execute_wasm(target_file, output, animation),
-        | "binary" | "exe" | "elf" | "" => {
-            execute_binary(
+        | "wasm" | "web" | "csr" => {
+            execute_wasm(
                 target_file,
                 output,
                 animation,
-                target,
                 encrypt,
-                piv_slot_str,
-                sign_slot_str,
-                cert_path,
-                pin,
+                auth_mode_str,
+                passphrase,
+                mnemonic,
+                mnemonic_words,
+                token_ttl,
             )
+        },
+        | "binary" | "exe" | "elf" | "" => {
+            if all_targets || target == Some("all") {
+                let file_stem = target_file
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("presentation");
+                eprintln!(
+                    "[CROSS] Building presentation for all supported desktop targets (x86_64/ARM64 Linux & Windows)..."
+                );
+                for &(triple, label) in SUPPORTED_CROSS_TARGETS {
+                    let is_win = triple.contains("windows");
+                    let ext = if is_win { ".exe" } else { "" };
+                    let target_out = if let Some(ref out) = output {
+                        if out.is_dir() {
+                            out.join(format!("{file_stem}-{label}{ext}"))
+                        } else {
+                            let parent = out.parent().unwrap_or_else(|| Path::new("."));
+                            let stem = out
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(file_stem);
+                            parent.join(format!("{stem}-{label}{ext}"))
+                        }
+                    } else {
+                        PathBuf::from(format!("{file_stem}-{label}{ext}"))
+                    };
+
+                    eprintln!(
+                        ">>> Cross-compiling target [{triple}] -> {}",
+                        target_out.display()
+                    );
+                    execute_binary(
+                        target_file,
+                        Some(target_out),
+                        animation,
+                        Some(triple),
+                        true,
+                        cross_tool,
+                        encrypt,
+                        auth_mode_str,
+                        passphrase,
+                        mnemonic,
+                        mnemonic_words,
+                        piv_slot_str,
+                        sign_slot_str,
+                        cert_path,
+                        pin,
+                    )?;
+                }
+                eprintln!("[OK] Cross-platform compilation finished for all desktop targets!");
+                Ok(())
+            } else {
+                execute_binary(
+                    target_file,
+                    output,
+                    animation,
+                    target,
+                    cross,
+                    cross_tool,
+                    encrypt,
+                    auth_mode_str,
+                    passphrase,
+                    mnemonic,
+                    mnemonic_words,
+                    piv_slot_str,
+                    sign_slot_str,
+                    cert_path,
+                    pin,
+                )
+            }
         },
         | other => {
             Err(
@@ -64,10 +154,17 @@ pub fn execute(
 }
 
 /// Build standalone Leptos CSR web presentation bundle.
+#[allow(clippy::too_many_arguments)]
 pub fn execute_wasm(
     file: &Path,
     output: Option<PathBuf>,
     _animation: &str,
+    encrypt: bool,
+    auth_mode: &str,
+    passphrase: Option<&str>,
+    mnemonic: Option<&str>,
+    mnemonic_words: usize,
+    token_ttl: u64,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     if !file.exists() {
         return Err(format!("File does not exist: {}", file.display()).into());
@@ -89,10 +186,20 @@ pub fn execute_wasm(
             "stage": "wasm_build_start",
             "source_file": file.display().to_string(),
             "output_dir": out_dir.display().to_string(),
+            "encrypted": encrypt,
+            "auth_mode": auth_mode,
         })),
     );
 
-    crate::commands::serve::prepare_csr_bundle(file, &out_dir)?;
+    let opts = crate::commands::serve::CsrBundleOptions {
+        encrypt,
+        auth_mode,
+        passphrase,
+        mnemonic,
+        mnemonic_words,
+        token_ttl_hours: token_ttl,
+    };
+    crate::commands::serve::prepare_csr_bundle_with_options(file, &out_dir, &opts)?;
 
     slide_core::logger::log_event(
         "success",
@@ -119,7 +226,13 @@ pub fn execute_binary(
     output: Option<PathBuf>,
     animation: &str,
     target: Option<&str>,
+    cross: bool,
+    cross_tool: &str,
     encrypt: bool,
+    auth_mode_str: &str,
+    passphrase: Option<&str>,
+    mnemonic: Option<&str>,
+    mnemonic_words: usize,
     piv_slot_str: &str,
     sign_slot_str: &str,
     cert_path: Option<&Path>,
@@ -196,40 +309,106 @@ pub fn execute_binary(
     let deck_file = build_path.join("deck.json");
 
     if encrypt {
-        use slide_core::security::cert::PivPublicKey;
-        use slide_core::security::cert::PivSlot;
-        use slide_core::security::cert::parse_certificate_public_key;
+        use slide_core::security::AuthMode;
         use slide_core::security::container::EncryptedSlideContainer;
-        use slide_core::security::piv::PivManager;
 
-        let recipient_slot = PivSlot::parse(piv_slot_str)
-            .ok_or_else(|| format!("Invalid recipient PIV slot: {piv_slot_str}"))?;
-        let signer_slot = PivSlot::parse(sign_slot_str)
-            .ok_or_else(|| format!("Invalid signer PIV slot: {sign_slot_str}"))?;
+        let auth_mode: AuthMode = auth_mode_str.parse()?;
 
-        let mut card = PivManager::acquire_card(pin)?;
-        slide_core::security::prompt_pin_if_needed(card.as_mut(), pin)?;
+        let enc_bytes = match auth_mode {
+            | AuthMode::Passphrase => {
+                let pass = if let Some(p) = passphrase {
+                    p.to_string()
+                } else if let Ok(env_pass) = std::env::var("SLIDE_PASSPHRASE") {
+                    env_pass
+                } else {
+                    let input = slide_core::security::read_masked_secret(
+                        "Enter passphrase for presentation encryption: ",
+                    )?;
+                    input.to_string()
+                };
 
-        let recipient_pub = if let Some(cp) = cert_path {
-            let raw_data = std::fs::read(cp)?;
-            if let Ok(pubkey) = parse_certificate_public_key(&raw_data) {
-                pubkey
-            } else {
-                PivPublicKey::from_pem_or_der(&raw_data)?
-            }
-        } else {
-            card.get_public_key(recipient_slot)?
+                slide_core::security::validate_password_strength(&pass)?;
+
+                let (pkg, _) = EncryptedSlideContainer::pack_software_with_source(
+                    &deck,
+                    file.parent(),
+                    &pass,
+                    AuthMode::Passphrase,
+                    None,
+                    false,
+                )?;
+                pkg
+            },
+            | AuthMode::Mnemonic => {
+                let mnem = mnemonic.unwrap_or("");
+                let (pkg, gen_mnem) = EncryptedSlideContainer::pack_software_with_source(
+                    &deck,
+                    file.parent(),
+                    mnem,
+                    AuthMode::Mnemonic,
+                    Some(mnemonic_words),
+                    false,
+                )?;
+                if let Some(generated) = gen_mnem {
+                    let word_count = generated.split_whitespace().count();
+                    eprintln!();
+                    eprintln!(
+                        "================================================================================"
+                    );
+                    eprintln!("[SECURITY] Generated {word_count}-Word BIP-39 Recovery Mnemonic:");
+                    eprintln!();
+                    eprintln!("    {}", generated.as_str());
+                    eprintln!();
+                    eprintln!(
+                        "[IMPORTANT] Write down these {word_count} words in order and store them in a secure location."
+                    );
+                    eprintln!(
+                        "            Anyone with this mnemonic can decrypt and view this presentation."
+                    );
+                    eprintln!(
+                        "================================================================================"
+                    );
+                    eprintln!();
+                }
+                pkg
+            },
+            | AuthMode::Piv => {
+                use slide_core::security::cert::PivPublicKey;
+                use slide_core::security::cert::PivSlot;
+                use slide_core::security::cert::parse_certificate_public_key;
+                use slide_core::security::piv::PivManager;
+
+                let recipient_slot = PivSlot::parse(piv_slot_str)
+                    .ok_or_else(|| format!("Invalid recipient PIV slot: {piv_slot_str}"))?;
+                let signer_slot = PivSlot::parse(sign_slot_str)
+                    .ok_or_else(|| format!("Invalid signer PIV slot: {sign_slot_str}"))?;
+
+                let mut card = PivManager::acquire_card(pin)?;
+                slide_core::security::prompt_pin_if_needed(card.as_mut(), pin)?;
+
+                let recipient_pub = if let Some(cp) = cert_path {
+                    let raw_data = std::fs::read(cp)?;
+                    if let Ok(pubkey) = parse_certificate_public_key(&raw_data) {
+                        pubkey
+                    } else {
+                        PivPublicKey::from_pem_or_der(&raw_data)?
+                    }
+                } else {
+                    card.get_public_key(recipient_slot)?
+                };
+
+                let base_dir = file.parent();
+                EncryptedSlideContainer::pack_with_source(
+                    &deck,
+                    base_dir,
+                    &recipient_pub,
+                    recipient_slot,
+                    card.as_mut(),
+                    signer_slot,
+                    false,
+                )?
+            },
         };
-
-        let base_dir = file.parent();
-        let enc_bytes = EncryptedSlideContainer::pack(
-            &deck,
-            base_dir,
-            &recipient_pub,
-            recipient_slot,
-            card.as_mut(),
-            signer_slot,
-        )?;
 
         let should_write = std::fs::read(&encrypted_bin_file).map_or(true, |ex| ex != enc_bytes);
         if should_write {
@@ -298,11 +477,15 @@ incremental = true
     let runner_main = if encrypt {
         format!(
             r#"use slide_player::prelude::*;
-use slide_core::security::{{EncryptedSlideContainer, PivManager, prompt_pin_if_needed}};
+use slide_core::security::{{AuthMode, EncryptedSlideContainer, PivManager, prompt_pin_if_needed, read_masked_secret}};
+use std::io::IsTerminal as _;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {{
     let args: Vec<String> = std::env::args().collect();
     let mut pin: Option<String> = std::env::var("PIV_PIN").ok();
+    let mut passphrase: Option<String> = std::env::var("SLIDE_PASSPHRASE")
+        .or_else(|_| std::env::var("SLIDE_SECRET"))
+        .ok();
 
     let mut i = 1;
     while i < args.len() {{
@@ -311,11 +494,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
                 pin = Some(args[i + 1].clone());
                 i += 2;
             }}
+            "--passphrase" | "--password" | "--secret" if i + 1 < args.len() => {{
+                passphrase = Some(args[i + 1].clone());
+                i += 2;
+            }}
             "--help" | "-h" => {{
                 println!("Encrypted Standalone Slide Presentation");
-                println!("Usage: {{}} [--pin <PIN>]", args[0]);
-                println!("Hardware requirement: Connected YubiKey PIV smartcard");
-                println!("Environment variables: PIV_PIN");
+                println!("Usage: {{}} [--pin <PIN>] [--passphrase <PASSPHRASE>]", args[0]);
+                println!("Hardware requirement: Connected YubiKey PIV smartcard (if PIV mode)");
+                println!("Supported Authentication: Hardware YubiKey PIV smartcard OR Passphrase/BIP-39 Mnemonic");
+                println!("Environment variables: PIV_PIN, SLIDE_PASSPHRASE, SLIDE_SECRET");
                 return Ok(());
             }}
             _ => {{ i += 1; }}
@@ -327,25 +515,118 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     let container = EncryptedSlideContainer::parse(ENCRYPTED_DATA)
         .map_err(|e| format!("Invalid presentation container: {{e}}"))?;
 
-    let mut card = PivManager::acquire_card(pin.as_deref())
-        .map_err(|e| format!("PIV smartcard connection failed: {{e}}"))?;
+    let (deck, asset_store) = match container.header.auth_mode {{
+        AuthMode::Passphrase | AuthMode::Mnemonic => {{
+            let max_attempts = 3;
+            let mut last_err = None;
+            let mut decrypted = None;
+            let mut initial_secret = passphrase.map(|p| slide_core::security::Zeroizing::new(p))
+                .or_else(|| std::env::var("SLIDE_PASSPHRASE").or_else(|_| std::env::var("SLIDE_SECRET")).ok().map(slide_core::security::Zeroizing::new));
 
-    // Pop up GUI PIN dialog during presentation playback if PIN is not already supplied
-    if !card.is_authenticated() && pin.is_none() {{
-        if let Some(gui_pin) = prompt_pin_gui(
-            "Cargo Slide - YubiKey PIV Authentication",
-            "Enter 6-8 digit User PIN to decrypt presentation:",
-        ) {{
-            card.verify_pin(&gui_pin)
-                .map_err(|e| format!("PIV authentication failed: {{e}}"))?;
+            for attempt in 0..max_attempts {{
+                let secret: slide_core::security::Zeroizing<String> = if let Some(s) = initial_secret.take() {{
+                    s
+                }} else {{
+                    let attempts_left = max_attempts - attempt;
+                    let is_mnemonic = container.header.auth_mode == AuthMode::Mnemonic;
+                    let title = if attempt == 0 {{
+                        "Cargo Slide - Presentation Decryption"
+                    }} else {{
+                        "Authentication Failed - Please Re-enter"
+                    }};
+                    let gui_subtitle = if attempt == 0 {{
+                        if is_mnemonic {{
+                            "Enter 12/24-word BIP-39 recovery mnemonic:".to_string()
+                        }} else {{
+                            "Enter passphrase to decrypt presentation:".to_string()
+                        }}
+                    }} else if is_mnemonic {{
+                        format!("Incorrect mnemonic ({{attempts_left}} attempts remaining). Please re-enter:")
+                    }} else {{
+                        format!("Incorrect passphrase ({{attempts_left}} attempts remaining). Please re-enter:")
+                    }};
+
+                    if let Some(gui_secret) = prompt_pin_gui(title, &gui_subtitle) {{
+                        gui_secret
+                    }} else if std::io::stdin().is_terminal() {{
+                        let term_prompt = if attempt == 0 {{
+                            if is_mnemonic {{
+                                "Enter 12/24-word recovery mnemonic: ".to_string()
+                            }} else {{
+                                "Enter passphrase: ".to_string()
+                            }}
+                        }} else if is_mnemonic {{
+                            format!("\x1b[33mIncorrect mnemonic ({{attempts_left}} attempts remaining). Please re-enter:\x1b[0m ")
+                        }} else {{
+                            format!("\x1b[33mIncorrect passphrase ({{attempts_left}} attempts remaining). Please re-enter:\x1b[0m ")
+                        }};
+                        read_masked_secret(&term_prompt)?
+                    }} else {{
+                        break;
+                    }}
+                }};
+
+                match container.decrypt_with_secret(&secret) {{
+                    Ok(res) => {{
+                        decrypted = Some(res);
+                        break;
+                    }}
+                    Err(e) => {{
+                        last_err = Some(e);
+                        if attempt + 1 < max_attempts {{
+                            eprintln!("[WARNING] Authentication failed. Please try again ({{}} attempts remaining).", max_attempts - 1 - attempt);
+                        }}
+                    }}
+                }}
+            }}
+
+            decrypted.ok_or_else(|| format!("Integrity check or decryption failed: {{}}", last_err.map(|e| e.to_string()).unwrap_or_else(|| "Retries exhausted".to_string())))?
         }}
-    }}
+        AuthMode::Piv => {{
+            let mut card = PivManager::acquire_card(pin.as_deref())
+                .map_err(|e| format!("PIV smartcard connection failed: {{e}}"))?;
 
-    prompt_pin_if_needed(card.as_mut(), pin.as_deref())
-        .map_err(|e| format!("PIV authentication failed: {{e}}"))?;
+            if !card.is_authenticated() && pin.is_none() {{
+                let max_attempts = 3;
+                for attempt in 0..max_attempts {{
+                    let attempts_left = match card.check_pin_status() {{
+                        Ok(slide_core::security::piv::PinStatus::NotVerified {{ tries_remaining }}) => (tries_remaining as usize).min(max_attempts - attempt),
+                        _ => max_attempts - attempt,
+                    }};
+                    let title = if attempt == 0 {{
+                        "Cargo Slide - YubiKey PIV Authentication"
+                    }} else {{
+                        "PIN Verification Failed - Please Re-enter"
+                    }};
+                    let subtitle = if attempt == 0 {{
+                        format!("Enter 6-8 digit User PIN to decrypt presentation ({{attempts_left}} attempts remaining):")
+                    }} else {{
+                        format!("Incorrect PIN ({{attempts_left}} attempts remaining). Please re-enter:")
+                    }};
 
-    let (deck, asset_store) = container.decrypt_in_memory(card.as_mut(), None)
-        .map_err(|e| format!("Integrity check or decryption failed: {{e}}"))?;
+                    if let Some(gui_pin) = prompt_pin_gui(title, &subtitle) {{
+                        match card.verify_pin(&gui_pin) {{
+                            Ok(()) => break,
+                            Err(e) => {{
+                                if attempt + 1 == max_attempts {{
+                                    return Err(format!("PIV authentication failed: {{e}}").into());
+                                }}
+                                eprintln!("[WARNING] Incorrect PIN. Please try again.");
+                            }}
+                        }}
+                    }} else {{
+                        break;
+                    }}
+                }}
+            }}
+
+            prompt_pin_if_needed(card.as_mut(), pin.as_deref())
+                .map_err(|e| format!("PIV authentication failed: {{e}}"))?;
+
+            container.decrypt_in_memory(card.as_mut(), None)
+                .map_err(|e| format!("Integrity check or decryption failed: {{e}}"))?
+        }}
+    }};
 
     SlideApp::from_deck(deck)
         .asset_store(asset_store)
@@ -389,7 +670,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
         })),
     );
     let target_dir = repo_root.join("target/standalone_target");
-    run_cargo_build_with_progress(&build_path, &target_dir, target)?;
+    run_cargo_build_with_progress(&build_path, &target_dir, target, cross, cross_tool)?;
 
     let bin_filename = if targets_windows {
         "slide-standalone-runner.exe"
@@ -434,9 +715,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     slide_core::logger::log_event(
         "success",
         &format!(
-            "[OK] Single binary generated successfully!{enc_suffix}\n\
-             Output: {} ({:.2} MB)\n\
-             You can now distribute and run this standalone presentation on any machine!",
+            "[OK] Single binary generated successfully!{enc_suffix}\n Output: {} ({:.2} MB)",
             target_binary.display(),
             size_mb
         ),
@@ -543,16 +822,102 @@ fn estimate_total_units(
 /// "compiler-message"` events -- `--message-format=json` alone would otherwise swallow them
 /// entirely compared to the plain (non-JSON) invocation this replaces, since cargo routes
 /// per-file diagnostics through the JSON message stream rather than stderr in that mode.
+fn which_cmd(cmd: &str) -> bool {
+    if let Ok(path) = std::env::var("PATH") {
+        for p in std::env::split_paths(&path) {
+            let direct = p.join(cmd);
+            if direct.is_file() {
+                return true;
+            }
+            #[cfg(windows)]
+            {
+                if p.join(format!("{cmd}.exe")).is_file() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 fn run_cargo_build_with_progress(
     build_path: &Path,
     target_dir: &Path,
     target: Option<&str>,
+    cross: bool,
+    cross_tool: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let total = estimate_total_units(build_path, target);
 
-    let mut cargo_cmd = Command::new("cargo");
+    let explicit_cross = cross || cross_tool != "auto";
+    let is_cross_target = target.is_some_and(|triple| {
+        let arch = std::env::consts::ARCH;
+        let os = std::env::consts::OS;
+        !triple.starts_with(arch) || !triple.contains(os)
+    });
+
+    let selected_backend = match cross_tool {
+        | "zig" | "cargo-zigbuild" => "zig",
+        | "cross" => "cross",
+        | "cargo" | "native" => "cargo",
+        | _ => {
+            if is_cross_target || explicit_cross {
+                if let Some(triple) = target {
+                    if triple.contains("windows") {
+                        if which_cmd("cargo-zigbuild") || which_cmd("zig") {
+                            "zig"
+                        } else if which_cmd("cross") {
+                            "cross"
+                        } else {
+                            "cargo"
+                        }
+                    } else if which_cmd("cross") {
+                        "cross"
+                    } else if which_cmd("cargo-zigbuild") || which_cmd("zig") {
+                        "zig"
+                    } else {
+                        "cargo"
+                    }
+                } else if which_cmd("cargo-zigbuild") {
+                    "zig"
+                } else if which_cmd("cross") {
+                    "cross"
+                } else {
+                    "cargo"
+                }
+            } else {
+                "cargo"
+            }
+        },
+    };
+
+    slide_core::logger::log_event(
+        "info",
+        &format!(
+            "[BUILD] Cross-platform compilation engine: {} (target: {})",
+            match selected_backend {
+                | "zig" => "cargo-zigbuild (Zig toolchain)",
+                | "cross" => "cross (OCI container sysroot)",
+                | _ => "cargo (native toolchain)",
+            },
+            target.unwrap_or("host")
+        ),
+        None,
+    );
+
+    let mut cargo_cmd = if selected_backend == "cross" {
+        Command::new("cross")
+    } else {
+        Command::new("cargo")
+    };
+
+    if selected_backend == "zig" {
+        cargo_cmd.arg("zigbuild");
+    } else {
+        cargo_cmd.arg("build");
+    }
+
     cargo_cmd
-        .arg("build")
         .arg("--release")
         .arg("--target-dir")
         .arg(target_dir)
@@ -561,8 +926,30 @@ fn run_cargo_build_with_progress(
         .current_dir(build_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+
     if let Some(triple) = target {
         cargo_cmd.arg("--target").arg(triple);
+    }
+
+    if selected_backend == "cross" {
+        if std::env::var("CROSS_CONTAINER_ENGINE").is_err() {
+            if which_cmd("podman") && !which_cmd("docker") {
+                cargo_cmd.env("CROSS_CONTAINER_ENGINE", "podman");
+            }
+        }
+        let cross_toml = build_path.join("Cross.toml");
+        if !cross_toml.exists() {
+            let _ = std::fs::write(
+                &cross_toml,
+                r#"[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture arm64",
+    "apt-get update",
+    "apt-get --assume-yes install libasound2-dev:arm64",
+]
+"#,
+            );
+        }
     }
 
     let mut child = cargo_cmd.spawn()?;

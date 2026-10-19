@@ -1027,7 +1027,7 @@ pub fn blend_pixel(
     (0xFF << 24) | (r << 16) | (g << 8) | b
 }
 
-/// Blazing fast integer alpha blending using bit-shifts (0..256 alpha, zero divisions)
+/// Fast integer alpha blending using bit-shifts (0..256 alpha, zero divisions)
 #[inline(always)]
 #[must_use]
 pub fn blend_pixel_fast(

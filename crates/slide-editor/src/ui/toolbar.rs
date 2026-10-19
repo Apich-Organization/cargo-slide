@@ -38,6 +38,7 @@ pub fn view_toolbar<'a>(
     can_undo: bool,
     can_redo: bool,
     window_width: f32,
+    has_editable_source: bool,
 ) -> Element<'a, Message> {
     let is_compact = window_width < COMPACT_BREAKPOINT;
     let is_narrow = window_width < NARROW_BREAKPOINT;
@@ -155,6 +156,32 @@ pub fn view_toolbar<'a>(
     )
     .padding([2, 2])
     .style(move |_| theme::segmented_pill_container_style(theme));
+
+    let mode_switcher: Element<'a, Message> = if has_editable_source {
+        segmented_bar.into()
+    } else {
+        container(
+            row![
+                container(text("VECTOR").size(9).color(iced::Color::WHITE),)
+                    .padding([1, 6])
+                    .style(move |_| {
+                        container::Style {
+                            background: Some(iced::Background::Color(theme.accent())),
+                            border: iced::border::rounded(RADIUS_FULL),
+                            ..container::Style::default()
+                        }
+                    }),
+                text("Protected Presentation (Read-Only)")
+                    .size(12)
+                    .color(theme.text_primary()),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        )
+        .padding([3, 10])
+        .style(move |_| theme::segmented_pill_container_style(theme))
+        .into()
+    };
 
     // 3. Right section: Quick actions with responsive labels
     let tb_size = if is_compact { 11 } else { 12 };
@@ -312,18 +339,20 @@ pub fn view_toolbar<'a>(
 
     // Always-visible core actions
     right_bar = right_bar.push(make_tooltip(save_btn.into(), "Save Document (Ctrl+S)"));
-    right_bar = right_bar.push(make_tooltip(undo_btn.into(), "Undo (Ctrl+Z)"));
-    right_bar = right_bar.push(make_tooltip(
-        redo_btn.into(),
-        "Redo (Ctrl+Y / Ctrl+Shift+Z)",
-    ));
+    if has_editable_source {
+        right_bar = right_bar.push(make_tooltip(undo_btn.into(), "Undo (Ctrl+Z)"));
+        right_bar = right_bar.push(make_tooltip(
+            redo_btn.into(),
+            "Redo (Ctrl+Y / Ctrl+Shift+Z)",
+        ));
+    }
 
     if !is_tiny {
         right_bar = right_bar.push(make_tooltip(new_btn.into(), "New Document (Ctrl+N)"));
         right_bar = right_bar.push(make_tooltip(open_btn.into(), "Open Document (Ctrl+O)"));
     }
 
-    if !is_narrow {
+    if !is_narrow && has_editable_source {
         let templates_btn = button(text("Templates").size(tb_size))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
@@ -359,7 +388,7 @@ pub fn view_toolbar<'a>(
     let main_row = row![
         left_bar,
         Space::new().width(Length::Fill),
-        segmented_bar,
+        mode_switcher,
         Space::new().width(Length::Fill),
         right_bar
     ]
@@ -448,6 +477,7 @@ pub fn view_formatting_bar<'a>(
     let text_group = row![
         make_btn("Bold", Message::InsertSnippet("*bold text*")),
         make_btn("Italic", Message::InsertSnippet("_italic text_")),
+        make_btn("Font", Message::OpenInlineFontModal),
         make_btn("Math", Message::InsertSnippet("$ E = m c^2 $")),
         make_btn(
             "Code",

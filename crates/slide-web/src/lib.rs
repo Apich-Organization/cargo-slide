@@ -7,9 +7,11 @@
 //! - Presenter Tools (Laser Pointer, 7-Color Whiteboard Pen, Audio Engine, Volume Toast)
 //! - Modern Glassmorphism Dock, Overview Grid Modal, and Keyboard Help Modal.
 
+pub mod bip39_words;
 pub mod chart;
 pub mod highlight;
 pub mod model;
+pub mod security;
 
 use chart::TransformPreset;
 use chart::apply_transform;
@@ -195,8 +197,19 @@ fn create_fallback_deck() -> SlideDeck {
     }
 }
 
-async fn fetch_deck_json() -> Result<SlideDeck, String> {
+/// Result of fetching presentation deck from static server
+#[derive(Debug, Clone)]
+pub enum DeckFetchResult {
+    /// Plain unencrypted deck ready for display
+    Ready(SlideDeck),
+    /// Protected deck requiring passphrase or BIP-39 mnemonic verification
+    Protected(security::ProtectedDeckEnvelope),
+}
+
+async fn fetch_deck_payload() -> Result<DeckFetchResult, String> {
+    use base64::Engine as _;
     use gloo_net::http::Request;
+
     let resp = Request::get("deck.json")
         .send()
         .await
@@ -204,11 +217,45 @@ async fn fetch_deck_json() -> Result<SlideDeck, String> {
     if !resp.ok() {
         return Err(format!("HTTP error {}", resp.status()));
     }
-    let deck: SlideDeck = resp
+    let raw_json: serde_json::Value = resp
         .json()
         .await
         .map_err(|e| format!("Failed to parse deck JSON: {e}"))?;
-    Ok(deck)
+
+    if raw_json
+        .get("cargo_slide_protected")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        let env: security::ProtectedDeckEnvelope = serde_json::from_value(raw_json)
+            .map_err(|e| format!("Invalid protected presentation envelope: {e}"))?;
+
+        // Check if we have a valid saved token in browser storage
+        if let Some(token_b64) = security::get_saved_token() {
+            let b64 = &base64::engine::general_purpose::STANDARD;
+            if let Ok(key_bytes) = b64.decode(&token_b64) {
+                if key_bytes.len() == 32 {
+                    let mut key_arr = [0u8; 32];
+                    key_arr.copy_from_slice(&key_bytes);
+                    if let (Ok(nonce_bytes), Ok(ct_bytes)) =
+                        (b64.decode(&env.nonce), b64.decode(&env.ciphertext))
+                    {
+                        if let Ok(decrypted) =
+                            security::decrypt_deck(&key_arr, &nonce_bytes, &ct_bytes)
+                        {
+                            return Ok(DeckFetchResult::Ready(decrypted));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(DeckFetchResult::Protected(env))
+    } else {
+        let deck: SlideDeck = serde_json::from_value(raw_json)
+            .map_err(|e| format!("Failed to parse slide deck: {e}"))?;
+        Ok(DeckFetchResult::Ready(deck))
+    }
 }
 
 fn toggle_fullscreen() {
@@ -322,42 +369,146 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    // Asynchronously fetch deck.json when mounted
-    Effect::new(move |_| {
-        wasm_bindgen_futures::spawn_local(async move {
-            let Ok(loaded_deck) = fetch_deck_json().await else {
-                return;
-            };
-            if !loaded_deck.slides.is_empty() {
-                let initial_target = if let Some(w) = web_sys::window() {
-                    if let Ok(hash) = w.location().hash() {
-                        let clean = hash.trim_start_matches('#');
-                        if let Some(num_str) = clean.strip_prefix("slide=") {
-                            num_str.parse::<usize>().ok().map(|p| p.saturating_sub(1))
-                        } else {
-                            clean.parse::<usize>().ok().map(|p| p.saturating_sub(1))
-                        }
+    // Presentation Protection State
+    let protected_envelope = RwSignal::new(None::<security::ProtectedDeckEnvelope>);
+    let auth_input = RwSignal::new(String::new());
+    let auth_error = RwSignal::new(None::<String>);
+    let auth_retries = RwSignal::new(3usize);
+
+    let apply_loaded_deck = move |loaded_deck: SlideDeck| {
+        if !loaded_deck.slides.is_empty() {
+            let initial_target = if let Some(w) = web_sys::window() {
+                if let Ok(hash) = w.location().hash() {
+                    let clean = hash.trim_start_matches('#');
+                    if let Some(num_str) = clean.strip_prefix("slide=") {
+                        num_str.parse::<usize>().ok().map(|p| p.saturating_sub(1))
                     } else {
-                        None
+                        clean.parse::<usize>().ok().map(|p| p.saturating_sub(1))
                     }
                 } else {
                     None
                 }
-                .unwrap_or(0)
-                .min(loaded_deck.slides.len().saturating_sub(1));
+            } else {
+                None
+            }
+            .unwrap_or(0)
+            .min(loaded_deck.slides.len().saturating_sub(1));
 
-                current_index.set(initial_target);
-                let first_max_step = loaded_deck
-                    .slides
-                    .get(initial_target)
-                    .map(|s| s.max_step())
-                    .unwrap_or(0);
-                current_step.set(if first_max_step > 0 { 1 } else { 0 });
-                active_transition.set(loaded_deck.default_animation.clone());
-                deck.set(loaded_deck);
+            current_index.set(initial_target);
+            let first_max_step = loaded_deck
+                .slides
+                .get(initial_target)
+                .map(|s| s.max_step())
+                .unwrap_or(0);
+            current_step.set(if first_max_step > 0 { 1 } else { 0 });
+            active_transition.set(loaded_deck.default_animation.clone());
+            deck.set(loaded_deck);
+        }
+    };
+
+    // Asynchronously fetch deck.json when mounted
+    Effect::new(move |_| {
+        let apply = apply_loaded_deck.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            match fetch_deck_payload().await {
+                | Ok(DeckFetchResult::Ready(loaded_deck)) => {
+                    apply(loaded_deck);
+                },
+                | Ok(DeckFetchResult::Protected(env)) => {
+                    protected_envelope.set(Some(env));
+                },
+                | Err(e) => {
+                    web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                },
             }
         });
     });
+
+    let on_submit_secret = {
+        let apply = apply_loaded_deck.clone();
+        move || {
+            let secret = auth_input.get();
+            let secret_trimmed = secret.trim();
+            if secret_trimmed.is_empty() {
+                auth_error.set(Some(
+                    "Please enter passphrase or recovery mnemonic.".to_string(),
+                ));
+                return;
+            }
+
+            let Some(env) = protected_envelope.get() else {
+                return;
+            };
+            use base64::Engine as _;
+            let b64 = &base64::engine::general_purpose::STANDARD;
+
+            let Ok(salt_bytes) = b64.decode(&env.salt) else {
+                auth_error.set(Some(
+                    "Invalid salt in protected presentation payload.".to_string(),
+                ));
+                return;
+            };
+            if salt_bytes.len() != 32 {
+                auth_error.set(Some(
+                    "Invalid salt length in protected presentation payload.".to_string(),
+                ));
+                return;
+            }
+            let mut salt_arr = [0u8; 32];
+            salt_arr.copy_from_slice(&salt_bytes);
+
+            let derived_key = if env.auth_mode == "mnemonic" {
+                security::derive_key_from_mnemonic(secret_trimmed, &salt_arr, env.iterations)
+            } else {
+                security::derive_key_from_passphrase(secret_trimmed, &salt_arr, env.iterations)
+            };
+
+            let Ok(key) = derived_key else {
+                let r = auth_retries.get().saturating_sub(1);
+                auth_retries.set(r);
+                let remaining_msg = if r > 0 {
+                    format!(
+                        "Invalid mnemonic checksum or dictionary word ({r} attempts remaining). Please check spelling."
+                    )
+                } else {
+                    "Authentication failed. Please refresh the page to try again.".to_string()
+                };
+                auth_error.set(Some(remaining_msg));
+                return;
+            };
+
+            let (Ok(nonce_bytes), Ok(ct_bytes)) =
+                (b64.decode(&env.nonce), b64.decode(&env.ciphertext))
+            else {
+                auth_error.set(Some(
+                    "Corrupted ciphertext in protected presentation payload.".to_string(),
+                ));
+                return;
+            };
+
+            match security::decrypt_deck(&key, &nonce_bytes, &ct_bytes) {
+                | Ok(decrypted_deck) => {
+                    let token_b64 = b64.encode(&*key);
+                    security::save_token(&token_b64, env.token_ttl_seconds);
+                    protected_envelope.set(None);
+                    auth_error.set(None);
+                    apply(decrypted_deck);
+                },
+                | Err(_) => {
+                    let r = auth_retries.get().saturating_sub(1);
+                    auth_retries.set(r);
+                    let remaining_msg = if r > 0 {
+                        format!(
+                            "Incorrect passphrase or recovery mnemonic ({r} attempts remaining). Please re-enter:"
+                        )
+                    } else {
+                        "Authentication failed. Retries exhausted.".to_string()
+                    };
+                    auth_error.set(Some(remaining_msg));
+                },
+            }
+        }
+    };
 
     let total_slides = Signal::derive(move || deck.get().slides.len());
 
@@ -507,6 +658,21 @@ pub fn App() -> impl IntoView {
 
     // Keyboard events
     window_event_listener(leptos::ev::keydown, move |ev: web_sys::KeyboardEvent| {
+        // If authentication modal is active, do not handle presentation navigation
+        if protected_envelope.get().is_some() {
+            return;
+        }
+
+        // Ignore presentation navigation when typing in form inputs or textareas
+        if let Some(target) = ev.target() {
+            if let Ok(el) = target.dyn_into::<web_sys::HtmlElement>() {
+                let tag = el.tag_name().to_lowercase();
+                if tag == "input" || tag == "textarea" || el.is_content_editable() {
+                    return;
+                }
+            }
+        }
+
         resume_audio_if_needed();
         if active_chart_inspector.get().is_some()
             || active_video_modal.get().is_some()
@@ -868,10 +1034,90 @@ pub fn App() -> impl IntoView {
                 }
             }}
 
+            // Presentation Authentication Overlay Modal
+            {move || {
+                if let Some(env) = protected_envelope.get() {
+                    let is_mnemonic = env.auth_mode == "mnemonic";
+                    let title = env.title.clone().unwrap_or_else(|| "Protected Presentation".to_string());
+                    let on_submit = on_submit_secret.clone();
+                    let on_submit_btn = on_submit_secret.clone();
+                    view! {
+                        <div class="auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(16px); display: flex; align-items: center; justify-content: center; z-index: 99999;">
+                            <div class="auth-modal-card" style="background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 36px 32px; width: 450px; max-width: 90vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6); color: #f8fafc; font-family: system-ui, sans-serif;">
+                                <div style="text-align: center; margin-bottom: 24px;">
+                                    <div style="font-size: 42px; margin-bottom: 12px;">"🔒"</div>
+                                    <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 8px 0; color: #f1f5f9;">{title}</h2>
+                                    <p style="font-size: 14px; color: #94a3b8; margin: 0; line-height: 1.5;">
+                                        {move || {
+                                            let r = auth_retries.get();
+                                            if is_mnemonic {
+                                                format!("Enter your 12 or 24-word recovery mnemonic to unlock this presentation ({r} attempts remaining).")
+                                            } else {
+                                                format!("Enter your security passphrase to unlock this presentation ({r} attempts remaining).")
+                                            }
+                                        }}
+                                    </p>
+                                </div>
+
+                                <div style="display: flex; flex-direction: column; gap: 16px;">
+                                    <input
+                                        type="password"
+                                        disabled=move || auth_retries.get() == 0
+                                        placeholder=if is_mnemonic { "e.g. word1 word2 word3..." } else { "Enter secret passphrase" }
+                                        prop:value=move || auth_input.get()
+                                        on:input=move |ev| auth_input.set(event_target_value(&ev))
+                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                            ev.stop_propagation();
+                                            if ev.key() == "Enter" {
+                                                ev.prevent_default();
+                                                on_submit();
+                                            }
+                                        }
+                                        style="width: 100%; box-sizing: border-box; padding: 12px 16px; background: #0f172a; border: 1px solid #475569; border-radius: 8px; color: #f8fafc; font-size: 14px; outline: none;"
+                                    />
+
+                                    {move || {
+                                        if let Some(err) = auth_error.get() {
+                                            view! {
+                                                <div style="color: #f87171; font-size: 13px; background: rgba(239, 68, 68, 0.15); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.3); line-height: 1.4;">
+                                                    {err}
+                                                </div>
+                                            }.into_any()
+                                        } else {
+                                            view! { <div/> }.into_any()
+                                        }
+                                    }}
+
+                                    <button
+                                        disabled=move || auth_retries.get() == 0
+                                        on:click=move |_| on_submit_btn()
+                                        style=move || {
+                                            let disabled = auth_retries.get() == 0;
+                                            format!(
+                                                "padding: 12px; background: {}; border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: {}; transition: background 0.15s ease;",
+                                                if disabled { "#475569" } else { "#0284c7" },
+                                                if disabled { "not-allowed" } else { "pointer" }
+                                            )
+                                        }
+                                    >
+                                        {move || if auth_retries.get() == 0 { "Retries Exhausted" } else { "Unlock Presentation" }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <div/> }.into_any()
+                }
+            }}
+
             // Main Presentation Viewport
             <div
                 class="slide-viewport"
                 on:click=move |ev| {
+                    if protected_envelope.get().is_some() {
+                        return;
+                    }
                     resume_audio_if_needed();
                     // Left click advances if not drawing pen
                     if !pen_active.get() && ev.button() == 0 {
@@ -879,6 +1125,10 @@ pub fn App() -> impl IntoView {
                     }
                 }
                 on:contextmenu=move |ev| {
+                    if protected_envelope.get().is_some() {
+                        ev.prevent_default();
+                        return;
+                    }
                     ev.prevent_default();
                     if !pen_active.get() {
                         prev_step_or_slide();

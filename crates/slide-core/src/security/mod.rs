@@ -1,13 +1,22 @@
 //! Cryptographic protection, YubiKey PIV slot key binding, SHA3-512 integrity verification,
 //! and in-memory zeroization for cargo-slide presentations.
 
+pub mod anti_dump;
 pub mod asset_store;
+pub mod bip39_words;
 pub mod cert;
 pub mod container;
 pub mod crypto;
+pub mod masked_input;
+pub mod obfuscation;
+pub mod passphrase;
 pub mod pcsc;
 pub mod piv;
 
+pub use crate::package::is_encrypted_package_file;
+pub use anti_dump::enable_anti_dump_protection;
+pub use anti_dump::mlock_slice;
+pub use anti_dump::munlock_slice;
 pub use asset_store::MemoryAssetStore;
 pub use cert::PivCertInfo;
 pub use cert::PivKeyAlgorithm;
@@ -24,11 +33,21 @@ pub use crypto::aes_256_gcm_decrypt;
 pub use crypto::aes_256_gcm_encrypt;
 pub use crypto::compute_sha3_512;
 pub use crypto::generate_aes_key;
+pub use masked_input::read_masked_secret;
+pub use obfuscation::deobfuscate_str;
+pub use passphrase::AuthMode;
+pub use passphrase::EncryptedKeystore;
+pub use passphrase::SoftwareKeystore;
+pub use passphrase::generate_bip39_mnemonic;
+pub use passphrase::validate_bip39_mnemonic;
+pub use passphrase::validate_password_strength;
 pub use pcsc::PcscCard;
 pub use pcsc::PcscContext;
 pub use piv::PcscPivCard;
 pub use piv::PivCard;
 pub use piv::PivManager;
+pub use piv::prompt_pin_for_slot;
 pub use piv::prompt_pin_if_needed;
+pub use piv::prompt_secret_gui;
 pub use zeroize::Zeroize;
 pub use zeroize::Zeroizing;

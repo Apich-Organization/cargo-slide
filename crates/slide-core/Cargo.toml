@@ -46,6 +46,8 @@ hkdf.workspace = true
 time.workspace = true
 libc.workspace = true
 flate2.workspace = true
+subtle.workspace = true
+pbkdf2.workspace = true
 
 [features]
 test-mock = []

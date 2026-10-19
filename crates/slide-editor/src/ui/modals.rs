@@ -40,6 +40,12 @@ pub fn view_export_modal<'a>(
     active_slide: usize,
     total_slides: usize,
     status_msg: Option<&'a str>,
+    export_encrypt: bool,
+    export_auth_mode: slide_core::security::AuthMode,
+    export_passphrase: &'a str,
+    export_mnemonic_words: usize,
+    export_custom_mnemonic: &'a str,
+    export_piv_pin: &'a str,
 ) -> Element<'a, Message> {
     let title = text("Export Presentation & Documents")
         .size(18)
@@ -52,9 +58,9 @@ pub fn view_export_modal<'a>(
     // Format selection buttons
     let format_btn = |fmt: ExportFormat, label: &'static str| {
         let is_selected = selected_format == fmt;
-        button(text(label).size(13))
+        button(text(label).size(12))
             .style(move |_theme, _status| theme::subtle_button_style(theme, is_selected))
-            .padding([8, 14])
+            .padding([7, 12])
             .on_press(Message::SelectExportFormat(fmt))
     };
 
@@ -137,7 +143,7 @@ pub fn view_export_modal<'a>(
         Space::new().height(0).into()
     };
 
-    // PNG scale options if PNG is selected
+    // PNG scale options or .slide package options
     let extra_options: Element<'a, Message> = if selected_format == ExportFormat::Png {
         let scale_btn = |s: f32, label: &'static str| {
             let is_sel = (png_scale - s).abs() < 0.01;
@@ -181,7 +187,123 @@ pub fn view_export_modal<'a>(
         .style(move |_t, _s| theme::subtle_button_style(theme, include_source))
         .on_press(Message::ToggleExportIncludeSource);
 
-        container(source_toggle).into()
+        let enc_checkbox = if export_encrypt {
+            "[x]"
+        } else {
+            "[ ]"
+        };
+        let encrypt_toggle = button(
+            row![
+                container(text(enc_checkbox).size(12).color(if export_encrypt { theme.accent() } else { theme.text_muted() }))
+                    .padding([2, 4]),
+                column![
+                    text("Encrypt Slide Package (.slide)").size(12).color(theme.text_primary()),
+                    text("Protect presentation with AES-256-GCM encryption (Passphrase, BIP-39 mnemonic, or YubiKey PIV)").size(10).color(theme.text_muted()),
+                ]
+                .spacing(2),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+        )
+        .padding([6, 10])
+        .style(move |_t, _s| theme::subtle_button_style(theme, export_encrypt))
+        .on_press(Message::ToggleExportEncrypt);
+
+        let mut package_col = column![source_toggle, encrypt_toggle].spacing(6);
+
+        if export_encrypt {
+            use slide_core::security::AuthMode;
+            let mode_btn = |m: AuthMode, label: &'static str| {
+                let is_m = export_auth_mode == m;
+                button(text(label).size(11))
+                    .style(move |_t, _s| theme::subtle_button_style(theme, is_m))
+                    .padding([3, 8])
+                    .on_press(Message::SelectExportAuthMode(m))
+            };
+
+            let modes_row = row![
+                text("Protection Mode:")
+                    .size(11)
+                    .color(theme.text_secondary()),
+                mode_btn(AuthMode::Passphrase, "Passphrase"),
+                mode_btn(AuthMode::Mnemonic, "BIP-39 Mnemonic"),
+                mode_btn(AuthMode::Piv, "YubiKey PIV"),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center);
+
+            let mode_details: Element<'a, Message> = match export_auth_mode {
+                | AuthMode::Passphrase => {
+                    column![
+                        text("Passphrase (min 8 characters, mixed case & numbers):")
+                            .size(11)
+                            .color(theme.text_muted()),
+                        text_input("Enter strong passphrase...", export_passphrase)
+                            .secure(true)
+                            .on_input(Message::ExportPassphraseChanged)
+                            .padding([4, 8]),
+                    ]
+                    .spacing(4)
+                    .into()
+                },
+                | AuthMode::Mnemonic => {
+                    let w12_sel = export_mnemonic_words == 12;
+                    let w24_sel = export_mnemonic_words == 24;
+                    let words_row = row![
+                        text("Mnemonic Words:").size(11).color(theme.text_muted()),
+                        button(text("12 Words").size(11))
+                            .style(move |_t, _s| theme::subtle_button_style(theme, w12_sel))
+                            .padding([2, 8])
+                            .on_press(Message::SelectExportMnemonicWords(12)),
+                        button(text("24 Words").size(11))
+                            .style(move |_t, _s| theme::subtle_button_style(theme, w24_sel))
+                            .padding([2, 8])
+                            .on_press(Message::SelectExportMnemonicWords(24)),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center);
+
+                    column![
+                        words_row,
+                        text("Custom Mnemonic (leave blank to auto-generate):")
+                            .size(11)
+                            .color(theme.text_muted()),
+                        text_input(
+                            "Auto-generates upon export if blank...",
+                            export_custom_mnemonic
+                        )
+                        .on_input(Message::ExportCustomMnemonicChanged)
+                        .padding([4, 8]),
+                    ]
+                    .spacing(4)
+                    .into()
+                },
+                | AuthMode::Piv => {
+                    column![
+                        text("Hardware PIV binding: Slot 9D Key Mgmt & Slot 9C Digital Signature.")
+                            .size(11)
+                            .color(theme.text_muted()),
+                        text_input(
+                            "YubiKey PIN (optional, will prompt if left blank)...",
+                            export_piv_pin
+                        )
+                        .secure(true)
+                        .on_input(Message::ExportPivPinChanged)
+                        .padding([4, 8]),
+                    ]
+                    .spacing(4)
+                    .into()
+                },
+            };
+
+            let enc_card = container(column![modes_row, mode_details].spacing(6))
+                .padding(10)
+                .style(move |_| theme::card_style(theme));
+
+            package_col = package_col.push(enc_card);
+        }
+
+        package_col.into()
     } else {
         Space::new().height(0).into()
     };
@@ -229,7 +351,7 @@ pub fn view_export_modal<'a>(
     .spacing(8);
 
     let dialog_card = container(dialog_content)
-        .width(Length::Fixed(560.0))
+        .width(Length::Fixed(740.0))
         .padding(24)
         .style(move |_| theme::modal_dialog_style(theme));
 
@@ -920,6 +1042,12 @@ pub fn view_block_context_menu_modal<'a>(
             false
         ),
         menu_btn(
+            "🔤",
+            "Set Font for Element...",
+            Message::OpenInlineFontModal,
+            false
+        ),
+        menu_btn(
             "⚡",
             "Configure Step Animation...",
             Message::OpenElementTransitionModal { slide_idx, block_idx },
@@ -971,14 +1099,32 @@ pub fn view_font_selector_modal<'a>(
     theme: AppTheme,
     search_query: &'a str,
     current_font: &'a str,
+    is_inline: bool,
+    selected_text: Option<&'a str>,
 ) -> Element<'a, Message> {
-    let title = text("Select Presentation Font")
-        .size(18)
-        .color(theme.text_primary());
+    let title = text(if is_inline {
+        "Apply Font to Selected Text"
+    } else {
+        "Select Presentation Default Font"
+    })
+    .size(18)
+    .color(theme.text_primary());
 
-    let subtitle = text("Choose from installed system fonts. Font files are automatically bundled when exporting origin packages.")
-        .size(13)
-        .color(theme.text_muted());
+    let subtitle_str = if is_inline {
+        if let Some(sel) = selected_text.filter(|s| !s.trim().is_empty()) {
+            let preview = if sel.len() > 30 {
+                format!("{}...", &sel[..30])
+            } else {
+                sel.to_string()
+            };
+            format!("Seamlessly wraps selected text \"{preview}\" with #font(\"...\")[...].")
+        } else {
+            "Inserts inline #font(\"...\")[] into the current text block. Click a font family to apply.".to_string()
+        }
+    } else {
+        "Choose presentation default font (#set text(font: ...)). Installed fonts are bundled on export.".to_string()
+    };
+    let subtitle = text(subtitle_str).size(13).color(theme.text_muted());
 
     let search_bar = text_input(
         "Search font family (e.g. Nimbus, Sans, Mono)...",
@@ -1027,6 +1173,24 @@ pub fn view_font_selector_modal<'a>(
             })
         };
 
+        let main_msg = if is_inline {
+            Message::ApplyInlineFont(name_clone.clone())
+        } else {
+            Message::SelectFont(name_clone.clone())
+        };
+
+        let secondary_btn = if is_inline {
+            button(text("Set as Default").size(10))
+                .padding([2, 6])
+                .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+                .on_press(Message::SelectFont(name_clone.clone()))
+        } else {
+            button(text("+ Inline").size(10))
+                .padding([2, 6])
+                .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+                .on_press(Message::ApplyInlineFont(name_clone.clone()))
+        };
+
         let row_content = row![
             text(&f.name).size(13).color(if is_curr {
                 theme.accent()
@@ -1034,6 +1198,7 @@ pub fn view_font_selector_modal<'a>(
                 theme.text_primary()
             }),
             Space::new().width(Length::Fill),
+            secondary_btn,
             badge,
         ]
         .spacing(8)
@@ -1043,7 +1208,7 @@ pub fn view_font_selector_modal<'a>(
             .width(Length::Fill)
             .padding([8, 12])
             .style(move |_theme, _status| theme::subtle_button_style(theme, is_curr))
-            .on_press(Message::SelectFont(name_clone));
+            .on_press(main_msg);
 
         font_list = font_list.push(item_btn);
     }
@@ -1506,10 +1671,9 @@ pub fn view_template_library_modal<'a>(theme: AppTheme) -> Element<'a, Message> 
         .size(18)
         .color(theme.text_primary());
 
-    let subtitle =
-        text("Choose a professionally crafted layout to instantly insert into your deck.")
-            .size(13)
-            .color(theme.text_muted());
+    let subtitle = text("Choose a layout template to insert into your deck.")
+        .size(13)
+        .color(theme.text_muted());
 
     let templates = [
         (
@@ -2237,7 +2401,7 @@ pub fn get_palette_actions() -> Vec<CommandPaletteAction> {
     ]
 }
 
-/// Render the Command Palette modal with instant fuzzy search
+/// Render the Command Palette modal with fuzzy search
 #[must_use]
 pub fn view_command_palette_modal<'a>(
     theme: AppTheme,
@@ -2634,6 +2798,57 @@ pub fn view_cheatsheet_modal<'a>(theme: AppTheme) -> Element<'a, Message> {
 
     let dialog_card = container(dialog_content)
         .width(Length::Fixed(680.0))
+        .padding(24)
+        .style(move |_| theme::modal_dialog_style(theme));
+
+    container(dialog_card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}
+
+/// Render the modal displaying an auto-generated BIP-39 recovery mnemonic
+#[must_use]
+pub fn view_generated_mnemonic_modal<'a>(
+    theme: AppTheme,
+    mnemonic: &'a str,
+) -> Element<'a, Message> {
+    let title = text("Recovery Mnemonic Generated")
+        .size(18)
+        .color(theme.accent());
+
+    let subtitle = text(
+        "Please write down and store this recovery mnemonic in a secure location. \
+         It is required to decrypt and view this presentation.",
+    )
+    .size(12)
+    .color(theme.text_secondary());
+
+    let words_box = container(text(mnemonic).size(13).color(theme.text_primary()))
+        .padding(14)
+        .width(Length::Fill)
+        .style(move |_| theme::code_block_container_style(theme));
+
+    let close_btn = button(text("I Have Recorded This Mnemonic (Close)").size(13))
+        .style(move |_theme, _status| theme::primary_button_style(theme))
+        .padding([8, 20])
+        .on_press(Message::CloseModal);
+
+    let dialog_content = column![
+        title,
+        subtitle,
+        Space::new().height(8),
+        words_box,
+        Space::new().height(12),
+        row![Space::new().width(Length::Fill), close_btn].align_y(Alignment::Center),
+    ]
+    .spacing(8);
+
+    let dialog_card = container(dialog_content)
+        .width(Length::Fixed(580.0))
         .padding(24)
         .style(move |_| theme::modal_dialog_style(theme));
 

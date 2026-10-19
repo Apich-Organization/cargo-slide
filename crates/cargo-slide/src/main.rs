@@ -109,6 +109,7 @@ fn dispatch_command(
             kiosk,
             light,
             pin,
+            passphrase,
         }) => {
             commands::run::execute(
                 &file,
@@ -119,6 +120,7 @@ fn dispatch_command(
                 light,
                 kiosk,
                 pin.as_deref(),
+                passphrase.as_deref(),
             )?;
         },
         | Some(Commands::Dev {
@@ -129,6 +131,7 @@ fn dispatch_command(
             kiosk,
             light,
             pin,
+            passphrase,
         }) => {
             commands::run::execute(
                 &file,
@@ -139,6 +142,7 @@ fn dispatch_command(
                 light,
                 kiosk,
                 pin.as_deref(),
+                passphrase.as_deref(),
             )?;
         },
         | Some(Commands::Edit { file, dark }) => {
@@ -150,8 +154,16 @@ fn dispatch_command(
             format,
             animation,
             target,
+            cross,
+            cross_tool,
+            all_targets,
             source,
             encrypt,
+            auth,
+            passphrase,
+            mnemonic,
+            mnemonic_words,
+            token_ttl,
             piv_slot,
             sign_slot,
             cert,
@@ -163,8 +175,16 @@ fn dispatch_command(
                 &format,
                 &animation,
                 target.as_deref(),
+                cross,
+                &cross_tool,
+                all_targets,
                 source,
                 encrypt,
+                &auth,
+                passphrase.as_deref(),
+                mnemonic.as_deref(),
+                mnemonic_words,
+                token_ttl,
                 &piv_slot,
                 &sign_slot,
                 cert.as_deref(),
@@ -177,6 +197,10 @@ fn dispatch_command(
             animation,
             source,
             encrypt,
+            auth,
+            passphrase,
+            mnemonic,
+            mnemonic_words,
             piv_slot,
             sign_slot,
             cert,
@@ -188,6 +212,10 @@ fn dispatch_command(
                 &animation,
                 source,
                 encrypt,
+                &auth,
+                passphrase.as_deref(),
+                mnemonic.as_deref(),
+                mnemonic_words,
                 &piv_slot,
                 &sign_slot,
                 cert.as_deref(),
@@ -204,8 +232,27 @@ fn dispatch_command(
             dir,
             open,
             watch,
+            encrypt,
+            auth,
+            passphrase,
+            mnemonic,
+            mnemonic_words,
+            token_ttl,
         }) => {
-            commands::serve::execute(&file, port, &ip, dir, open, watch)?;
+            commands::serve::execute(
+                &file,
+                port,
+                &ip,
+                dir,
+                open,
+                watch,
+                encrypt,
+                &auth,
+                passphrase.as_deref(),
+                mnemonic.as_deref(),
+                mnemonic_words,
+                token_ttl,
+            )?;
         },
         | Some(Commands::Info { file, json }) => {
             commands::info::execute(&file, json)?;
@@ -233,8 +280,34 @@ fn dispatch_command(
             output,
             pages,
             scale,
+            encrypt,
+            auth,
+            passphrase,
+            mnemonic,
+            mnemonic_words,
+            token_ttl,
+            piv_slot,
+            sign_slot,
+            cert,
+            pin,
         }) => {
-            commands::export::execute(&file, &format, output, pages.as_deref(), scale)?;
+            commands::export::execute(
+                &file,
+                &format,
+                output,
+                pages.as_deref(),
+                scale,
+                encrypt,
+                &auth,
+                passphrase.as_deref(),
+                mnemonic.as_deref(),
+                mnemonic_words,
+                token_ttl,
+                &piv_slot,
+                &sign_slot,
+                cert.as_deref(),
+                pin.as_deref(),
+            )?;
         },
         | Some(Commands::InstallViewer) => {
             println!("Installing slide-viewer universal presentation player...");
@@ -268,7 +341,7 @@ fn dispatch_command(
         },
         | None => {
             let file = default_file.unwrap_or_else(|| PathBuf::from("slides.typ"));
-            commands::run::execute(&file, "fade", false, false, None, false, None, None)?;
+            commands::run::execute(&file, "fade", false, false, None, false, None, None, None)?;
         },
     }
 

@@ -23,7 +23,7 @@
 | Paradigm | Target Use Case | Format & Size | Runtime Dependencies |
 | :--- | :--- | :--- | :--- |
 | **Standalone Binary** | Production talks on trusted machines | Single executable (~14–15 MB) | None (fully self-contained) |
-| **Universal `.slide` Archive** | Sharing via email, chat, or flash drive | Ultra-compressed archive (~1 MB, LZMA2 extreme) | Played via `slide-viewer` |
+| **Universal `.slide` Archive** | Sharing via email, chat, or flash drive | Compressed archive (~1 MB, LZMA2) | Played via `slide-viewer` |
 | **WebAssembly CSR** | Online presentations & web embedding | Static HTML/WASM bundle (Zero inline JavaScript) | Any modern Web browser |
 
 ---
@@ -112,7 +112,7 @@ cargo slide dev
 # 1. Build a self-contained single binary (~14 MB)
 cargo slide build
 
-# 2. Pack into an ultra-compressed .slide archive (~1 MB, LZMA2 extreme)
+# 2. Pack into a compressed .slide archive (~1 MB, LZMA2)
 cargo slide pack -o presentation.slide
 
 # 3. Export to Leptos WebAssembly CSR static website
@@ -223,7 +223,7 @@ cargo-slide/
 └── examples/
     ├── geek-presentation/          # 22-slide reference showcase demonstrating all engine capabilities
     ├── dist-web/                   # Exported Leptos CSR static web bundle
-    └── slides.slide                # Pre-built reference .slide package (LZMA2 extreme)
+    └── slides.slide                # Pre-built reference .slide package (LZMA2)
 ```
 
 ---

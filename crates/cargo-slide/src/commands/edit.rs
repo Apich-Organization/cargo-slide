@@ -45,8 +45,14 @@ pub fn execute(
         Command::new,
     );
 
-    let resolved_path =
-        file.and_then(|f| slide_core::compiler::resolve_presentation_target(f).ok());
+    let resolved_path = file.map_or_else(
+        || slide_core::compiler::resolve_presentation_target(Path::new(".")).ok(),
+        |f| {
+            slide_core::compiler::resolve_presentation_target(f)
+                .ok()
+                .or_else(|| Some(f.to_path_buf()))
+        },
+    );
     let target = resolved_path.as_deref().or(file);
 
     if let Some(f) = target {

@@ -675,10 +675,12 @@ checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
 name = "cargo-slide"
 version = "0.3.0"
 dependencies = [
+ "base64 0.23.1",
  "clap",
  "image",
  "notify",
  "open",
+ "rand 0.10.3",
  "serde",
  "serde_json",
  "slide-core",
@@ -688,6 +690,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tiny_http",
  "walkdir",
+ "zeroize",
 ]
 
 [[package]]
@@ -5699,6 +5702,7 @@ dependencies = [
  "lzma-rs",
  "notify",
  "p256",
+ "pbkdf2",
  "rand 0.10.3",
  "rcgen",
  "roxmltree 0.21.1",
@@ -5709,6 +5713,7 @@ dependencies = [
  "sha2 0.11.1",
  "sha3",
  "slide-theme",
+ "subtle",
  "svgtypes 0.16.1",
  "tar",
  "tempfile",
@@ -5790,15 +5795,22 @@ dependencies = [
 name = "slide-web"
 version = "0.3.0"
 dependencies = [
+ "aes-gcm",
+ "base64 0.23.1",
  "console_error_panic_hook",
+ "getrandom 0.4.3",
  "gloo-net 0.7.0",
+ "hkdf",
  "js-sys",
  "leptos",
+ "pbkdf2",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "zeroize",
 ]
 
 [[package]]

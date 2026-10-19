@@ -31,3 +31,4 @@ examples/target/
 .local_lib/
 crates/slide-theme/target/
 **/.slide_cache/
+**/*.slide

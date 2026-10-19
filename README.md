@@ -23,7 +23,7 @@
 | Paradigm | Target Use Case | Format & Size | Runtime Dependencies |
 | :--- | :--- | :--- | :--- |
 | **Standalone Binary** | Production talks on trusted machines | Single executable (~14–15 MB) | None (fully self-contained) |
-| **Universal `.slide` Archive** | Sharing via email, chat, or flash drive | Ultra-compressed archive (~1 MB, LZMA2 extreme) | Played via `slide-viewer` |
+| **Universal `.slide` Archive** | Sharing via email, chat, or flash drive | Compressed archive (~1 MB, LZMA2) | Played via `slide-viewer` |
 | **WebAssembly CSR** | Online presentations & web embedding | Static HTML/WASM bundle (Zero inline JavaScript) | Any modern Web browser |
 
 ---
@@ -59,6 +59,13 @@
   - Native GUI components (`slide-editor`, `slide-viewer`) and CLI logs rely on universal Unicode/ASCII indicators (`[OK]`, `[WARN]`, `[ERR]`, `[INFO]`, `+ Note`, etc.) to prevent missing-glyph boxes across minimal Linux environments, Wayland/X11 desktops, macOS, and Windows without requiring color emoji fonts.
   - Typst resolves slide content (Latin, CJK, math formulas, and symbols) into vector Bézier `<path>` outlines, ensuring consistent cross-platform presentation display.
 - **13 Built-in Transitions & In-Slide Fragments**: `fade`, `cut`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `zoom`, `wipe-left`, `wipe-right`, `iris`, `glitch`, `cube`, and `particles`. Control sequential item reveals with `#step(order, effect: "...")`.
+- **Presentation Encryption & Integrity Protection**:
+  - **Hardware PIV Token Mode** (YubiKey / Smartcard): Binds presentation decryption to an on-card private key (`9d` Key Management slot) and verifies SHA3-512 integrity digests with an on-card signature (`9c` Digital Signature slot). Requires physical token presence and PIN authentication.
+  - **Software Dual-Key Keystore Mode** (Passphrase / BIP-39 Recovery Mnemonic): Provides hardware-independent encryption by packaging asymmetric P-256 recipient and signing keys within an encrypted keystore protected by AES-256-GCM. Session keys are derived via PBKDF2-HMAC-SHA512 (600,000 iterations) and HKDF-SHA256 from a passphrase (with complexity validation) or a configurable 12/24-word BIP-39 recovery mnemonic (`--mnemonic-words 12|24`).
+  - **In-Memory Zero-Disk Unpacking & Process Hardening**: Presentations are decrypted and decompressed strictly in RAM (`MemoryAssetStore`) and never written to physical disk. Decrypted buffers are locked in RAM via `mlock` to reduce swap file leakage, with automatic zeroization (`zeroize`) on termination. Process memory dumping is restricted via `RLIMIT_CORE = 0`, Linux dumpability suppression (`PR_SET_DUMPABLE = 0`), and macOS debugger attach denial (`PT_DENY_ATTACH`).
+  - **Masked Input & Authentication Retry Loops**: Secret inputs (PIN, passphrase, mnemonic) are masked in terminal CLI prompts and native GUI dialogs. Verification failures prompt the user to re-enter (up to 3 attempts with remaining feedback) instead of aborting immediately. Constant-time comparisons protect against padding side-channel timing leaks.
+  - **Editor GUI Encryption Integration (`slide-editor`)**: Open, edit, and save encrypted `.slide` presentations directly in the native editor GUI with graphical credential prompts. The Export modal supports 1-click encrypted packaging with passphrase, 12/24-word BIP-39 mnemonic, or YubiKey PIV.
+  - **Web Protected Deployment & Session Tokens**: In WebAssembly mode (`cargo slide build/serve/export --format wasm --encrypt`), presentation decks are compiled into an encrypted envelope. Visitors authenticate in-browser with their passphrase or mnemonic, which decrypts the presentation in pure Rust WebAssembly and caches a scoped session token in browser `sessionStorage` with configurable TTL (`--token-ttl <seconds>`, default 24h), preventing plaintext decks from sitting unprotected on static hosting.
 
 ---
 
@@ -127,7 +134,7 @@ cargo slide check
 # 1. Build a self-contained single binary (~14 MB)
 cargo slide build
 
-# 2. Pack into an ultra-compressed .slide archive (~1 MB, LZMA2 extreme)
+# 2. Pack into a compressed .slide archive (~1 MB, LZMA2)
 cargo slide pack -o presentation.slide
 
 # 3. Export to Leptos WebAssembly CSR static website
@@ -139,6 +146,29 @@ cargo slide serve --open
 # 5. Export to multi-page PDF or individual SVGs
 cargo slide export --format pdf -o presentation.pdf
 cargo slide export --format svg -o exported-svgs/
+
+# 6. Package with encryption & integrity protection
+# Hardware PIV token mode (YubiKey / Smartcard):
+cargo slide pack slides.typ --encrypt
+# Software passphrase mode (complexity enforced: >=10 chars, 3+ classes):
+cargo slide pack slides.typ --encrypt --auth passphrase
+# Software BIP-39 recovery mnemonic mode (12 or 24 words):
+cargo slide pack slides.typ --encrypt --auth mnemonic --mnemonic-words 12
+# Standalone encrypted executable:
+cargo slide build slides.typ --format binary --encrypt --auth passphrase
+# Protected Web deployment with TTL session tokens (client-side Wasm decryption):
+cargo slide serve --encrypt --auth passphrase --token-ttl 86400
+cargo slide export --format wasm --encrypt --auth mnemonic -o dist-web/
+
+# 7. Cross-Platform Compilation (Windows & Linux x86_64 & aarch64)
+# Build for Windows x86_64 using Zig toolchain:
+cargo slide build slides.typ --target x86_64-pc-windows-gnu --cross-tool zig
+# Build for Linux aarch64 (ARM64) using Cross container engine:
+cargo slide build slides.typ --target aarch64-unknown-linux-gnu --cross-tool cross
+# Build standalone executables for all 4 desktop targets in one command:
+cargo slide build slides.typ --all-targets
+# Cross-compile the entire cargo-slide workspace toolchain:
+./scripts/cross-build.sh --target all
 ```
 
 ---
@@ -239,7 +269,7 @@ cargo-slide/
 └── examples/
     ├── geek-presentation/          # 22-slide reference showcase demonstrating all engine capabilities
     ├── dist-web/                   # Exported Leptos CSR static web bundle
-    └── slides.slide                # Pre-built reference .slide package (LZMA2 extreme)
+    └── slides.slide                # Pre-built reference .slide package (LZMA2)
 ```
 
 ---

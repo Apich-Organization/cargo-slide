@@ -84,6 +84,7 @@ pub fn execute(action: PivAction) -> Result<(), Box<dyn std::error::Error>> {
             slot,
             output,
             pin,
+            gui,
         } => {
             let piv_slot = PivSlot::parse(&slot).ok_or_else(|| {
                 format!("Invalid PIV slot: '{slot}'. Valid slots: 9a, 9c, 9d, 9e")
@@ -92,7 +93,12 @@ pub fn execute(action: PivAction) -> Result<(), Box<dyn std::error::Error>> {
             let sha3_digest = compute_sha3_512(&file_data);
 
             let mut card = PivManager::acquire_card(pin.as_deref())?;
-            slide_core::security::prompt_pin_if_needed(card.as_mut(), pin.as_deref())?;
+            slide_core::security::prompt_pin_for_slot(
+                card.as_mut(),
+                piv_slot,
+                pin.as_deref(),
+                gui,
+            )?;
 
             let sig = card.sign(piv_slot, &sha3_digest)?;
 
@@ -154,10 +160,15 @@ pub fn execute(action: PivAction) -> Result<(), Box<dyn std::error::Error>> {
             println!("Signature: {}", sig.display());
             println!("Algorithm: SHA3-512 + {}", pub_key.algorithm_name());
         },
-        | PivAction::Test { pin } => {
+        | PivAction::Test { pin, gui } => {
             println!("Running Cargo Slide Cryptography and YubiKey PIV Self-Test...");
             let mut card = PivManager::acquire_card(pin.as_deref())?;
-            slide_core::security::prompt_pin_if_needed(card.as_mut(), pin.as_deref())?;
+            slide_core::security::prompt_pin_for_slot(
+                card.as_mut(),
+                PivSlot::Slot9D,
+                pin.as_deref(),
+                gui,
+            )?;
 
             // Test 1: Symmetric AES-256-GCM
             let key = slide_core::security::crypto::generate_aes_key();
@@ -190,6 +201,12 @@ pub fn execute(action: PivAction) -> Result<(), Box<dyn std::error::Error>> {
 
             // Test 4: PIV Slot Signing
             if let Ok(pub_9c) = card.get_public_key(PivSlot::Slot9C) {
+                slide_core::security::prompt_pin_for_slot(
+                    card.as_mut(),
+                    PivSlot::Slot9C,
+                    pin.as_deref(),
+                    gui,
+                )?;
                 let test_digest = compute_sha3_512(b"Signature self-test");
                 let sig = card.sign(PivSlot::Slot9C, &test_digest)?;
                 match pub_9c {

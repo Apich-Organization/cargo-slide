@@ -33,6 +33,10 @@ const PAYLOAD_DELIMITER: &[u8] = b"\n---ENCRYPTED-PAYLOAD---\n";
 pub struct EncryptedContainerHeader {
     pub format_version: u32,
     pub cipher: String,
+    #[serde(default)]
+    pub auth_mode: super::passphrase::AuthMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypted_keystore: Option<super::passphrase::EncryptedKeystore>,
     pub recipient_slot: PivSlot,
     pub encrypted_session_key: String, // base64
     pub nonce: String,                 // base64 (12 bytes)
@@ -61,7 +65,7 @@ impl EncryptedSlideContainer {
         data.starts_with(ENCRYPTED_CONTAINER_MAGIC)
     }
 
-    /// Pack and encrypt a presentation deck and its assets into an encrypted `.slide` byte buffer.
+    /// Pack and encrypt a presentation deck and its assets into an encrypted `.slide` byte buffer using hardware PIV.
     pub fn pack(
         deck: &SlideDeck,
         assets_dir: Option<&Path>,
@@ -69,6 +73,116 @@ impl EncryptedSlideContainer {
         recipient_slot: PivSlot,
         signer_card: &mut dyn PivCard,
         signer_slot: PivSlot,
+    ) -> Result<Vec<u8>> {
+        Self::pack_with_source(
+            deck,
+            assets_dir,
+            recipient_pub_key,
+            recipient_slot,
+            signer_card,
+            signer_slot,
+            true,
+        )
+    }
+
+    /// Pack and encrypt a presentation deck and its assets into an encrypted `.slide` byte buffer using hardware PIV with explicit `include_source` control.
+    pub fn pack_with_source(
+        deck: &SlideDeck,
+        assets_dir: Option<&Path>,
+        recipient_pub_key: &PivPublicKey,
+        recipient_slot: PivSlot,
+        signer_card: &mut dyn PivCard,
+        signer_slot: PivSlot,
+        include_source: bool,
+    ) -> Result<Vec<u8>> {
+        Self::pack_internal(
+            deck,
+            assets_dir,
+            recipient_pub_key,
+            recipient_slot,
+            signer_card,
+            signer_slot,
+            super::passphrase::AuthMode::Piv,
+            None,
+            include_source,
+        )
+    }
+
+    /// Pack and encrypt presentation using software dual-key keystore protected by passphrase or mnemonic.
+    /// Supports specifying 12 or 24 words for BIP-39 mnemonic generation.
+    /// Returns `(package_bytes, generated_mnemonic_if_any)`.
+    pub fn pack_software(
+        deck: &SlideDeck,
+        assets_dir: Option<&Path>,
+        secret: &str,
+        auth_mode: super::passphrase::AuthMode,
+        mnemonic_words: Option<usize>,
+    ) -> Result<(Vec<u8>, Option<zeroize::Zeroizing<String>>)> {
+        Self::pack_software_with_source(deck, assets_dir, secret, auth_mode, mnemonic_words, true)
+    }
+
+    /// Pack and encrypt presentation using software dual-key keystore protected by passphrase or mnemonic with explicit `include_source` control.
+    pub fn pack_software_with_source(
+        deck: &SlideDeck,
+        assets_dir: Option<&Path>,
+        secret: &str,
+        auth_mode: super::passphrase::AuthMode,
+        mnemonic_words: Option<usize>,
+        include_source: bool,
+    ) -> Result<(Vec<u8>, Option<zeroize::Zeroizing<String>>)> {
+        let (actual_secret, generated_mnemonic) = if auth_mode
+            == super::passphrase::AuthMode::Mnemonic
+            && (secret.trim().is_empty() || secret.trim() == "12" || secret.trim() == "24")
+        {
+            let count = if secret.trim() == "24" {
+                24
+            } else if secret.trim() == "12" {
+                12
+            } else {
+                mnemonic_words.unwrap_or(12)
+            };
+            if count != 12 && count != 24 {
+                return Err(SlideError::Crypto(format!(
+                    "Invalid BIP-39 mnemonic word count: {count}. Only 12 or 24 words are supported."
+                )));
+            }
+            let m = super::passphrase::generate_bip39_mnemonic(count)?;
+            (m.clone(), Some(m))
+        } else {
+            (zeroize::Zeroizing::new(secret.to_string()), None)
+        };
+
+        let keystore = super::passphrase::SoftwareKeystore::generate(auth_mode);
+        let encrypted_keystore = keystore.encrypt(&actual_secret)?;
+        let recipient_pub = keystore.recipient_public_key();
+        let mut card: Box<dyn PivCard> = Box::new(keystore);
+
+        let pkg = Self::pack_internal(
+            deck,
+            assets_dir,
+            &recipient_pub,
+            PivSlot::Slot9D,
+            card.as_mut(),
+            PivSlot::Slot9C,
+            auth_mode,
+            Some(encrypted_keystore),
+            include_source,
+        )?;
+
+        Ok((pkg, generated_mnemonic))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pack_internal(
+        deck: &SlideDeck,
+        assets_dir: Option<&Path>,
+        recipient_pub_key: &PivPublicKey,
+        recipient_slot: PivSlot,
+        signer_card: &mut dyn PivCard,
+        signer_slot: PivSlot,
+        auth_mode: super::passphrase::AuthMode,
+        encrypted_keystore: Option<super::passphrase::EncryptedKeystore>,
+        include_source: bool,
     ) -> Result<Vec<u8>> {
         use base64::Engine as _;
         let b64 = &base64::engine::general_purpose::STANDARD;
@@ -84,6 +198,89 @@ impl EncryptedSlideContainer {
         deck_header.set_mode(0o644);
         deck_header.set_cksum();
         tar_builder.append_data(&mut deck_header, "deck.json", &deck_json[..])?;
+
+        // Determine manifest metadata to preserve package structure and entrypoints
+        let manifest_bytes = if let Some(base) = assets_dir
+            && let Ok(existing_manifest) = std::fs::read(base.join("manifest.json"))
+        {
+            if !include_source {
+                if let Ok(mut meta) = serde_json::from_slice::<crate::package::SlidePackageMetadata>(
+                    &existing_manifest,
+                ) {
+                    meta.is_editable = false;
+                    meta.entrypoint = None;
+                    serde_json::to_vec_pretty(&meta).unwrap_or(existing_manifest)
+                } else {
+                    existing_manifest
+                }
+            } else {
+                if let Ok(mut meta) = serde_json::from_slice::<crate::package::SlidePackageMetadata>(
+                    &existing_manifest,
+                ) {
+                    meta.is_editable = true;
+                    if meta.entrypoint.is_none() {
+                        let candidate_entry = if base.join("slides.typ").is_file() {
+                            Some("slides.typ".to_string())
+                        } else if base.join("source.typ").is_file() {
+                            Some("source.typ".to_string())
+                        } else if base.join("presentation.typ").is_file() {
+                            Some("presentation.typ".to_string())
+                        } else {
+                            None
+                        };
+                        meta.entrypoint = candidate_entry;
+                    }
+                    serde_json::to_vec_pretty(&meta).unwrap_or(existing_manifest)
+                } else {
+                    existing_manifest
+                }
+            }
+        } else {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs().to_string())
+                .unwrap_or_default();
+            let entrypoint = if include_source && let Some(base) = assets_dir {
+                if base.join("slides.typ").is_file() {
+                    Some("slides.typ".to_string())
+                } else if base.join("source.typ").is_file() {
+                    Some("source.typ".to_string())
+                } else if base.join("presentation.typ").is_file() {
+                    Some("presentation.typ".to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let is_editable = entrypoint.is_some() && include_source;
+            let meta = crate::package::SlidePackageMetadata {
+                format_version: 1,
+                title: deck.title.clone(),
+                total_slides: deck.total_slides(),
+                default_animation: deck.default_animation.clone(),
+                compression: "lzma2-max".to_string(),
+                generator: format!("cargo-slide {}", env!("CARGO_PKG_VERSION")),
+                is_editable,
+                entrypoint,
+                created_at: Some(timestamp),
+                author: None,
+                aspect_ratio: Some("16:9".to_string()),
+                has_notes: deck.has_any_notes(),
+                tags: vec!["encrypted".to_string()],
+                checksum: None,
+                uncompressed_size: Some(deck_json.len() as u64),
+            };
+            serde_json::to_vec_pretty(&meta).unwrap_or_default()
+        };
+
+        if !manifest_bytes.is_empty() {
+            let mut meta_header = tar::Header::new_gnu();
+            meta_header.set_size(manifest_bytes.len() as u64);
+            meta_header.set_mode(0o644);
+            meta_header.set_cksum();
+            tar_builder.append_data(&mut meta_header, "manifest.json", &manifest_bytes[..])?;
+        }
 
         // Bundle assets from directory if provided (matching package.rs asset rules)
         if let Some(raw_base) = assets_dir {
@@ -127,6 +324,14 @@ impl EncryptedSlideContainer {
                     {
                         if entry.file_type().is_file() {
                             let file_path = entry.path();
+                            if !include_source
+                                && file_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .is_some_and(|e| e.eq_ignore_ascii_case("typ"))
+                            {
+                                continue;
+                            }
                             if let Ok(rel) = file_path.strip_prefix(base) {
                                 let rel_str = rel.to_string_lossy().replace('\\', "/");
                                 if added_paths.insert(rel_str.clone())
@@ -151,13 +356,14 @@ impl EncryptedSlideContainer {
                     let path = entry.path();
                     if path.is_file()
                         && let Some(ext) = path.extension().and_then(|e| e.to_str())
+                        && (include_source || !ext.eq_ignore_ascii_case("typ"))
                         && ASSET_EXTS.iter().any(|&e| e.eq_ignore_ascii_case(ext))
                         && let Some(name) = path.file_name().and_then(|s| s.to_str())
                     {
                         if name != "deck.json"
                             && name != "manifest.json"
                             && !name.ends_with(".slide")
-                            && !name.contains("presentation")
+                            && !name.ends_with(".tmp")
                             && added_paths.insert(name.to_string())
                             && let Ok(data) = std::fs::read(&path)
                         {
@@ -229,6 +435,8 @@ impl EncryptedSlideContainer {
         let header = EncryptedContainerHeader {
             format_version: 1,
             cipher: "AES-256-GCM".to_string(),
+            auth_mode,
+            encrypted_keystore,
             recipient_slot,
             encrypted_session_key: encrypted_key_b64,
             nonce: b64.encode(nonce),
@@ -366,6 +574,9 @@ impl EncryptedSlideContainer {
         use base64::Engine as _;
         let b64 = &base64::engine::general_purpose::STANDARD;
 
+        // Step 0: Activate OS anti-dump protection, core dump suppression, and attach denial
+        let _ = super::anti_dump::enable_anti_dump_protection();
+
         // Step 1: Enforce strict SHA3-512 integrity verification first
         self.verify_integrity(signer_pub_key_override)?;
 
@@ -423,6 +634,9 @@ impl EncryptedSlideContainer {
                 .map_err(|e| SlideError::Crypto(format!("Failed to decompress archive: {e}")))?;
         }
 
+        // Lock decrypted memory pages into RAM to prevent swapping to disk
+        let _ = super::anti_dump::mlock_slice(&uncompressed_tar);
+
         // Step 6: Unpack TAR entries purely in memory into SlideDeck and MemoryAssetStore
         let mut tar_archive = tar::Archive::new(&uncompressed_tar[..]);
         let asset_store = Arc::new(MemoryAssetStore::new());
@@ -436,12 +650,13 @@ impl EncryptedSlideContainer {
 
             if path_str == "deck.json" || path_str.ends_with("/deck.json") {
                 deck_json = Some(content);
-            } else if path_str != "manifest.json" && !path_str.ends_with("/manifest.json") {
+            } else {
                 asset_store.insert(path_str, content);
             }
         }
 
-        // Memory zeroization for the uncompressed tar buffer
+        // Memory unlock and zeroization for the uncompressed tar buffer
+        super::anti_dump::munlock_slice(&uncompressed_tar);
         uncompressed_tar.zeroize();
 
         let Some(deck_bytes) = deck_json else {
@@ -459,5 +674,20 @@ impl EncryptedSlideContainer {
         }
 
         Ok((deck, asset_store))
+    }
+
+    /// Decrypt the presentation deck using a software passphrase or recovery mnemonic.
+    pub fn decrypt_with_secret(
+        &self,
+        secret: &str,
+    ) -> Result<(SlideDeck, Arc<MemoryAssetStore>)> {
+        let Some(ref enc_keystore) = self.header.encrypted_keystore else {
+            return Err(SlideError::Crypto(
+                "This presentation was encrypted with hardware YubiKey PIV mode and requires a physical token.".to_string(),
+            ));
+        };
+
+        let mut keystore = super::passphrase::SoftwareKeystore::decrypt(enc_keystore, secret)?;
+        self.decrypt_in_memory(&mut keystore, None)
     }
 }

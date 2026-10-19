@@ -20,7 +20,7 @@
     columns: (1fr, 1fr, 1fr),
     gutter: 0.8cm,
     callout(title: "Typst Functional Markup", stroke-color: slide-colors.accent)[
-      Instant sub-millisecond compilation, vectorized SVG DOM, and crisp rendering at any DPI without browser overhead.
+      Fast incremental compilation, vectorized SVG DOM, and crisp rendering at any DPI without browser overhead.
     ],
     callout(title: "Rust Core Blitter", stroke-color: slide-colors.accent-orange)[
       tiny-skia 32-bit ARGB software blitter, zero GPU driver dependencies, and locked 60 FPS swapchain on all platforms.
@@ -422,12 +422,12 @@
       - *Cycle Format*: Press `F` in HUD or click `[FMT]` to dynamically cycle formats.
     ],
     callout(title: "Live Search & Numeric Filters", stroke-color: slide-colors.accent-cyan)[
-      - *Instant Typing*: Press `/` to search categories or series values in real time.
+      - *Live Typing*: Press `/` to search categories or series values in real time.
       - *Comparison Filters*: Enter expressions like `> 5000`, `<= 3000`, or `!= 0`.
     ],
     callout(title: "Marquee Drag & 6-KPI Stats", stroke-color: slide-colors.accent-purple)[
       - *Box Selection*: Click and drag across columns in visualizer to isolate ranges.
-      - *6-Card Metrics*: Recomputes Total, Mean, Median, StdDev, Max, Min instantly.
+      - *6-Card Metrics*: Recomputes Total, Mean, Median, StdDev, Max, Min dynamically.
     ],
   )
 ]
@@ -458,7 +458,7 @@
   #cols(
     [
       === High-Ratio LZMA2 Archive
-      #callout(title: "Extreme LZMA2 Compression (.slide)", stroke-color: slide-colors.accent)[
+      #callout(title: "LZMA2 Archive Compression (.slide)", stroke-color: slide-colors.accent)[
         - Bundles all vector slides, fonts, datasets, audio tracks, and video clips into a single portable file.
         - Employs LZMA2 preset 9 with dictionary optimization for maximum compression ratio.
         - Zero installation needed on target machines when paired with `slide-viewer`.
@@ -477,7 +477,7 @@
       #callout(title: "Modern GUI Launcher & 1-Click Install", stroke-color: slide-colors.accent-cyan)[
         - *File Chooser (O)*: Browse and select any `.slide`, `.typ`, or `.json` presentation on disk.
         - *System Installer (I)*: 1-click installer registering desktop launcher and native file associations across Windows, macOS, and Linux.
-        - *Double-Click & Keyboard*: Full mouse navigation, smooth scroll wheel, instant live demo.
+        - *Double-Click & Keyboard*: Full mouse navigation, smooth scroll wheel, interactive live demo.
       ]
 
       #v(0.15cm)
@@ -558,7 +558,7 @@
       #v(0.15cm)
       #callout(title: "Complete History & Quick Actions", stroke-color: slide-colors.accent-orange)[
         - *Undo Stroke (`U` / `Ctrl+Z`)*: Step back individual strokes effortlessly.
-        - *Clear Whiteboard (`C` / `X`)*: Instant one-key blackboard wipe.
+        - *Clear Whiteboard (`C` / `X`)*: One-key whiteboard annotation clear.
         - Floating dock toolbox overlay across both desktop and web!
       ]
     ]

@@ -17,9 +17,23 @@ use super::pcsc::PcscCard;
 use super::pcsc::PcscContext;
 use crate::error::Result;
 use crate::error::SlideError;
-use rsa::traits::PublicKeyParts;
+use rsa::traits::PublicKeyParts as _;
+use std::io::IsTerminal as _;
 use zeroize::Zeroize;
 use zeroize::Zeroizing;
+
+/// Status of PIN verification on the smartcard (ISO 7816-4 empty VERIFY query).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinStatus {
+    /// PIN is already verified in this session.
+    Verified,
+    /// PIN is not verified, with given number of retry attempts remaining.
+    NotVerified { tries_remaining: u8 },
+    /// PIN is blocked (0 tries left, PUK required).
+    Blocked,
+    /// Status could not be determined.
+    Unknown,
+}
 
 /// Common interface for YubiKey PIV hardware smartcards.
 pub trait PivCard: Send + Sync {
@@ -34,6 +48,20 @@ pub trait PivCard: Send + Sync {
 
     /// Check if PIN has been verified in current card session.
     fn is_authenticated(&self) -> bool;
+
+    /// Check if the card has a cached PIN ready for NIST SP 800-73 re-verification.
+    fn has_cached_pin(&self) -> bool {
+        true
+    }
+
+    /// Query PIN verification status without consuming a retry attempt (ISO 7816-4 empty VERIFY).
+    fn check_pin_status(&self) -> Result<PinStatus> {
+        if self.is_authenticated() {
+            Ok(PinStatus::Verified)
+        } else {
+            Ok(PinStatus::NotVerified { tries_remaining: 3 })
+        }
+    }
 
     /// Retrieve X.509 certificate DER bytes from the given PIV slot.
     fn get_certificate(
@@ -303,6 +331,34 @@ impl PivCard for PcscPivCard {
         self.authenticated
     }
 
+    fn has_cached_pin(&self) -> bool {
+        self.cached_pin.is_some()
+    }
+
+    fn check_pin_status(&self) -> Result<PinStatus> {
+        // ISO/IEC 7816-4 empty VERIFY APDU: 00 20 00 80 00
+        let apdu = [0x00, 0x20, 0x00, 0x80, 0x00];
+        match self.card.transmit(&apdu) {
+            | Ok(_) => Ok(PinStatus::Verified),
+            | Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("0x63C") || err_str.contains("SW=0x63C") {
+                    let retries_char = err_str.chars().last().unwrap_or('3');
+                    let tries = retries_char.to_digit(10).unwrap_or(3) as u8;
+                    Ok(PinStatus::NotVerified {
+                        tries_remaining: tries,
+                    })
+                } else if err_str.contains("0x6983") || err_str.contains("SW=0x6983") {
+                    Ok(PinStatus::Blocked)
+                } else if err_str.contains("0x6982") || err_str.contains("SW=0x6982") {
+                    Ok(PinStatus::NotVerified { tries_remaining: 3 })
+                } else {
+                    Ok(PinStatus::Unknown)
+                }
+            },
+        }
+    }
+
     fn get_certificate(
         &self,
         slot: PivSlot,
@@ -352,9 +408,7 @@ impl PivCard for PcscPivCard {
         self.ensure_pin_verified()?;
 
         use std::io::Write as _;
-        eprintln!(
-            "\n⚡ [YubiKey PIV] >>> PLEASE TOUCH YOUR YUBIKEY SENSOR NOW TO CONFIRM {slot} <<< ⚡"
-        );
+        eprintln!("\n[PIV] Touch YubiKey sensor to authorize {slot}...");
         let _ = std::io::stderr().flush();
 
         match pub_key {
@@ -438,10 +492,8 @@ impl PivCard for PcscPivCard {
         slot: PivSlot,
         digest_sha3_512: &[u8; 64],
     ) -> Result<Vec<u8>> {
-        if !self.authenticated {
-            return Err(SlideError::Piv(
-                "YubiKey PIV operation failed: User PIN has not been verified".to_string(),
-            ));
+        if !self.authenticated || (slot == PivSlot::Slot9C && self.cached_pin.is_none()) {
+            prompt_pin_for_slot(self, slot, None, false)?;
         }
 
         let pub_key = self.get_public_key(slot)?;
@@ -451,9 +503,7 @@ impl PivCard for PcscPivCard {
         self.ensure_pin_verified()?;
 
         use std::io::Write as _;
-        eprintln!(
-            "\n⚡ [YubiKey PIV] >>> PLEASE TOUCH YOUR YUBIKEY SENSOR NOW TO CONFIRM {slot} <<< ⚡"
-        );
+        eprintln!("\n[PIV] Touch YubiKey sensor to authorize {slot}...");
         let _ = std::io::stderr().flush();
 
         match pub_key {
@@ -469,20 +519,24 @@ impl PivCard for PcscPivCard {
                 tmpl_val.extend_from_slice(&item_81);
                 let tmpl = encode_tlv(0x7C, &tmpl_val);
 
-                let resp = self
-                    .card
-                    .send_apdu(0x00, 0x87, alg_byte, slot_ref, &tmpl)
-                    .map_err(|e| {
+                let resp = match self.card.send_apdu(0x00, 0x87, alg_byte, slot_ref, &tmpl) {
+                    | Ok(r) => r,
+                    | Err(e) => {
                         let s = e.to_string();
                         if s.contains("0x6982") || s.contains("SW=0x6982") {
-                            SlideError::Piv(format!(
-                                "YubiKey PIV signing failed on {slot}: Security condition not satisfied (SW=0x6982). \
-                                 Please touch the YubiKey sensor promptly when prompted."
-                            ))
+                            prompt_pin_for_slot(self, slot, None, false)?;
+                            self.ensure_pin_verified()?;
+                            self.card.send_apdu(0x00, 0x87, alg_byte, slot_ref, &tmpl).map_err(|_e2| {
+                                SlideError::Piv(format!(
+                                    "YubiKey PIV signing failed on {slot}: Security condition not satisfied (SW=0x6982). \
+                                     Please touch the YubiKey sensor promptly when prompted."
+                                ))
+                            })?
                         } else {
-                            e
+                            return Err(e);
                         }
-                    })?;
+                    },
+                };
                 let tmpl_resp = find_tlv(&resp, 0x7C).unwrap_or(&resp);
                 let sig = find_tlv(tmpl_resp, 0x82).ok_or_else(|| {
                     SlideError::Piv("YubiKey signing response missing Tag 82".to_string())
@@ -501,20 +555,24 @@ impl PivCard for PcscPivCard {
                 tmpl_val.extend_from_slice(&item_81);
                 let tmpl = encode_tlv(0x7C, &tmpl_val);
 
-                let resp = self
-                    .card
-                    .send_apdu(0x00, 0x87, alg_byte, slot_ref, &tmpl)
-                    .map_err(|e| {
+                let resp = match self.card.send_apdu(0x00, 0x87, alg_byte, slot_ref, &tmpl) {
+                    | Ok(r) => r,
+                    | Err(e) => {
                         let s = e.to_string();
                         if s.contains("0x6982") || s.contains("SW=0x6982") {
-                            SlideError::Piv(format!(
-                                "YubiKey PIV signing failed on {slot}: Security condition not satisfied (SW=0x6982). \
-                                 Please touch the YubiKey sensor promptly when prompted."
-                            ))
+                            prompt_pin_for_slot(self, slot, None, false)?;
+                            self.ensure_pin_verified()?;
+                            self.card.send_apdu(0x00, 0x87, alg_byte, slot_ref, &tmpl).map_err(|_e2| {
+                                SlideError::Piv(format!(
+                                    "YubiKey PIV signing failed on {slot}: Security condition not satisfied (SW=0x6982). \
+                                     Please touch the YubiKey sensor promptly when prompted."
+                                ))
+                            })?
                         } else {
-                            e
+                            return Err(e);
                         }
-                    })?;
+                    },
+                };
                 let tmpl_resp = find_tlv(&resp, 0x7C).unwrap_or(&resp);
                 let sig = find_tlv(tmpl_resp, 0x82).ok_or_else(|| {
                     SlideError::Piv("YubiKey ECDSA response missing Tag 82".to_string())
@@ -547,6 +605,7 @@ impl PivCard for PcscPivCard {
 pub struct MockPivCard {
     authenticated: bool,
     pin: String,
+    tries_remaining: u8,
     rsa_priv: rsa::RsaPrivateKey,
     ecc_priv: p256::SecretKey,
     slot_certs: std::collections::HashMap<PivSlot, Vec<u8>>,
@@ -564,17 +623,23 @@ impl MockPivCard {
             fn next_u32(&mut self) -> u32 {
                 self.next_u64() as u32
             }
+
             fn next_u64(&mut self) -> u64 {
                 self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1);
                 self.0
             }
-            fn fill_bytes(&mut self, dest: &mut [u8]) {
+
+            fn fill_bytes(
+                &mut self,
+                dest: &mut [u8],
+            ) {
                 for chunk in dest.chunks_mut(8) {
                     let val = self.next_u64().to_le_bytes();
                     let take = chunk.len();
                     chunk.copy_from_slice(&val[..take]);
                 }
             }
+
             fn try_fill_bytes(
                 &mut self,
                 dest: &mut [u8],
@@ -632,6 +697,7 @@ impl MockPivCard {
         Ok(Self {
             authenticated: false,
             pin: pin.to_string(),
+            tries_remaining: 3,
             rsa_priv,
             ecc_priv,
             slot_certs,
@@ -645,15 +711,34 @@ impl PivCard for MockPivCard {
         "YubiKey Mock PIV Test Device".to_string()
     }
 
+    fn check_pin_status(&self) -> Result<PinStatus> {
+        if self.is_authenticated() {
+            Ok(PinStatus::Verified)
+        } else if self.tries_remaining == 0 {
+            Ok(PinStatus::Blocked)
+        } else {
+            Ok(PinStatus::NotVerified {
+                tries_remaining: self.tries_remaining,
+            })
+        }
+    }
+
     fn verify_pin(
         &mut self,
         pin: &str,
     ) -> Result<()> {
+        if self.tries_remaining == 0 {
+            return Err(SlideError::Piv(
+                "PIN blocked: 0 attempts remaining".to_string(),
+            ));
+        }
         if pin == self.pin {
             self.authenticated = true;
+            self.tries_remaining = 3;
             Ok(())
         } else {
             self.authenticated = false;
+            self.tries_remaining = self.tries_remaining.saturating_sub(1);
             Err(SlideError::Piv("PIN verification failed".to_string()))
         }
     }
@@ -816,24 +901,40 @@ impl PivManager {
     }
 }
 
-/// Helper to ensure a PIV card is authenticated with User PIN before private key operations.
+/// Helper to prompt and verify User PIN for a specific PIV slot (e.g. Slot 9C for Digital Signature).
 ///
 /// Order of precedence:
-/// 1. Already authenticated session on the card.
+/// 1. Already authenticated session with cached PIN (or non-9c slot).
 /// 2. Explicit `pin` parameter if provided.
 /// 3. Environment variable `PIV_PIN`.
 /// 4. In mock/software mode, auto-authenticates with default test PIN.
-/// 5. In interactive terminal, prompts the user and zeroizes memory immediately.
-/// 6. Returns error explaining that `--pin` or `PIV_PIN` is required.
-pub fn prompt_pin_if_needed(
+/// 5. Graphical desktop dialog popup (prioritized if `prefer_gui` is true or if running non-interactive).
+/// 6. Interactive masked input on terminal.
+/// 7. Graphical desktop dialog popup fallback if terminal is unavailable.
+pub fn prompt_pin_for_slot(
     card: &mut dyn PivCard,
+    slot: PivSlot,
     pin: Option<&str>,
+    prefer_gui: bool,
 ) -> Result<()> {
-    if card.is_authenticated() {
+    let is_signing_slot = slot == PivSlot::Slot9C;
+
+    // 1. If already authenticated and card has cached PIN ready for NIST SP 800-73 re-verification
+    if card.is_authenticated() && (card.has_cached_pin() || !is_signing_slot) {
         return Ok(());
     }
 
-    // 1. Explicit argument
+    match card.check_pin_status() {
+        | Ok(PinStatus::Verified) if card.has_cached_pin() || !is_signing_slot => return Ok(()),
+        | Ok(PinStatus::Blocked) => {
+            return Err(SlideError::Piv(
+                "YubiKey PIV PIN is blocked (0 retries remaining). Please unblock using 'ykman piv access unblock-pin'".to_string(),
+            ));
+        },
+        | _ => {},
+    }
+
+    // 2. Explicit argument
     if let Some(p) = pin {
         let trimmed = p.trim();
         if !trimmed.is_empty() {
@@ -841,7 +942,7 @@ pub fn prompt_pin_if_needed(
         }
     }
 
-    // 2. Environment variable
+    // 3. Environment variable
     if let Ok(env_pin) = std::env::var("PIV_PIN") {
         let trimmed = env_pin.trim();
         if !trimmed.is_empty() {
@@ -849,41 +950,151 @@ pub fn prompt_pin_if_needed(
         }
     }
 
-    // 3. Mock test card fallback (for headless CI / automated tests)
+    // 4. Mock test card fallback (for headless CI / automated tests)
     if card.is_software() {
         return card.verify_pin("123456");
     }
 
-    // 4. Interactive prompt on terminal
-    use std::io::IsTerminal;
-    if std::io::stdin().is_terminal() {
-        use std::io::Write;
-        eprint!("Enter YubiKey PIV PIN: ");
-        let _ = std::io::stderr().flush();
+    let base_title = if is_signing_slot {
+        "YubiKey PIV - Slot 9C Digital Signature"
+    } else {
+        "Cargo Slide - YubiKey PIV Authentication"
+    };
 
-        let mut line = String::new();
-        if std::io::stdin().read_line(&mut line).is_ok() {
-            let mut trimmed = line.trim().to_string();
-            if !trimmed.is_empty() {
-                let res = card.verify_pin(&trimmed);
-                trimmed.zeroize();
-                return res;
+    let base_prompt_desc = if is_signing_slot {
+        "authorize Slot 9C Digital Signature"
+    } else {
+        "decrypt presentation"
+    };
+
+    let has_gui_desktop = std::env::var("DISPLAY").is_ok()
+        || std::env::var("WAYLAND_DISPLAY").is_ok()
+        || cfg!(target_os = "macos")
+        || cfg!(target_os = "windows");
+
+    let should_try_gui = prefer_gui || (has_gui_desktop && !std::io::stdin().is_terminal());
+
+    // 5. Native OS graphical dialog prompt (zenity / kdialog / osascript / PowerShell)
+    if should_try_gui {
+        for attempt in 0..3 {
+            let status = card.check_pin_status();
+            let attempts_left = match status {
+                | Ok(PinStatus::NotVerified { tries_remaining }) => {
+                    (tries_remaining as usize).min(3 - attempt)
+                },
+                | _ => 3 - attempt,
+            };
+            let attempts_str = format!(" ({attempts_left} attempts remaining)");
+            let title = if attempt == 0 {
+                base_title
+            } else {
+                "PIN Verification Failed - Please Re-enter"
+            };
+            let subtitle = if attempt == 0 {
+                format!("Enter 6-8 digit User PIN to {base_prompt_desc}{attempts_str}:")
+            } else {
+                format!("Incorrect PIN. Please re-enter{attempts_str}:")
+            };
+
+            if let Some(pin_val) = try_native_desktop_dialog(title, &subtitle) {
+                match card.verify_pin(&pin_val) {
+                    | Ok(()) => return Ok(()),
+                    | Err(e) => {
+                        if attempt == 2 {
+                            return Err(e);
+                        }
+                    },
+                }
+            } else {
+                break;
             }
         }
     }
 
-    // 5. Fallback graphical dialog prompt if running non-interactive / GUI launcher
-    if let Some(pin_val) = try_native_desktop_dialog(
-        "Cargo Slide - YubiKey PIV Authentication",
-        "Enter 6-8 digit User PIN to decrypt presentation:",
-    ) {
-        let res = card.verify_pin(&pin_val);
-        return res;
+    // 6. Interactive prompt on terminal with masked input, retry loop and zeroization
+    if std::io::stdin().is_terminal() {
+        for attempt in 0..3 {
+            let status = card.check_pin_status();
+            let attempts_left = match status {
+                | Ok(PinStatus::NotVerified { tries_remaining }) => {
+                    (tries_remaining as usize).min(3 - attempt)
+                },
+                | _ => 3 - attempt,
+            };
+            let attempts_str = format!(" ({attempts_left} attempts remaining)");
+            let prompt = if attempt == 0 {
+                format!("Enter YubiKey PIV PIN to {base_prompt_desc}{attempts_str}: ")
+            } else {
+                format!("\x1b[33mIncorrect PIN. Please re-enter{attempts_str}:\x1b[0m ")
+            };
+            if let Ok(pin_val) = super::masked_input::read_masked_secret(&prompt) {
+                match card.verify_pin(&pin_val) {
+                    | Ok(()) => return Ok(()),
+                    | Err(e) => {
+                        if attempt == 2 {
+                            return Err(e);
+                        }
+                    },
+                }
+            } else {
+                break;
+            }
+        }
+    } else if !should_try_gui {
+        // Fallback graphical dialog prompt if running non-interactive without terminal
+        for attempt in 0..3 {
+            let attempts_left = match card.check_pin_status() {
+                | Ok(PinStatus::NotVerified { tries_remaining }) => {
+                    (tries_remaining as usize).min(3 - attempt)
+                },
+                | _ => 3 - attempt,
+            };
+            let attempts_str = format!(" ({attempts_left} attempts remaining)");
+            let title = if attempt == 0 {
+                base_title
+            } else {
+                "PIN Verification Failed - Please Re-enter"
+            };
+            let subtitle = if attempt == 0 {
+                format!("Enter 6-8 digit User PIN to {base_prompt_desc}{attempts_str}:")
+            } else {
+                format!("Incorrect PIN. Please re-enter{attempts_str}:")
+            };
+            if let Some(pin_val) = try_native_desktop_dialog(title, &subtitle) {
+                match card.verify_pin(&pin_val) {
+                    | Ok(()) => return Ok(()),
+                    | Err(e) => {
+                        if attempt == 2 {
+                            return Err(e);
+                        }
+                    },
+                }
+            } else {
+                break;
+            }
+        }
     }
 
-    Err(SlideError::Piv(
-        "YubiKey PIV PIN required for private key operations. Please specify --pin <PIN> or set PIV_PIN environment variable.".to_string(),
-    ))
+    Err(SlideError::Piv(format!(
+        "YubiKey PIV PIN required to {base_prompt_desc}. Please specify --pin <PIN> or set PIV_PIN environment variable."
+    )))
+}
+
+/// Helper to ensure a PIV card is authenticated with User PIN before private key operations.
+pub fn prompt_pin_if_needed(
+    card: &mut dyn PivCard,
+    pin: Option<&str>,
+) -> Result<()> {
+    prompt_pin_for_slot(card, PivSlot::Slot9D, pin, false)
+}
+
+/// Prompt the user for a secret (PIN, passphrase, or mnemonic) via a native OS graphical dialog
+/// (zenity / kdialog on Linux, osascript on macOS, PowerShell on Windows) with masked input.
+pub fn prompt_secret_gui(
+    title: &str,
+    prompt: &str,
+) -> Option<Zeroizing<String>> {
+    try_native_desktop_dialog(title, prompt)
 }
 
 fn try_native_desktop_dialog(

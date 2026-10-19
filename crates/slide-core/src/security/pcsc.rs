@@ -139,7 +139,7 @@ impl PcscLibrary {
     fn load_internal() -> std::result::Result<Arc<Self>, String> {
         #[cfg(target_os = "windows")]
         {
-            extern "system" {
+            unsafe extern "system" {
                 fn LoadLibraryA(lpLibFileName: *const c_char) -> *mut c_void;
                 fn GetProcAddress(
                     hModule: *mut c_void,
@@ -176,11 +176,9 @@ impl PcscLibrary {
             let fn_end_transaction = get_sym!(SCardEndTransaction, "SCardEndTransaction");
             let fn_transmit = get_sym!(SCardTransmit, "SCardTransmit");
 
-            let pci_t0_sym =
-                CString::new("g_rgSCardT0Pci").map_err(|e| SlideError::Piv(e.to_string()))?;
+            let pci_t0_sym = CString::new("g_rgSCardT0Pci").map_err(|e| e.to_string())?;
             let pci_t0 = unsafe { GetProcAddress(handle, pci_t0_sym.as_ptr()) };
-            let pci_t1_sym =
-                CString::new("g_rgSCardT1Pci").map_err(|e| SlideError::Piv(e.to_string()))?;
+            let pci_t1_sym = CString::new("g_rgSCardT1Pci").map_err(|e| e.to_string())?;
             let pci_t1 = unsafe { GetProcAddress(handle, pci_t1_sym.as_ptr()) };
 
             Ok(Arc::new(Self {
@@ -330,6 +328,36 @@ impl PcscLibrary {
     }
 }
 
+/// Format an ISO/IEC 7816-4 status word with standard description.
+pub fn format_iso7816_status_word(
+    sw1: u8,
+    sw2: u8,
+) -> String {
+    let code = format!("SW=0x{sw1:02X}{sw2:02X}");
+    let desc = match (sw1, sw2) {
+        | (0x90, 0x00) => "Success",
+        | (0x63, s2) if (s2 & 0xF0) == 0xC0 => {
+            return format!(
+                "{code} (Verification failed, {} retry attempts remaining)",
+                s2 & 0x0F
+            );
+        },
+        | (0x69, 0x82) => "Security status not satisfied (PIN verification required)",
+        | (0x69, 0x83) => "Authentication method blocked (PIN blocked, PUK required)",
+        | (0x69, 0x85) => "Condition of use not satisfied",
+        | (0x6A, 0x80) => "Incorrect data field parameters",
+        | (0x6A, 0x81) => "Function not supported",
+        | (0x6A, 0x82) => "File or application not found",
+        | (0x6A, 0x86) => "Incorrect parameters P1-P2",
+        | (0x6A, 0x88) => "Referenced data not found",
+        | (0x67, 0x00) => "Wrong length (extended APDU unsupported)",
+        | (0x6D, 0x00) => "Instruction code not supported",
+        | (0x6E, 0x00) => "Class not supported",
+        | _ => "Operation rejected by smartcard",
+    };
+    format!("{code} ({desc})")
+}
+
 impl Drop for PcscLibrary {
     fn drop(&mut self) {
         // Intentionally keep the system smartcard library open for the remainder of process execution.
@@ -350,7 +378,7 @@ impl PcscContext {
     pub fn establish() -> Result<Arc<Self>> {
         let lib = PcscLibrary::load()?;
         let mut h_context: SCARDCONTEXT = 0;
-        let res = unsafe {
+        let mut res = unsafe {
             (lib.fn_establish_context)(
                 SCARD_SCOPE_USER,
                 std::ptr::null(),
@@ -359,9 +387,28 @@ impl PcscContext {
             )
         };
         if res != SCARD_S_SUCCESS {
+            // Fallback to SCARD_SCOPE_SYSTEM (often required on macOS or headless daemons)
+            let fallback_res = unsafe {
+                (lib.fn_establish_context)(
+                    SCARD_SCOPE_SYSTEM,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    &mut h_context,
+                )
+            };
+            if fallback_res == SCARD_S_SUCCESS {
+                res = SCARD_S_SUCCESS;
+            }
+        }
+        if res != SCARD_S_SUCCESS {
             let detail = lib.stringify_error(res);
+            let macos_hint = if cfg!(target_os = "macos") {
+                " On macOS, smartcard access may require SmartCardServices / CryptoTokenKit permissions or fallback to software passphrase encryption (--auth passphrase)."
+            } else {
+                ""
+            };
             return Err(SlideError::Piv(format!(
-                "Failed to establish PC/SC context (SCardEstablishContext error code: 0x{res:08X}{detail})"
+                "Failed to establish PC/SC context (SCardEstablishContext error code: 0x{res:08X}{detail}).{macos_hint}"
             )));
         }
 
@@ -584,14 +631,14 @@ impl PcscCard {
         if current_sw1 == 0x90 && current_sw2 == 0x00 {
             Ok(result)
         } else {
-            Err(SlideError::Piv(format!(
-                "PIV Card APDU error: status word SW=0x{current_sw1:02X}{current_sw2:02X}"
-            )))
+            let desc = format_iso7816_status_word(current_sw1, current_sw2);
+            Err(SlideError::Piv(format!("PIV Card APDU error: {desc}")))
         }
     }
 
     /// Transmit APDU command, automatically formatting Case 3S or Case 3E (extended APDU)
     /// based on payload length according to NIST SP 800-73-4 and YubiKey CCID.
+    /// If extended APDU is unsupported by card/reader, automatically falls back to ISO 7816-4 command chaining.
     pub fn send_apdu(
         &self,
         cla: u8,
@@ -600,29 +647,79 @@ impl PcscCard {
         p2: u8,
         data: &[u8],
     ) -> Result<Vec<u8>> {
-        let mut apdu = Vec::with_capacity(data.len() + 8);
-        apdu.push(cla);
-        apdu.push(ins);
-        apdu.push(p1);
-        apdu.push(p2);
-
-        if data.is_empty() {
-            // Case 2: Header + Le (0x00)
-            apdu.push(0x00);
-        } else if data.len() <= 255 {
-            // Case 3S: Header + Lc (1 byte) + Data
-            apdu.push(data.len() as u8);
-            apdu.extend_from_slice(data);
-        } else {
-            // Case 3E: Extended APDU (Header + 0x00 + Lc (2 bytes) + Data)
-            // No trailing Le byte; YubiKey sends response via SW=0x9000 or GET RESPONSE SW=0x61
-            apdu.push(0x00);
-            apdu.push((data.len() >> 8) as u8);
-            apdu.push((data.len() & 0xFF) as u8);
-            apdu.extend_from_slice(data);
+        if data.len() <= 255 {
+            let mut apdu = Vec::with_capacity(data.len() + 6);
+            apdu.push(cla);
+            apdu.push(ins);
+            apdu.push(p1);
+            apdu.push(p2);
+            if data.is_empty() {
+                apdu.push(0x00);
+            } else {
+                apdu.push(data.len() as u8);
+                apdu.extend_from_slice(data);
+            }
+            return self.transmit(&apdu);
         }
 
-        self.transmit(&apdu)
+        // Try Extended APDU (Case 3E) first
+        let mut ext_apdu = Vec::with_capacity(data.len() + 8);
+        ext_apdu.push(cla);
+        ext_apdu.push(ins);
+        ext_apdu.push(p1);
+        ext_apdu.push(p2);
+        ext_apdu.push(0x00);
+        ext_apdu.push((data.len() >> 8) as u8);
+        ext_apdu.push((data.len() & 0xFF) as u8);
+        ext_apdu.extend_from_slice(data);
+
+        match self.transmit(&ext_apdu) {
+            | Ok(res) => Ok(res),
+            | Err(e) => {
+                let err_s = e.to_string();
+                if err_s.contains("0x6700")
+                    || err_s.contains("0x6A86")
+                    || err_s.contains("0x6A81")
+                    || err_s.contains("0x6D00")
+                {
+                    self.send_apdu_chained(cla, ins, p1, p2, data)
+                } else {
+                    Err(e)
+                }
+            },
+        }
+    }
+
+    /// Transmit large APDU payload using ISO/IEC 7816-4 short command chaining (CLA bit 5 = 1).
+    pub fn send_apdu_chained(
+        &self,
+        cla: u8,
+        ins: u8,
+        p1: u8,
+        p2: u8,
+        data: &[u8],
+    ) -> Result<Vec<u8>> {
+        const CHUNK_SIZE: usize = 255;
+        let chunks: Vec<&[u8]> = data.chunks(CHUNK_SIZE).collect();
+        let total = chunks.len();
+        let mut last_response = Vec::new();
+
+        for (idx, chunk) in chunks.into_iter().enumerate() {
+            let is_last = idx == total.saturating_sub(1);
+            let chunk_cla = if is_last { cla } else { cla | 0x10 };
+
+            let mut chunk_apdu = Vec::with_capacity(chunk.len() + 5);
+            chunk_apdu.push(chunk_cla);
+            chunk_apdu.push(ins);
+            chunk_apdu.push(p1);
+            chunk_apdu.push(p2);
+            chunk_apdu.push(chunk.len() as u8);
+            chunk_apdu.extend_from_slice(chunk);
+
+            last_response = self.transmit(&chunk_apdu)?;
+        }
+
+        Ok(last_response)
     }
 
     /// Begin exclusive transaction.

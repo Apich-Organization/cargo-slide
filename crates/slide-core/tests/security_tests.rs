@@ -92,6 +92,27 @@ fn test_piv_hardware_interface_and_crypto() {
 }
 
 #[test]
+fn test_piv_slot9c_prompt_pin_for_slot() {
+    unsafe {
+        std::env::set_var("CARGO_SLIDE_MOCK_PIV", "1");
+    }
+    let mut card = PivManager::acquire_card(None).unwrap();
+    // Verify prompt_pin_for_slot authenticates for Slot 9C
+    slide_core::security::prompt_pin_for_slot(
+        card.as_mut(),
+        PivSlot::Slot9C,
+        Some("123456"),
+        false,
+    )
+    .unwrap();
+    assert!(card.is_authenticated());
+
+    let digest = compute_sha3_512(b"Test Slot 9C Signing Payload");
+    let sig = card.sign(PivSlot::Slot9C, &digest).unwrap();
+    assert!(!sig.is_empty());
+}
+
+#[test]
 fn test_encrypted_container_pack_and_decrypt_in_memory() {
     unsafe {
         std::env::set_var("CARGO_SLIDE_MOCK_PIV", "1");
@@ -217,4 +238,150 @@ fn test_memory_asset_store_zeroization() {
     assert_eq!(store.len(), 0);
     assert!(store.is_empty());
     assert!(store.get("confidential/report.pdf").is_none());
+}
+
+#[test]
+fn test_software_passphrase_container_pack_and_decrypt() {
+    let mut deck = SlideDeck::new("Secret Passphrase Presentation");
+    deck.slides.push(Slide {
+        page_number: 1,
+        svg_data: "<svg><text>Encrypted by Passphrase</text></svg>".to_string(),
+        view_box: Rect::new(0.0, 0.0, 1920.0, 1080.0),
+        hotspots: Vec::new(),
+        animation: None,
+        steps: Vec::new(),
+        notes: None,
+    });
+
+    let pass = "StrongP@ssphrase42!";
+    let (pkg_bytes, _) = EncryptedSlideContainer::pack_software(
+        &deck,
+        None,
+        pass,
+        slide_core::security::AuthMode::Passphrase,
+        None,
+    )
+    .expect("Software pack with passphrase");
+
+    assert!(EncryptedSlideContainer::is_encrypted_package(&pkg_bytes));
+
+    let container = EncryptedSlideContainer::parse(&pkg_bytes).expect("parse container");
+    assert_eq!(
+        container.header.auth_mode,
+        slide_core::security::AuthMode::Passphrase
+    );
+
+    // Verify integrity succeeds
+    assert!(container.verify_integrity(None).is_ok());
+
+    // Decrypt with correct passphrase
+    let (decrypted_deck, _assets) = container
+        .decrypt_with_secret(pass)
+        .expect("decrypt with correct passphrase");
+    assert_eq!(decrypted_deck.title, "Secret Passphrase Presentation");
+    assert_eq!(decrypted_deck.slides.len(), 1);
+
+    // Decrypt with incorrect passphrase must fail
+    assert!(container.decrypt_with_secret("WrongP@ssword99!").is_err());
+}
+
+#[test]
+fn test_software_bip39_mnemonic_container_pack_and_decrypt() {
+    let mut deck = SlideDeck::new("Secret Mnemonic Presentation");
+    deck.slides.push(Slide {
+        page_number: 1,
+        svg_data: "<svg><text>Encrypted by BIP-39 Mnemonic</text></svg>".to_string(),
+        view_box: Rect::new(0.0, 0.0, 1920.0, 1080.0),
+        hotspots: Vec::new(),
+        animation: None,
+        steps: Vec::new(),
+        notes: None,
+    });
+
+    // Auto-generate 12-word recovery mnemonic
+    let (pkg_bytes, generated_mnemonic) = EncryptedSlideContainer::pack_software(
+        &deck,
+        None,
+        "",
+        slide_core::security::AuthMode::Mnemonic,
+        Some(12),
+    )
+    .expect("Software pack with auto-generated mnemonic");
+
+    let mnemonic = generated_mnemonic.expect("generated mnemonic present");
+    assert_eq!(mnemonic.split_whitespace().count(), 12);
+
+    let container = EncryptedSlideContainer::parse(&pkg_bytes).expect("parse container");
+    assert_eq!(
+        container.header.auth_mode,
+        slide_core::security::AuthMode::Mnemonic
+    );
+
+    // Decrypt with generated mnemonic
+    let (decrypted_deck, _) = container
+        .decrypt_with_secret(&mnemonic)
+        .expect("decrypt with generated mnemonic");
+    assert_eq!(decrypted_deck.title, "Secret Mnemonic Presentation");
+
+    // Decrypt with corrupted mnemonic must fail
+    assert!(
+        container
+            .decrypt_with_secret(
+                "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon"
+            )
+            .is_err()
+    );
+
+    // Auto-generate 24-word recovery mnemonic
+    let (pkg_bytes_24, generated_24) = EncryptedSlideContainer::pack_software(
+        &deck,
+        None,
+        "24",
+        slide_core::security::AuthMode::Mnemonic,
+        Some(24),
+    )
+    .expect("Software pack with 24-word auto-generated mnemonic");
+
+    let mnemonic_24 = generated_24.expect("generated 24-word mnemonic present");
+    assert_eq!(mnemonic_24.split_whitespace().count(), 24);
+
+    let container_24 = EncryptedSlideContainer::parse(&pkg_bytes_24).expect("parse container 24");
+    let (decrypted_24, _) = container_24
+        .decrypt_with_secret(&mnemonic_24)
+        .expect("decrypt with 24-word mnemonic");
+    assert_eq!(decrypted_24.title, "Secret Mnemonic Presentation");
+}
+
+#[test]
+fn test_piv_retry_counter_decrement() {
+    use slide_core::security::piv::MockPivCard;
+    use slide_core::security::piv::PinStatus;
+    use slide_core::security::piv::PivCard;
+
+    let mut card = MockPivCard::new("123456").expect("create MockPivCard");
+    assert_eq!(
+        card.check_pin_status().unwrap(),
+        PinStatus::NotVerified { tries_remaining: 3 }
+    );
+
+    // Attempt 1: wrong PIN
+    assert!(card.verify_pin("000000").is_err());
+    assert_eq!(
+        card.check_pin_status().unwrap(),
+        PinStatus::NotVerified { tries_remaining: 2 }
+    );
+
+    // Attempt 2: wrong PIN
+    assert!(card.verify_pin("111111").is_err());
+    assert_eq!(
+        card.check_pin_status().unwrap(),
+        PinStatus::NotVerified { tries_remaining: 1 }
+    );
+
+    // Attempt 3: wrong PIN
+    assert!(card.verify_pin("222222").is_err());
+    assert_eq!(card.check_pin_status().unwrap(), PinStatus::Blocked);
+
+    // Blocked card rejects further attempts
+    assert!(card.verify_pin("123456").is_err());
 }

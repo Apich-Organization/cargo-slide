@@ -163,70 +163,21 @@ fn try_minifb_pin_dialog(
     let mut confirmed = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        let shift = window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift);
         // Collect key inputs
         let keys = window.get_keys_pressed(minifb::KeyRepeat::Yes);
         for key in keys {
-            match key {
-                | Key::Key0 | Key::NumPad0 => {
-                    if input.len() < 8 {
-                        input.push('0');
-                    }
-                },
-                | Key::Key1 | Key::NumPad1 => {
-                    if input.len() < 8 {
-                        input.push('1');
-                    }
-                },
-                | Key::Key2 | Key::NumPad2 => {
-                    if input.len() < 8 {
-                        input.push('2');
-                    }
-                },
-                | Key::Key3 | Key::NumPad3 => {
-                    if input.len() < 8 {
-                        input.push('3');
-                    }
-                },
-                | Key::Key4 | Key::NumPad4 => {
-                    if input.len() < 8 {
-                        input.push('4');
-                    }
-                },
-                | Key::Key5 | Key::NumPad5 => {
-                    if input.len() < 8 {
-                        input.push('5');
-                    }
-                },
-                | Key::Key6 | Key::NumPad6 => {
-                    if input.len() < 8 {
-                        input.push('6');
-                    }
-                },
-                | Key::Key7 | Key::NumPad7 => {
-                    if input.len() < 8 {
-                        input.push('7');
-                    }
-                },
-                | Key::Key8 | Key::NumPad8 => {
-                    if input.len() < 8 {
-                        input.push('8');
-                    }
-                },
-                | Key::Key9 | Key::NumPad9 => {
-                    if input.len() < 8 {
-                        input.push('9');
-                    }
-                },
-                | Key::Backspace => {
-                    input.pop();
-                },
-                | Key::Enter => {
-                    if !input.is_empty() {
-                        confirmed = true;
-                        break;
-                    }
-                },
-                | _ => {},
+            if let Some(ch) = map_minifb_key_to_char(key, shift) {
+                if input.len() < 128 {
+                    input.push(ch);
+                }
+            } else if key == Key::Backspace {
+                input.pop();
+            } else if key == Key::Enter {
+                if !input.is_empty() {
+                    confirmed = true;
+                    break;
+                }
             }
         }
 
@@ -238,15 +189,7 @@ fn try_minifb_pin_dialog(
         buffer.fill(0xFF1E_1E2E); // Dark background
 
         // Title & subtitle
-        crate::hud::draw_text(
-            &mut buffer,
-            width,
-            height,
-            24,
-            24,
-            "YUBIKEY PIV PIN REQUIRED",
-            0xFFCA_A6F7,
-        );
+        crate::hud::draw_text(&mut buffer, width, height, 24, 24, title, 0xFFCA_A6F7);
         crate::hud::draw_text(&mut buffer, width, height, 24, 46, subtitle, 0xFFA6_ADC8);
 
         // Input box rect
@@ -325,5 +268,56 @@ fn try_minifb_pin_dialog(
     } else {
         input.zeroize();
         None
+    }
+}
+
+fn map_minifb_key_to_char(
+    key: Key,
+    shift: bool,
+) -> Option<char> {
+    match key {
+        | Key::Key0 | Key::NumPad0 => Some(if shift { ')' } else { '0' }),
+        | Key::Key1 | Key::NumPad1 => Some(if shift { '!' } else { '1' }),
+        | Key::Key2 | Key::NumPad2 => Some(if shift { '@' } else { '2' }),
+        | Key::Key3 | Key::NumPad3 => Some(if shift { '#' } else { '3' }),
+        | Key::Key4 | Key::NumPad4 => Some(if shift { '$' } else { '4' }),
+        | Key::Key5 | Key::NumPad5 => Some(if shift { '%' } else { '5' }),
+        | Key::Key6 | Key::NumPad6 => Some(if shift { '^' } else { '6' }),
+        | Key::Key7 | Key::NumPad7 => Some(if shift { '&' } else { '7' }),
+        | Key::Key8 | Key::NumPad8 => Some(if shift { '*' } else { '8' }),
+        | Key::Key9 | Key::NumPad9 => Some(if shift { '(' } else { '9' }),
+        | Key::A => Some(if shift { 'A' } else { 'a' }),
+        | Key::B => Some(if shift { 'B' } else { 'b' }),
+        | Key::C => Some(if shift { 'C' } else { 'c' }),
+        | Key::D => Some(if shift { 'D' } else { 'd' }),
+        | Key::E => Some(if shift { 'E' } else { 'e' }),
+        | Key::F => Some(if shift { 'F' } else { 'f' }),
+        | Key::G => Some(if shift { 'G' } else { 'g' }),
+        | Key::H => Some(if shift { 'H' } else { 'h' }),
+        | Key::I => Some(if shift { 'I' } else { 'i' }),
+        | Key::J => Some(if shift { 'J' } else { 'j' }),
+        | Key::K => Some(if shift { 'K' } else { 'k' }),
+        | Key::L => Some(if shift { 'L' } else { 'l' }),
+        | Key::M => Some(if shift { 'M' } else { 'm' }),
+        | Key::N => Some(if shift { 'N' } else { 'n' }),
+        | Key::O => Some(if shift { 'O' } else { 'o' }),
+        | Key::P => Some(if shift { 'P' } else { 'p' }),
+        | Key::Q => Some(if shift { 'Q' } else { 'q' }),
+        | Key::R => Some(if shift { 'R' } else { 'r' }),
+        | Key::S => Some(if shift { 'S' } else { 's' }),
+        | Key::T => Some(if shift { 'T' } else { 't' }),
+        | Key::U => Some(if shift { 'U' } else { 'u' }),
+        | Key::V => Some(if shift { 'V' } else { 'v' }),
+        | Key::W => Some(if shift { 'W' } else { 'w' }),
+        | Key::X => Some(if shift { 'X' } else { 'x' }),
+        | Key::Y => Some(if shift { 'Y' } else { 'y' }),
+        | Key::Z => Some(if shift { 'Z' } else { 'z' }),
+        | Key::Space => Some(' '),
+        | Key::Minus => Some(if shift { '_' } else { '-' }),
+        | Key::Equal => Some(if shift { '+' } else { '=' }),
+        | Key::Period => Some(if shift { '>' } else { '.' }),
+        | Key::Comma => Some(if shift { '<' } else { ',' }),
+        | Key::Slash => Some(if shift { '?' } else { '/' }),
+        | _ => None,
     }
 }

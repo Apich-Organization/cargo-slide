@@ -30,6 +30,7 @@ pub fn view_live_preview<'a>(
     dragging_block: Option<(usize, usize)>,
     raw_code_blocks: &'a HashSet<String>,
     engine: &'a TypstDocumentEngine,
+    is_editable: bool,
 ) -> Element<'a, Message> {
     view_slide_canvas(
         theme,
@@ -47,5 +48,6 @@ pub fn view_live_preview<'a>(
         dragging_block,
         raw_code_blocks,
         engine,
+        is_editable,
     )
 }

@@ -14,7 +14,7 @@ We are committed to providing a welcoming and inspiring community. We do not tol
 
 ## Performance First
 
-**cargo-slide** is built for **extreme performance** and native 60 FPS presentation rendering. Any PR that affects the hot-path (rasterization blitter loop, SVG entity sanitizer/parser, SQLite/DSL chart querying, audio DSP mixer) **must** consider performance and avoid regressions.
+**cargo-slide** is designed for efficient, native 60 FPS presentation rendering. Any PR that affects the hot-path (rasterization blitter loop, SVG entity sanitizer/parser, SQLite/DSL chart querying, audio DSP mixer) **must** consider performance and avoid regressions.
 
 - **Benchmarks**: Ensure that rendering throughput and latency are either improved or unaffected (no regressions).
 - **Memory Safety**: We prioritize memory safety alongside performance. All `unsafe` blocks must have sound safety justifications and be validated with Miri where applicable:

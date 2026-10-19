@@ -10,6 +10,7 @@ use crate::model::ast_engine::instrument_source_for_focus;
 use crate::model::ast_engine::parse_length_to_pt;
 use crate::ui::modals::view_error_details_modal;
 use crate::ui::modals::view_export_modal;
+use crate::ui::modals::view_generated_mnemonic_modal;
 use crate::ui::modals::view_open_modal;
 use crate::ui::modals::view_presentation_health_modal;
 use crate::ui::modals::view_template_library_modal;
@@ -144,6 +145,8 @@ pub enum ActiveModal {
     FontSelector {
         search_query: String,
         current_font: String,
+        is_inline: bool,
+        selected_text: Option<String>,
     },
     HeaderFooter {
         header_enabled: bool,
@@ -167,6 +170,7 @@ pub enum ActiveModal {
         draft_content: String,
     },
     Cheatsheet,
+    GeneratedMnemonic(String),
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -214,6 +218,12 @@ pub struct SlideEditorApp {
     pub export_page_selection: ExportPageSelection,
     pub export_custom_range: String,
     pub export_include_source: bool,
+    pub export_encrypt: bool,
+    pub export_auth_mode: slide_core::security::AuthMode,
+    pub export_passphrase: String,
+    pub export_mnemonic_words: usize,
+    pub export_custom_mnemonic: String,
+    pub export_piv_pin: String,
     pub open_path: String,
     pub open_error: Option<String>,
     pub font_search_query: String,
@@ -259,7 +269,7 @@ pub const TEMPLATE_SOURCES: [&str; 8] = [
     // 1: 2-Column Comparison
     "#slide(title: [Feature Comparison])[\n  #cols(columns: (1fr, 1fr))[\n    #callout(title: [Traditional Tools], kind: \"warning\")[\n      - Manual alignment friction\n      - Bulky binary formats\n      - Clunky diff & review\n    ]\n  ][\n    #callout(title: [Cargo Slide], kind: \"info\")[\n      - Declarative Typst markup\n      - Instant live preview\n      - Zero-overhead native runtime\n    ]\n  ]\n]",
     // 2: 3-Column Feature Pillars
-    "#slide(title: [Architecture Pillars])[\n  #cols(columns: (1fr, 1fr, 1fr))[\n    #block(stroke: 1pt + rgb(\"0284c7\"), inset: 10pt, radius: 6pt)[\n      === Blazing Fast\n      Instant SVG recompilation and cached rendering\n    ]\n  ][\n    #block(stroke: 1pt + rgb(\"16a34a\"), inset: 10pt, radius: 6pt)[\n      === Expressive\n      Native charts, math, audio, and transitions\n    ]\n  ][\n    #block(stroke: 1pt + rgb(\"9333ea\"), inset: 10pt, radius: 6pt)[\n      === Standalone\n      Compressed LZMA2 `.slide` bundles\n    ]\n  ]\n]",
+    "#slide(title: [Architecture Pillars])[\n  #cols(columns: (1fr, 1fr, 1fr))[\n    #block(stroke: 1pt + rgb(\"0284c7\"), inset: 10pt, radius: 6pt)[\n      === Fast & Responsive\n      Incremental SVG compilation and cached rendering\n    ]\n  ][\n    #block(stroke: 1pt + rgb(\"16a34a\"), inset: 10pt, radius: 6pt)[\n      === Expressive\n      Native charts, math, audio, and transitions\n    ]\n  ][\n    #block(stroke: 1pt + rgb(\"9333ea\"), inset: 10pt, radius: 6pt)[\n      === Standalone\n      Compressed LZMA2 `.slide` bundles\n    ]\n  ]\n]",
     // 3: Code & Commentary
     "#slide(title: [Implementation Details])[\n  #cols(columns: (3fr, 2fr))[\n    ```rust\n    fn main() {\n        println!(\"Hello, Cargo Slide!\");\n    }\n    ```\n  ][\n    - Zero-dependency native Rust player\n    - Hardware-smooth page transitions\n    - Presenter timer & whiteboard ink\n  ]\n]",
     // 4: Metric KPI Showcase
@@ -435,8 +445,10 @@ pub enum Message {
     },
     DuplicateBlock(Range<usize>),
     OpenFontModal,
+    OpenInlineFontModal,
     FontSearchQueryChanged(String),
     SelectFont(String),
+    ApplyInlineFont(String),
     UpdateSlideTitle {
         slide_idx: usize,
         new_title: String,
@@ -456,10 +468,17 @@ pub enum Message {
     SelectExportPageSelection(ExportPageSelection),
     ExportCustomRangeChanged(String),
     ToggleExportIncludeSource,
+    ToggleExportEncrypt,
+    SelectExportAuthMode(slide_core::security::AuthMode),
+    ExportPassphraseChanged(String),
+    SelectExportMnemonicWords(usize),
+    ExportCustomMnemonicChanged(String),
+    ExportPivPinChanged(String),
     ExportPathChanged(String),
     SelectPngScale(f32),
     BrowseExportPath,
     ExecuteExport,
+    ExportCompleted(std::result::Result<Option<String>, String>),
     PlayPresentation,
     OpenErrorDetailsDialog,
     CloseModal,
@@ -682,12 +701,8 @@ impl SlideEditorApp {
         }
 
         let mut slide_view_vector = std::collections::HashSet::new();
-        if doc.format == DocumentFormat::SlidePackage {
-            let has_editable_source =
-                doc.has_editable_source() || !doc.source_text.trim().is_empty();
-            if !has_editable_source {
-                slide_view_vector = (0..doc.total_slides()).collect();
-            }
+        if doc.format == DocumentFormat::SlidePackage && !doc.has_editable_source() {
+            slide_view_vector = (0..doc.total_slides()).collect();
         }
 
         let engine = TypstDocumentEngine::from_source(doc.source_text.clone());
@@ -735,6 +750,12 @@ impl SlideEditorApp {
             export_page_selection: ExportPageSelection::All,
             export_custom_range: String::new(),
             export_include_source: true,
+            export_encrypt: false,
+            export_auth_mode: slide_core::security::AuthMode::Passphrase,
+            export_passphrase: String::new(),
+            export_mnemonic_words: 24,
+            export_custom_mnemonic: String::new(),
+            export_piv_pin: String::new(),
             open_path: String::new(),
             open_error: None,
             font_search_query: String::new(),
@@ -771,8 +792,33 @@ impl SlideEditorApp {
                 app.active_modal = Some(ActiveModal::RecoveryDraft { draft_content: draft });
             }
         }
+        app.ensure_engine_slides_match_deck();
         app.update_slide_cache();
         app
+    }
+
+    /// Ensure AST engine slide list has an entry for each slide in the deck when viewing precompiled packages without source
+    pub fn ensure_engine_slides_match_deck(&mut self) {
+        if !self.doc.has_editable_source()
+            && let Some(ref deck) = self.doc.deck
+        {
+            if self.engine.slides.len() < deck.slides.len() {
+                self.engine.slides.clear();
+                for (idx, slide) in deck.slides.iter().enumerate() {
+                    let title = slide.extract_title();
+                    self.engine
+                        .slides
+                        .push(crate::model::ast_engine::WysiwygSlide {
+                            page_number: idx + 1,
+                            title,
+                            blocks: Vec::new(),
+                            range: 0..0,
+                            transition: None,
+                            element_transitions: std::collections::HashMap::new(),
+                        });
+                }
+            }
+        }
     }
 
     /// Record a snapshot for multi-level Undo before document mutation
@@ -804,6 +850,39 @@ impl SlideEditorApp {
         }
         self.active_block_id = None;
         self.active_block_range = None;
+    }
+
+    /// Commit all active editor buffers (active block, in-place slide editor, focus mode, and source mode)
+    /// into doc.source_text and engine.source_text before saving or switching.
+    pub fn commit_all_editor_states(&mut self) {
+        // 1. Commit active block
+        self.commit_active_block();
+
+        // 2. Commit in-place editing slide content
+        if let Some(s_idx) = self.in_place_editing_slide {
+            let new_text = self.in_place_content.text();
+            self.doc.update_slide_chunk(s_idx, &new_text);
+            self.engine.source_text = self.doc.source_text.clone();
+            self.engine.reparse();
+        }
+
+        // 3. Commit focus mode slide content
+        if self.mode == EditorMode::FocusMode {
+            let new_text = self.focus_slide_content.text();
+            self.doc.update_slide_chunk(self.active_slide, &new_text);
+            self.engine.source_text = self.doc.source_text.clone();
+            self.engine.reparse();
+        }
+
+        // 4. Commit source mode content
+        if self.mode == EditorMode::SourceMode {
+            let full = self.source_content.text();
+            self.doc.source_text = full.clone();
+            self.doc.is_dirty = true;
+            self.doc.sync_chunks_from_source();
+            self.engine.source_text = full;
+            self.engine.reparse();
+        }
     }
 
     /// Re-compute search matches for current query and regex/case options
@@ -1082,6 +1161,10 @@ impl SlideEditorApp {
             for slide in &self.engine.slides {
                 new_titles.push(slide.title.clone());
             }
+        } else if let Some(ref deck) = self.doc.deck {
+            for slide in &deck.slides {
+                new_titles.push(slide.extract_title());
+            }
         } else {
             let chunks = self.doc.get_slide_chunks();
             for (idx, c) in chunks.iter().enumerate() {
@@ -1163,6 +1246,9 @@ impl SlideEditorApp {
 
     /// Re-compile document from current source_text synchronously
     pub fn trigger_recompile(&mut self) {
+        if self.doc.format == DocumentFormat::SlidePackage && !self.doc.has_editable_source() {
+            return;
+        }
         self.compilation_status = CompilationStatus::Compiling;
         match self
             .compiler
@@ -1182,6 +1268,10 @@ impl SlideEditorApp {
     /// Trigger asynchronous background compilation without blocking the UI thread
     #[allow(clippy::result_large_err)]
     pub fn trigger_recompile_task(&mut self) -> Task<Message> {
+        if self.doc.format == DocumentFormat::SlidePackage && !self.doc.has_editable_source() {
+            return Task::none();
+        }
+
         if self.compilation_in_flight {
             self.pending_recompile = true;
             return Task::none();
@@ -1244,6 +1334,33 @@ impl SlideEditorApp {
         &mut self,
         message: Message,
     ) -> Task<Message> {
+        if !self.doc.has_editable_source() {
+            match message {
+                | Message::SwitchMode(EditorMode::FocusMode | EditorMode::SourceMode)
+                | Message::InsertSlide
+                | Message::InsertSlideAt(_)
+                | Message::DeleteSlide(_)
+                | Message::DuplicateSlide(_)
+                | Message::MoveSlide { .. }
+                | Message::UpdateSlideTitle { .. }
+                | Message::ToggleSlideViewMode(_)
+                | Message::InsertSnippet(_)
+                | Message::InsertBlockAfter { .. }
+                | Message::OpenTransitionModal(_)
+                | Message::OpenSlideContextMenu(_)
+                | Message::OpenBlockContextMenu { .. }
+                | Message::OpenMoveBlockModal { .. }
+                | Message::OpenTemplateLibraryModal
+                | Message::OpenFontModal
+                | Message::OpenInlineFontModal
+                | Message::ApplyInlineFont(_)
+                | Message::OpenHeaderFooterModal => {
+                    return Task::none();
+                },
+                | _ => {},
+            }
+        }
+
         let mut task = Task::none();
 
         match message {
@@ -1268,7 +1385,8 @@ impl SlideEditorApp {
             | Message::SelectSlide(idx) => {
                 self.commit_active_block();
                 let old_slide = self.active_slide;
-                self.active_slide = idx.min(self.engine.slides.len().saturating_sub(1));
+                let max_slide = self.engine.slides.len().max(self.doc.total_slides());
+                self.active_slide = idx.min(max_slide.saturating_sub(1));
                 let chunks = self.doc.get_slide_chunks();
                 let chunk_text = chunks.get(self.active_slide).cloned().unwrap_or_default();
                 self.focus_slide_content = text_editor::Content::with_text(&chunk_text);
@@ -2183,6 +2301,7 @@ impl SlideEditorApp {
                         self.doc = new_doc;
                         self.engine =
                             TypstDocumentEngine::from_source(self.doc.source_text.clone());
+                        self.ensure_engine_slides_match_deck();
                         self.active_slide = 0;
                         self.active_block_id = None;
                         self.active_block_range = None;
@@ -2192,9 +2311,9 @@ impl SlideEditorApp {
                         self.equation_images.clear();
                         self.code_images.clear();
                         self.sync_editors_from_doc();
-                        let has_editable_source = self.doc.has_editable_source()
-                            || !self.doc.source_text.trim().is_empty();
-                        if self.doc.format == DocumentFormat::SlidePackage && !has_editable_source {
+                        if self.doc.format == DocumentFormat::SlidePackage
+                            && !self.doc.has_editable_source()
+                        {
                             self.compilation_status = CompilationStatus::Ready;
                             self.slide_view_vector = (0..self.doc.total_slides()).collect();
                             self.update_slide_cache();
@@ -2294,6 +2413,29 @@ impl SlideEditorApp {
                 self.active_modal = Some(ActiveModal::FontSelector {
                     search_query: String::new(),
                     current_font: curr_font,
+                    is_inline: false,
+                    selected_text: None,
+                });
+            },
+            | Message::OpenInlineFontModal => {
+                self.font_search_query.clear();
+                let curr_font =
+                    slide_core::font::extract_font_families_from_typst(&self.doc.source_text)
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(slide_core::font::detect_default_sans_font);
+                let selected_text = self
+                    .active_block_content
+                    .selection()
+                    .or_else(|| self.in_place_content.selection())
+                    .or_else(|| self.focus_slide_content.selection())
+                    .or_else(|| self.source_content.selection())
+                    .filter(|s| !s.trim().is_empty());
+                self.active_modal = Some(ActiveModal::FontSelector {
+                    search_query: String::new(),
+                    current_font: curr_font,
+                    is_inline: true,
+                    selected_text,
                 });
             },
             | Message::FontSearchQueryChanged(q) => {
@@ -2307,13 +2449,52 @@ impl SlideEditorApp {
             },
             | Message::SelectFont(font_name) => {
                 self.commit_active_block();
-                if let Some(start_pos) = self.doc.source_text.find("#set text(font:") {
-                    if let Some(end_quote) = self.doc.source_text[start_pos..].find(')') {
-                        let full_end = start_pos + end_quote + 1;
-                        let new_rule = format!("#set text(font: \"{font_name}\")");
+                if let Some(start_pos) = self.doc.source_text.find("#set text(") {
+                    let after_open = start_pos + "#set text(".len();
+                    if let Some(closing_idx) = crate::model::ast_engine::find_balanced_closing_paren(
+                        &self.doc.source_text[after_open..],
+                    ) {
+                        let full_end = after_open + closing_idx;
+                        let args_slice = &self.doc.source_text[after_open..full_end];
+                        if let Some(font_key_idx) = args_slice.find("font:") {
+                            let after_font = &args_slice[font_key_idx + 5..];
+                            let leading_spaces = after_font.len() - after_font.trim_start().len();
+                            let val_start = font_key_idx + 5 + leading_spaces;
+                            let val_slice = &args_slice[val_start..];
+                            let val_end = if val_slice.starts_with('"') {
+                                val_slice[1..]
+                                    .find('"')
+                                    .map(|q| 1 + q + 1)
+                                    .unwrap_or(val_slice.len())
+                            } else if val_slice.starts_with('(') {
+                                crate::model::ast_engine::find_balanced_closing_paren(
+                                    &val_slice[1..],
+                                )
+                                .map(|p| 1 + p + 1)
+                                .unwrap_or(val_slice.len())
+                            } else {
+                                val_slice.find(',').unwrap_or(val_slice.len())
+                            };
+                            let abs_val_start = after_open + val_start;
+                            let abs_val_end = abs_val_start + val_end;
+                            self.doc.source_text.replace_range(
+                                abs_val_start..abs_val_end,
+                                &format!("\"{font_name}\""),
+                            );
+                        } else {
+                            let sep = if args_slice.trim().is_empty() {
+                                ""
+                            } else {
+                                ", "
+                            };
+                            self.doc
+                                .source_text
+                                .insert_str(after_open, &format!("font: \"{font_name}\"{sep}"));
+                        }
+                    } else {
                         self.doc
                             .source_text
-                            .replace_range(start_pos..full_end, &new_rule);
+                            .insert_str(0, &format!("#set text(font: \"{font_name}\")\n"));
                     }
                 } else {
                     let insert_pos = if self.doc.source_text.starts_with("#import") {
@@ -2332,6 +2513,113 @@ impl SlideEditorApp {
                 self.sync_editors_from_doc();
                 self.active_modal = None;
                 self.trigger_recompile();
+            },
+            | Message::ApplyInlineFont(font_name) => {
+                let modal_sel = match self.active_modal {
+                    | Some(ActiveModal::FontSelector {
+                        ref selected_text, ..
+                    }) => selected_text.clone(),
+                    | _ => None,
+                };
+                let sel = modal_sel
+                    .or_else(|| self.active_block_content.selection())
+                    .or_else(|| self.in_place_content.selection())
+                    .or_else(|| self.focus_slide_content.selection())
+                    .or_else(|| self.source_content.selection())
+                    .filter(|s| !s.trim().is_empty());
+
+                let wrap_or_insert = |content: &mut text_editor::Content,
+                                      fallback_insert: &str|
+                 -> String {
+                    if let Some(active_sel) = content.selection().filter(|s| !s.trim().is_empty()) {
+                        let replacement = format!("#font(\"{font_name}\")[{active_sel}]");
+                        content.perform(text_editor::Action::Edit(text_editor::Edit::Paste(
+                            std::sync::Arc::new(replacement),
+                        )));
+                        return content.text();
+                    }
+                    if let Some(ref captured) = sel {
+                        let text = content.text();
+                        if text.contains(captured.as_str()) {
+                            let replacement = format!("#font(\"{font_name}\")[{captured}]");
+                            if let Some(pos) = text.find(captured.as_str()) {
+                                let mut updated = text.clone();
+                                updated.replace_range(pos..pos + captured.len(), &replacement);
+                                *content = text_editor::Content::with_text(&updated);
+                                return updated;
+                            }
+                        }
+                    }
+                    let replacement = format!("#font(\"{font_name}\")[]");
+                    content.perform(text_editor::Action::Edit(text_editor::Edit::Paste(
+                        std::sync::Arc::new(replacement),
+                    )));
+                    let mut text = content.text();
+                    if text.is_empty() {
+                        text = fallback_insert.to_string();
+                        *content = text_editor::Content::with_text(&text);
+                    }
+                    text
+                };
+
+                if let Some(range) = self.active_block_range.clone() {
+                    let updated = wrap_or_insert(
+                        &mut self.active_block_content,
+                        &format!("#font(\"{font_name}\")[]"),
+                    );
+                    if let Some(new_range) = self.engine.update_block_at_range(range, &updated) {
+                        self.active_block_range = Some(new_range);
+                        self.doc.source_text = self.engine.source_text.clone();
+                        self.doc.is_dirty = true;
+                        self.doc.sync_chunks_from_source();
+                        task = self.trigger_recompile_task();
+                    }
+                } else if let Some(s_idx) = self.in_place_editing_slide {
+                    let updated = wrap_or_insert(
+                        &mut self.in_place_content,
+                        &format!("#font(\"{font_name}\")[]"),
+                    );
+                    self.doc.update_slide_chunk(s_idx, &updated);
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    task = self.trigger_recompile_task();
+                } else if self.mode == EditorMode::FocusMode {
+                    let updated = wrap_or_insert(
+                        &mut self.focus_slide_content,
+                        &format!("#font(\"{font_name}\")[]"),
+                    );
+                    self.doc.update_slide_chunk(self.active_slide, &updated);
+                    self.engine.source_text = self.doc.source_text.clone();
+                    self.engine.reparse();
+                    task = self.trigger_recompile_task();
+                } else if self.mode == EditorMode::SourceMode {
+                    let updated = wrap_or_insert(
+                        &mut self.source_content,
+                        &format!("#font(\"{font_name}\")[]"),
+                    );
+                    self.doc.source_text = updated.clone();
+                    self.doc.is_dirty = true;
+                    self.doc.sync_chunks_from_source();
+                    self.engine.source_text = updated;
+                    self.engine.reparse();
+                    task = self.trigger_recompile_task();
+                } else {
+                    let text_to_insert = if let Some(ref captured) = sel {
+                        format!("#font(\"{font_name}\")[{captured}]")
+                    } else {
+                        format!("#font(\"{font_name}\")[]")
+                    };
+                    let offset = self
+                        .engine
+                        .get_slide_content_insert_offset(self.active_slide);
+                    self.engine.insert_block_after(offset, &text_to_insert);
+                    self.doc.source_text = self.engine.source_text.clone();
+                    self.doc.is_dirty = true;
+                    self.doc.sync_chunks_from_source();
+                    self.sync_editors_from_doc();
+                    task = self.trigger_recompile_task();
+                }
+                self.active_modal = None;
             },
             | Message::OpenSearchModal => {
                 self.search_state.is_visible = true;
@@ -2696,6 +2984,11 @@ impl SlideEditorApp {
             },
             | Message::CompilationCompleted(res) => {
                 self.compilation_in_flight = false;
+                if self.doc.format == DocumentFormat::SlidePackage
+                    && !self.doc.has_editable_source()
+                {
+                    return Task::none();
+                }
                 match res {
                     | Ok(deck) => {
                         self.doc.deck = Some(deck);
@@ -2810,14 +3103,13 @@ impl SlideEditorApp {
                             self.doc = new_doc;
                             self.engine =
                                 TypstDocumentEngine::from_source(self.doc.source_text.clone());
+                            self.ensure_engine_slides_match_deck();
                             self.active_slide = 0;
                             self.in_place_editing_slide = None;
                             self.active_modal = None;
                             self.sync_editors_from_doc();
-                            let has_editable_source = self.doc.has_editable_source()
-                                || !self.doc.source_text.trim().is_empty();
                             if self.doc.format == DocumentFormat::SlidePackage
-                                && !has_editable_source
+                                && !self.doc.has_editable_source()
                             {
                                 self.compilation_status = CompilationStatus::Ready;
                                 self.slide_view_vector = (0..self.doc.total_slides()).collect();
@@ -2836,19 +3128,46 @@ impl SlideEditorApp {
                 }
             },
             | Message::SaveDocument => {
-                self.commit_active_block();
+                self.commit_all_editor_states();
                 if self.doc.file_path.is_none() {
-                    self.open_export_with_format(match self.doc.format {
-                        | DocumentFormat::Typst => ExportFormat::Pdf,
-                        | DocumentFormat::SlidePackage => ExportFormat::SlidePackage,
-                    });
-                } else {
-                    let _ = self.doc.save(None);
-                    if let Some(ref p) = self.doc.file_path {
-                        save_recent_editor_file(p);
-                        self.recent_files = load_recent_editor_files();
+                    let default_name = match self.doc.format {
+                        | DocumentFormat::Typst => "slides.typ",
+                        | DocumentFormat::SlidePackage => "slides.slide",
+                    };
+                    let mut dialog = rfd::FileDialog::new()
+                        .set_title("Save Presentation Source")
+                        .set_file_name(default_name);
+                    dialog = match self.doc.format {
+                        | DocumentFormat::Typst => {
+                            dialog.add_filter("Typst Document (*.typ)", &["typ"])
+                        },
+                        | DocumentFormat::SlidePackage => {
+                            dialog.add_filter("Cargo Slide Package (*.slide)", &["slide"])
+                        },
+                    };
+                    if let Some(target) = dialog.save_file() {
+                        match self.doc.save(Some(&target)) {
+                            | Ok(p) => {
+                                save_recent_editor_file(&p);
+                                self.recent_files = load_recent_editor_files();
+                                task = self.trigger_recompile_task();
+                            },
+                            | Err(e) => {
+                                eprintln!("[ERROR] Failed to save document: {e}");
+                            },
+                        }
                     }
-                    task = self.trigger_recompile_task();
+                } else {
+                    match self.doc.save(None) {
+                        | Ok(p) => {
+                            save_recent_editor_file(&p);
+                            self.recent_files = load_recent_editor_files();
+                            task = self.trigger_recompile_task();
+                        },
+                        | Err(e) => {
+                            eprintln!("[ERROR] Failed to save document: {e}");
+                        },
+                    }
                 }
             },
             | Message::OpenExportDialog => {
@@ -2867,6 +3186,24 @@ impl SlideEditorApp {
             },
             | Message::ToggleExportIncludeSource => {
                 self.export_include_source = !self.export_include_source;
+            },
+            | Message::ToggleExportEncrypt => {
+                self.export_encrypt = !self.export_encrypt;
+            },
+            | Message::SelectExportAuthMode(mode) => {
+                self.export_auth_mode = mode;
+            },
+            | Message::ExportPassphraseChanged(pass) => {
+                self.export_passphrase = pass;
+            },
+            | Message::SelectExportMnemonicWords(words) => {
+                self.export_mnemonic_words = words;
+            },
+            | Message::ExportCustomMnemonicChanged(words) => {
+                self.export_custom_mnemonic = words;
+            },
+            | Message::ExportPivPinChanged(pin) => {
+                self.export_piv_pin = pin;
             },
             | Message::ExportPathChanged(path) => {
                 self.export_path = path;
@@ -2890,89 +3227,157 @@ impl SlideEditorApp {
             },
             | Message::ExecuteExport => {
                 self.commit_active_block();
+                self.export_status = Some("Exporting presentation...".to_string());
                 let target = PathBuf::from(self.export_path.trim());
-                let result = match self.export_format {
-                    | ExportFormat::Pdf => self.compiler.export_pdf(&self.doc, &target),
-                    | ExportFormat::Svg => {
-                        if let Some(ref deck) = self.doc.deck {
-                            let total = deck.total_slides();
-                            let pages = match self.export_page_selection {
-                                | ExportPageSelection::All => None,
-                                | ExportPageSelection::Current => Some(vec![self.active_slide + 1]),
-                                | ExportPageSelection::Custom => {
-                                    Some(CompilerBridge::parse_page_range(
-                                        &self.export_custom_range,
-                                        total,
-                                    ))
-                                },
-                            };
-                            CompilerBridge::export_svgs(deck, &target, pages.as_deref()).map(|_| ())
-                        } else {
-                            Err(slide_core::error::SlideError::Compilation(
-                                "No compiled deck available".to_string(),
-                            ))
-                        }
-                    },
-                    | ExportFormat::Png => {
-                        if let Some(ref deck) = self.doc.deck {
-                            let total = deck.total_slides();
-                            let pages = match self.export_page_selection {
-                                | ExportPageSelection::All => None,
-                                | ExportPageSelection::Current => Some(vec![self.active_slide + 1]),
-                                | ExportPageSelection::Custom => {
-                                    Some(CompilerBridge::parse_page_range(
-                                        &self.export_custom_range,
-                                        total,
-                                    ))
-                                },
-                            };
-                            CompilerBridge::export_all_pngs(
-                                deck,
-                                &target,
-                                self.export_png_scale,
-                                pages.as_deref(),
-                            )
-                            .map(|_| ())
-                        } else {
-                            Err(slide_core::error::SlideError::Compilation(
-                                "No compiled deck available".to_string(),
-                            ))
-                        }
-                    },
-                    | ExportFormat::Html => {
-                        if let Some(ref deck) = self.doc.deck {
-                            let total = deck.total_slides();
-                            let pages = match self.export_page_selection {
-                                | ExportPageSelection::All => None,
-                                | ExportPageSelection::Current => Some(vec![self.active_slide + 1]),
-                                | ExportPageSelection::Custom => {
-                                    Some(CompilerBridge::parse_page_range(
-                                        &self.export_custom_range,
-                                        total,
-                                    ))
-                                },
-                            };
-                            CompilerBridge::export_standalone_html(deck, &target, pages.as_deref())
-                                .map(|_| ())
-                        } else {
-                            Err(slide_core::error::SlideError::Compilation(
-                                "No compiled deck available".to_string(),
-                            ))
-                        }
-                    },
-                    | ExportFormat::SlidePackage => {
-                        self.compiler.export_slide_package(
-                            &self.doc,
-                            self.export_include_source,
-                            &target,
-                        )
-                    },
+                let format = self.export_format;
+                let page_sel = self.export_page_selection;
+                let custom_range = self.export_custom_range.clone();
+                let png_scale = self.export_png_scale;
+                let encrypt = self.export_encrypt;
+                let auth_mode = self.export_auth_mode;
+                let passphrase = self.export_passphrase.clone();
+                let custom_mnemonic = self.export_custom_mnemonic.clone();
+                let mnemonic_words = self.export_mnemonic_words;
+                let piv_pin = if self.export_piv_pin.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.export_piv_pin.trim().to_string())
                 };
+                let include_source = self.export_include_source;
+                let active_slide = self.active_slide;
+                let doc = self.doc.clone();
 
+                task = Task::perform(
+                    async move {
+                        std::thread::spawn(move || {
+                            let compiler = CompilerBridge::new();
+                            match format {
+                                | ExportFormat::Pdf => {
+                                    compiler.export_pdf(&doc, &target).map(|_| None)
+                                },
+                                | ExportFormat::Svg => {
+                                    if let Some(ref deck) = doc.deck {
+                                        let total = deck.total_slides();
+                                        let pages = match page_sel {
+                                            | ExportPageSelection::All => None,
+                                            | ExportPageSelection::Current => {
+                                                Some(vec![active_slide + 1])
+                                            },
+                                            | ExportPageSelection::Custom => {
+                                                Some(CompilerBridge::parse_page_range(
+                                                    &custom_range,
+                                                    total,
+                                                ))
+                                            },
+                                        };
+                                        CompilerBridge::export_svgs(deck, &target, pages.as_deref())
+                                            .map(|_| None)
+                                    } else {
+                                        Err(slide_core::error::SlideError::Compilation(
+                                            "No compiled deck available".to_string(),
+                                        ))
+                                    }
+                                },
+                                | ExportFormat::Png => {
+                                    if let Some(ref deck) = doc.deck {
+                                        let total = deck.total_slides();
+                                        let pages = match page_sel {
+                                            | ExportPageSelection::All => None,
+                                            | ExportPageSelection::Current => {
+                                                Some(vec![active_slide + 1])
+                                            },
+                                            | ExportPageSelection::Custom => {
+                                                Some(CompilerBridge::parse_page_range(
+                                                    &custom_range,
+                                                    total,
+                                                ))
+                                            },
+                                        };
+                                        CompilerBridge::export_all_pngs(
+                                            deck,
+                                            &target,
+                                            png_scale,
+                                            pages.as_deref(),
+                                        )
+                                        .map(|_| None)
+                                    } else {
+                                        Err(slide_core::error::SlideError::Compilation(
+                                            "No compiled deck available".to_string(),
+                                        ))
+                                    }
+                                },
+                                | ExportFormat::Html => {
+                                    if let Some(ref deck) = doc.deck {
+                                        let total = deck.total_slides();
+                                        let pages = match page_sel {
+                                            | ExportPageSelection::All => None,
+                                            | ExportPageSelection::Current => {
+                                                Some(vec![active_slide + 1])
+                                            },
+                                            | ExportPageSelection::Custom => {
+                                                Some(CompilerBridge::parse_page_range(
+                                                    &custom_range,
+                                                    total,
+                                                ))
+                                            },
+                                        };
+                                        CompilerBridge::export_standalone_html(
+                                            deck,
+                                            &target,
+                                            pages.as_deref(),
+                                        )
+                                        .map(|_| None)
+                                    } else {
+                                        Err(slide_core::error::SlideError::Compilation(
+                                            "No compiled deck available".to_string(),
+                                        ))
+                                    }
+                                },
+                                | ExportFormat::SlidePackage => {
+                                    if encrypt {
+                                        use slide_core::security::AuthMode;
+                                        let secret = match auth_mode {
+                                            | AuthMode::Passphrase => Some(passphrase.as_str()),
+                                            | AuthMode::Mnemonic => Some(custom_mnemonic.as_str()),
+                                            | AuthMode::Piv => None,
+                                        };
+                                        compiler.export_encrypted_slide_package(
+                                            &doc,
+                                            include_source,
+                                            &target,
+                                            auth_mode,
+                                            secret,
+                                            Some(mnemonic_words),
+                                            piv_pin.as_deref(),
+                                        )
+                                    } else {
+                                        compiler
+                                            .export_slide_package(&doc, include_source, &target)
+                                            .map(|_| None)
+                                    }
+                                },
+                            }
+                        })
+                        .join()
+                        .unwrap_or_else(|_| {
+                            Err(slide_core::error::SlideError::Crypto(
+                                "Export worker thread panicked".to_string(),
+                            ))
+                        })
+                        .map_err(|e| e.to_string())
+                    },
+                    Message::ExportCompleted,
+                );
+            },
+            | Message::ExportCompleted(result) => {
                 match result {
-                    | Ok(()) => {
+                    | Ok(maybe_gen) => {
+                        let target = PathBuf::from(self.export_path.trim());
                         self.export_status =
                             Some(format!("Successfully exported to {}", target.display()));
+                        if let Some(gen_mnemonic) = maybe_gen {
+                            self.active_modal = Some(ActiveModal::GeneratedMnemonic(gen_mnemonic));
+                        }
                     },
                     | Err(e) => {
                         self.export_status = Some(format!("Export failed: {e}"));
@@ -2980,34 +3385,7 @@ impl SlideEditorApp {
                 }
             },
             | Message::PlayPresentation => {
-                // 1. Commit active block
-                self.commit_active_block();
-
-                // 2. Commit in-place editing slide content
-                if let Some(s_idx) = self.in_place_editing_slide {
-                    let new_text = self.in_place_content.text();
-                    self.doc.update_slide_chunk(s_idx, &new_text);
-                    self.engine.source_text = self.doc.source_text.clone();
-                    self.engine.reparse();
-                }
-
-                // 3. Commit focus mode slide content
-                if self.mode == EditorMode::FocusMode {
-                    let new_text = self.focus_slide_content.text();
-                    self.doc.update_slide_chunk(self.active_slide, &new_text);
-                    self.engine.source_text = self.doc.source_text.clone();
-                    self.engine.reparse();
-                }
-
-                // 4. Commit source mode content
-                if self.mode == EditorMode::SourceMode {
-                    let full = self.source_content.text();
-                    self.doc.source_text = full.clone();
-                    self.doc.is_dirty = true;
-                    self.doc.sync_chunks_from_source();
-                    self.engine.source_text = full;
-                    self.engine.reparse();
-                }
+                self.commit_all_editor_states();
 
                 let is_light = self.theme.is_light();
                 let file_path = self.doc.file_path.clone();
@@ -3020,6 +3398,10 @@ impl SlideEditorApp {
                         if !macro_path.exists() {
                             let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
                         }
+                        let theme_path = parent.join("theme.typ");
+                        if !theme_path.exists() {
+                            let _ = std::fs::write(&theme_path, slide_theme::DEFAULT_THEME);
+                        }
                     }
                     launch_presentation_player(p, is_light);
                 } else {
@@ -3028,6 +3410,10 @@ impl SlideEditorApp {
                     let _ = std::fs::create_dir_all(&cache_dir);
                     let macro_path = cache_dir.join("slide.typ");
                     let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
+                    let theme_path = cache_dir.join("theme.typ");
+                    if !theme_path.exists() {
+                        let _ = std::fs::write(&theme_path, slide_theme::DEFAULT_THEME);
+                    }
 
                     let temp_file = cache_dir.join("untitled_presentation.typ");
                     if std::fs::write(&temp_file, &self.doc.source_text).is_ok() {
@@ -4240,6 +4626,8 @@ impl SlideEditorApp {
     pub fn view(&self) -> Element<'_, Message> {
         let win_w = self.window_size.width;
 
+        let has_editable_source = self.doc.has_editable_source();
+
         let toolbar = view_toolbar(
             self.theme,
             &self.doc.title,
@@ -4250,6 +4638,7 @@ impl SlideEditorApp {
             !self.undo_stack.is_empty(),
             !self.redo_stack.is_empty(),
             win_w,
+            has_editable_source,
         );
 
         let formatting_bar = view_formatting_bar(self.theme, self.active_slide, win_w);
@@ -4280,6 +4669,7 @@ impl SlideEditorApp {
                     self.dragging_block.map(|(s, b, _, _)| (s, b)),
                     &self.raw_code_blocks,
                     &self.engine,
+                    has_editable_source,
                 )
             },
             | EditorMode::FocusMode => {
@@ -4370,9 +4760,13 @@ impl SlideEditorApp {
             self.doc.is_dirty,
         );
 
-        let base_content = column![toolbar, formatting_bar, center_content, statusbar]
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let mut base_col = column![toolbar];
+        if has_editable_source {
+            base_col = base_col.push(formatting_bar);
+        }
+        base_col = base_col.push(center_content).push(statusbar);
+
+        let base_content = base_col.width(Length::Fill).height(Length::Fill);
 
         let root_content: Element<'_, Message> = base_content.into();
 
@@ -4391,7 +4785,16 @@ impl SlideEditorApp {
                         self.active_slide,
                         self.engine.slides.len(),
                         self.export_status.as_deref(),
+                        self.export_encrypt,
+                        self.export_auth_mode,
+                        &self.export_passphrase,
+                        self.export_mnemonic_words,
+                        &self.export_custom_mnemonic,
+                        &self.export_piv_pin,
                     )
+                },
+                | ActiveModal::GeneratedMnemonic(mnemonic) => {
+                    view_generated_mnemonic_modal(self.theme, mnemonic)
                 },
                 | ActiveModal::Open => {
                     view_open_modal(
@@ -4486,11 +4889,15 @@ impl SlideEditorApp {
                 | ActiveModal::FontSelector {
                     search_query,
                     current_font,
+                    is_inline,
+                    selected_text,
                 } => {
                     crate::ui::modals::view_font_selector_modal(
                         self.theme,
                         search_query,
                         current_font,
+                        *is_inline,
+                        selected_text.as_deref(),
                     )
                 },
                 | ActiveModal::HeaderFooter {

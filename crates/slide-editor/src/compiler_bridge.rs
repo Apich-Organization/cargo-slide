@@ -312,6 +312,10 @@ impl CompilerBridge {
             if !slide_typ.exists() {
                 let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
             }
+            let theme_typ = root.join("theme.typ");
+            if !theme_typ.exists() {
+                let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
+            }
             std::fs::write(&tmp, &processed_source).map_err(|e| {
                 SlideError::Compilation(format!(
                     "Failed to write temporary typst file in {}: {e}",
@@ -323,6 +327,8 @@ impl CompilerBridge {
             let temp_dir = tempfile::tempdir()?;
             let slide_typ = temp_dir.path().join("slide.typ");
             let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
+            let theme_typ = temp_dir.path().join("theme.typ");
+            let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
             let tmp = temp_dir.path().join("document.typ");
             std::fs::write(&tmp, &processed_source)?;
             (tmp, Cleanup::Dir(temp_dir))
@@ -516,6 +522,127 @@ impl CompilerBridge {
         }
     }
 
+    /// Package document into an encrypted standalone .slide file with AES-256-GCM / PIV protection.
+    /// Returns `Ok(Some(generated_mnemonic))` if an auto-generated recovery mnemonic was created,
+    /// or `Ok(None)` otherwise.
+    pub fn export_encrypted_slide_package(
+        &self,
+        doc: &EditorDocument,
+        include_source: bool,
+        output_slide: &Path,
+        auth_mode: slide_core::security::AuthMode,
+        secret: Option<&str>,
+        mnemonic_words: Option<usize>,
+        piv_pin: Option<&str>,
+    ) -> Result<Option<String>> {
+        use slide_core::security::AuthMode;
+        use slide_core::security::EncryptedSlideContainer;
+        use slide_core::security::PivManager;
+        use slide_core::security::PivSlot;
+
+        let deck = if let Some(ref d) = doc.deck {
+            d.clone()
+        } else {
+            let project_root = doc
+                .assets_dir
+                .as_deref()
+                .or_else(|| doc.file_path.as_deref().and_then(|p| p.parent()));
+            self.compile_source(&doc.source_text, project_root)
+                .map_err(|d| SlideError::Compilation(d.full_stderr))?
+        };
+
+        let temp_assets_dir = if doc.assets_dir.is_none() && include_source {
+            let tmp = tempfile::tempdir().ok();
+            if let Some(ref t) = tmp {
+                let _ = std::fs::write(t.path().join("source.typ"), &doc.source_text);
+            }
+            tmp
+        } else {
+            if include_source {
+                if let Some(ref adir) = doc.assets_dir {
+                    let src_path = adir.join("source.typ");
+                    let _ = std::fs::write(&src_path, &doc.source_text);
+                }
+            }
+            None
+        };
+        let effective_assets_dir = doc
+            .assets_dir
+            .as_deref()
+            .or_else(|| temp_assets_dir.as_ref().map(|t| t.path()));
+
+        match auth_mode {
+            | AuthMode::Passphrase => {
+                let pass = secret
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        SlideError::Crypto("Encryption passphrase cannot be empty".to_string())
+                    })?;
+                slide_core::security::validate_password_strength(pass)?;
+                let (bytes, _) = EncryptedSlideContainer::pack_software_with_source(
+                    &deck,
+                    effective_assets_dir,
+                    pass,
+                    AuthMode::Passphrase,
+                    None,
+                    include_source,
+                )?;
+                std::fs::write(output_slide, bytes)?;
+                Ok(None)
+            },
+            | AuthMode::Mnemonic => {
+                let sec = secret.map(str::trim).unwrap_or("");
+                if !sec.is_empty() {
+                    slide_core::security::validate_bip39_mnemonic(sec)?;
+                }
+                let (bytes, gen_mnemonic) = EncryptedSlideContainer::pack_software_with_source(
+                    &deck,
+                    effective_assets_dir,
+                    sec,
+                    AuthMode::Mnemonic,
+                    mnemonic_words,
+                    include_source,
+                )?;
+                std::fs::write(output_slide, bytes)?;
+                Ok(gen_mnemonic.map(|m| (*m).clone()))
+            },
+            | AuthMode::Piv => {
+                let pin_opt = piv_pin
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        std::env::var("PIV_PIN")
+                            .ok()
+                            .filter(|s| !s.trim().is_empty())
+                    });
+
+                let recipient_slot = PivSlot::Slot9D;
+                let signer_slot = PivSlot::Slot9C;
+                let mut card = PivManager::acquire_card(pin_opt.as_deref())?;
+                slide_core::security::prompt_pin_for_slot(
+                    card.as_mut(),
+                    signer_slot,
+                    pin_opt.as_deref(),
+                    true,
+                )?;
+                let recipient_pub = card.get_public_key(recipient_slot)?;
+                let bytes = EncryptedSlideContainer::pack_with_source(
+                    &deck,
+                    effective_assets_dir,
+                    &recipient_pub,
+                    recipient_slot,
+                    card.as_mut(),
+                    signer_slot,
+                    include_source,
+                )?;
+                std::fs::write(output_slide, bytes)?;
+                Ok(None)
+            },
+        }
+    }
+
     /// Parse page range string (e.g. "1", "1-3", "1, 3, 5-7") into sorted, deduplicated 1-based page numbers
     #[must_use]
     pub fn parse_page_range(
@@ -579,7 +706,7 @@ impl CompilerBridge {
         ))
     }
 
-    /// Pre-render a slide's SVG markup into an iced image Handle for instant SIMD rendering.
+    /// Pre-render a slide's SVG markup into an iced image Handle for cached raster rendering.
     pub fn render_slide_to_image(
         slide_svg: &str,
         target_width: f32,

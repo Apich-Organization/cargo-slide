@@ -3226,6 +3226,95 @@ fn test_editable_slide_package_flow_mode() {
 }
 
 #[test]
+fn test_protected_vector_package_without_source_read_only_guard() {
+    use slide_editor::app::EditorMode;
+    use slide_editor::app::Message;
+    use slide_editor::app::SlideEditorApp;
+    use slide_editor::compiler_bridge::CompilerBridge;
+    use slide_editor::document::DocumentFormat;
+    use slide_editor::document::EditorDocument;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let src = "= Slide 1\nProtected Content\n#pagebreak()\n= Slide 2\nMore Protected Content\n";
+    let compiler = CompilerBridge::new();
+    let mut doc = EditorDocument::new_presentation("Protected Vector Test");
+    doc.source_text = src.to_string();
+    doc.sync_chunks_from_source();
+
+    let package_path = temp_dir.path().join("protected_vector.slide");
+    // Explicitly package WITHOUT source code
+    let pack_res = compiler.export_slide_package(&doc, false, &package_path);
+    assert!(pack_res.is_ok());
+    assert!(package_path.exists());
+
+    let opened = EditorDocument::open(&package_path).expect("Open protected slide");
+    assert_eq!(opened.format, DocumentFormat::SlidePackage);
+    assert!(!opened.has_editable_source());
+
+    let mut app = SlideEditorApp::new(Some(package_path), false);
+    assert!(!app.doc.has_editable_source());
+    assert_eq!(app.mode, EditorMode::LivePreview);
+    let original_total = app.doc.total_slides();
+    assert_eq!(original_total, 2);
+
+    // 1. Attempting to switch to FocusMode or SourceMode must be completely rejected
+    let _ = app.update(Message::SwitchMode(EditorMode::FocusMode));
+    assert_eq!(
+        app.mode,
+        EditorMode::LivePreview,
+        "Cannot enter FocusMode when read-only"
+    );
+    let _ = app.update(Message::SwitchMode(EditorMode::SourceMode));
+    assert_eq!(
+        app.mode,
+        EditorMode::LivePreview,
+        "Cannot enter SourceMode when read-only"
+    );
+
+    // 2. Attempting to insert or delete slides must be rejected
+    let _ = app.update(Message::InsertSlide);
+    assert_eq!(
+        app.doc.total_slides(),
+        original_total,
+        "Cannot insert slide in read-only deck"
+    );
+
+    let _ = app.update(Message::InsertSlideAt(0));
+    assert_eq!(
+        app.doc.total_slides(),
+        original_total,
+        "Cannot insert slide at idx in read-only deck"
+    );
+
+    let _ = app.update(Message::DeleteSlide(0));
+    assert_eq!(
+        app.doc.total_slides(),
+        original_total,
+        "Cannot delete slide in read-only deck"
+    );
+
+    let _ = app.update(Message::DuplicateSlide(0));
+    assert_eq!(
+        app.doc.total_slides(),
+        original_total,
+        "Cannot duplicate slide in read-only deck"
+    );
+
+    // 3. Modifying title or injecting snippets must be rejected
+    let original_title = app.doc.title.clone();
+    let _ = app.update(Message::UpdateSlideTitle {
+        slide_idx: 0,
+        new_title: "Malicious Injected Title".to_string(),
+    });
+    assert_eq!(app.doc.title, original_title);
+
+    let _ = app.update(Message::InsertSnippet("= Injected Heading\n"));
+
+    // 4. view() generates cleanly without formatting_bar
+    let _ = app.view();
+}
+
+#[test]
 fn test_badge_live_editor_and_modal() {
     use slide_editor::app::ActiveModal;
     use slide_editor::app::Message;
@@ -3524,11 +3613,24 @@ fn test_font_selector_flow() {
     // Select font
     let _ = app.update(Message::SelectFont("Nimbus Sans".to_string()));
     assert!(app.active_modal.is_none());
+    assert!(app.doc.source_text.contains("font: \"Nimbus Sans\""));
+    // Ensure no broken syntax with double closing parenthesis
     assert!(
-        app.doc
+        !app.doc
             .source_text
-            .contains("#set text(font: \"Nimbus Sans\")")
+            .contains("#set text(font: \"Nimbus Sans\"))")
     );
+
+    // Test inline font modal & application without selection: inserts #font("...")[]
+    let _ = app.update(Message::OpenInlineFontModal);
+    assert!(matches!(
+        app.active_modal,
+        Some(ActiveModal::FontSelector { is_inline: true, .. })
+    ));
+    let _ = app.update(Message::ApplyInlineFont("Fira Code".to_string()));
+    assert!(app.active_modal.is_none());
+    assert!(app.doc.source_text.contains("#font(\"Fira Code\")[]"));
+    assert!(!app.doc.source_text.contains("styled text"));
 }
 
 #[test]
@@ -4999,4 +5101,550 @@ fn test_command_palette_modal_and_agenda_generation() {
     // 4. Delete slide protection
     let _ = app.update(Message::DeleteActiveSlide);
     assert_eq!(app.doc.total_slides(), initial_slides);
+}
+
+static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn test_encrypted_slide_package_export_and_open() {
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
+    use slide_core::security::AuthMode;
+
+    let compiler = CompilerBridge::new();
+    let doc = EditorDocument::new_presentation("Secret Encrypted Presentation");
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+
+    // 1. Export encrypted with Passphrase
+    let pass_slide_path = temp_dir.path().join("encrypted_pass.slide");
+    let test_pass = "P@ssw0rdSecure2026!";
+    let export_res = compiler.export_encrypted_slide_package(
+        &doc,
+        true,
+        &pass_slide_path,
+        AuthMode::Passphrase,
+        Some(test_pass),
+        None,
+        None,
+    );
+    assert!(
+        export_res.is_ok(),
+        "Encrypted export failed: {:?}",
+        export_res.err()
+    );
+    assert!(pass_slide_path.exists());
+    assert!(slide_core::package::is_encrypted_package_file(
+        &pass_slide_path
+    ));
+
+    // 2. Open encrypted presentation using environment variable
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", test_pass);
+    }
+    let opened_res = EditorDocument::open(&pass_slide_path);
+    assert!(
+        opened_res.is_ok(),
+        "Failed to open encrypted presentation: {:?}",
+        opened_res.err()
+    );
+    let mut opened_doc = opened_res.unwrap();
+    assert!(opened_doc.is_encrypted);
+    assert_eq!(opened_doc.encryption_auth_mode, Some(AuthMode::Passphrase));
+    assert_eq!(opened_doc.format, DocumentFormat::SlidePackage);
+    assert_eq!(opened_doc.total_slides(), doc.total_slides());
+
+    // 3. Modify and re-save encrypted package
+    opened_doc
+        .source_text
+        .push_str("\n\n= New Encrypted Slide\nConfidential Content.");
+    opened_doc.is_dirty = true;
+    let saved_path = opened_doc
+        .save(None)
+        .expect("Failed to save encrypted package");
+    assert_eq!(saved_path, pass_slide_path);
+
+    // Re-open and verify content
+    let reopened =
+        EditorDocument::open(&pass_slide_path).expect("Failed to re-open saved encrypted file");
+    assert!(reopened.is_encrypted);
+    assert!(reopened.source_text.contains("New Encrypted Slide"));
+
+    // 4. Export encrypted with 12-word auto-generated BIP-39 mnemonic
+    let m12_slide_path = temp_dir.path().join("encrypted_m12.slide");
+    let m12_res = compiler
+        .export_encrypted_slide_package(
+            &doc,
+            true,
+            &m12_slide_path,
+            AuthMode::Mnemonic,
+            None,
+            Some(12),
+            None,
+        )
+        .expect("Failed to export 12-word encrypted package");
+    assert!(m12_res.is_some());
+    let gen_12_mnemonic = m12_res.unwrap();
+    assert_eq!(gen_12_mnemonic.split_whitespace().count(), 12);
+
+    // Open with 12-word mnemonic
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", &gen_12_mnemonic);
+    }
+    let opened_m12 =
+        EditorDocument::open(&m12_slide_path).expect("Failed to open 12-word encrypted package");
+    assert!(opened_m12.is_encrypted);
+    assert_eq!(opened_m12.encryption_auth_mode, Some(AuthMode::Mnemonic));
+
+    // 5. Export encrypted with 24-word auto-generated BIP-39 mnemonic
+    let m24_slide_path = temp_dir.path().join("encrypted_m24.slide");
+    let m24_res = compiler
+        .export_encrypted_slide_package(
+            &doc,
+            true,
+            &m24_slide_path,
+            AuthMode::Mnemonic,
+            None,
+            Some(24),
+            None,
+        )
+        .expect("Failed to export 24-word encrypted package");
+    assert!(m24_res.is_some());
+    let gen_24_mnemonic = m24_res.unwrap();
+    assert_eq!(gen_24_mnemonic.split_whitespace().count(), 24);
+
+    // Open with 24-word mnemonic
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", &gen_24_mnemonic);
+    }
+    let opened_m24 =
+        EditorDocument::open(&m24_slide_path).expect("Failed to open 24-word encrypted package");
+    assert!(opened_m24.is_encrypted);
+    assert_eq!(opened_m24.encryption_auth_mode, Some(AuthMode::Mnemonic));
+
+    // Clean up env
+    unsafe {
+        std::env::remove_var("SLIDE_PASSPHRASE");
+    }
+}
+
+#[test]
+fn test_encrypted_multislide_open_in_editor() {
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
+    use slide_core::security::AuthMode;
+    use slide_editor::app::SlideEditorApp;
+
+    let compiler = CompilerBridge::new();
+    let src = "= Slide 1\nFirst Content\n#pagebreak()\n= Slide 2\nSecond Content\n#pagebreak()\n= Slide 3\nThird Content\n";
+    let mut doc = EditorDocument::new_presentation("Multi-Slide Encrypted Test");
+    doc.source_text = src.to_string();
+    doc.sync_chunks_from_source();
+
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let enc_path = temp_dir.path().join("multi_enc.slide");
+    let test_pass = "S3cur3Passw0rdMulti2026!";
+
+    let export_res = compiler.export_encrypted_slide_package(
+        &doc,
+        false, // Do NOT include source.typ, forcing reconstructed source
+        &enc_path,
+        AuthMode::Passphrase,
+        Some(test_pass),
+        None,
+        None,
+    );
+    assert!(export_res.is_ok());
+
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", test_pass);
+    }
+
+    let opened_doc = EditorDocument::open(&enc_path).expect("open multi_enc.slide");
+    println!("opened_doc total_slides = {}", opened_doc.total_slides());
+    println!(
+        "opened_doc deck slides = {}",
+        opened_doc
+            .deck
+            .as_ref()
+            .map(|d| d.slides.len())
+            .unwrap_or(0)
+    );
+    println!(
+        "opened_doc slide_chunks = {}",
+        opened_doc.get_slide_chunks().len()
+    );
+    println!("opened_doc source_text = \n{}", opened_doc.source_text);
+
+    let app = SlideEditorApp::new(Some(enc_path.clone()), false);
+    println!("app total_slides = {}", app.doc.total_slides());
+    println!("app engine slides = {}", app.engine.slides.len());
+    println!("app slide_images = {}", app.slide_images.len());
+
+    let mut app2 = SlideEditorApp::new(None, false);
+    app2.open_path = enc_path.to_string_lossy().to_string();
+    let _ = app2.update(Message::ExecuteOpen);
+    println!("app2 total_slides = {}", app2.doc.total_slides());
+    println!("app2 engine slides = {}", app2.engine.slides.len());
+    println!("app2 slide_images = {}", app2.slide_images.len());
+
+    let compile_res =
+        compiler.compile_source(&opened_doc.source_text, opened_doc.assets_dir.as_deref());
+    println!(
+        "compile_source on reconstructed_source result: is_ok={}",
+        compile_res.is_ok()
+    );
+    if let Ok(ref d) = compile_res {
+        println!("recompiled deck slides = {}", d.slides.len());
+    } else if let Err(ref e) = compile_res {
+        println!("recompiled err = {:?}", e.message);
+    }
+
+    unsafe {
+        std::env::remove_var("SLIDE_PASSPHRASE");
+    }
+
+    assert_eq!(opened_doc.total_slides(), 3);
+    assert_eq!(app.doc.total_slides(), 3);
+    assert_eq!(app.engine.slides.len(), 3);
+}
+
+#[test]
+fn test_encrypted_geek_presentation_without_source_open_in_editor() {
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
+    use slide_core::security::AuthMode;
+    use slide_editor::app::SlideEditorApp;
+
+    let example_path = std::path::PathBuf::from("../../examples/geek-presentation/slides.typ");
+    if !example_path.exists() {
+        return;
+    }
+
+    let orig_doc = EditorDocument::open(&example_path).expect("open geek presentation");
+    let compiler = CompilerBridge::new();
+    let compiled_deck = compiler
+        .compile_source(&orig_doc.source_text, orig_doc.assets_dir.as_deref())
+        .expect("compile geek presentation");
+    assert_eq!(compiled_deck.slides.len(), 22);
+
+    let temp_assets = tempfile::tempdir().expect("temp_assets");
+    let assets_sub = temp_assets.path().join("assets");
+    std::fs::create_dir_all(&assets_sub).expect("create assets dir");
+    if let Some(ref orig_assets) = orig_doc.assets_dir {
+        let orig_sub = orig_assets.join("assets");
+        if orig_sub.is_dir() {
+            for entry in std::fs::read_dir(&orig_sub).unwrap().flatten() {
+                let _ = std::fs::copy(entry.path(), assets_sub.join(entry.file_name()));
+            }
+        }
+    }
+
+    let mut doc_to_export = orig_doc.clone();
+    doc_to_export.deck = Some(compiled_deck);
+    doc_to_export.assets_dir = Some(temp_assets.path().to_path_buf());
+    doc_to_export.file_path = None;
+
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let enc_path = temp_dir.path().join("geek_no_source.slide");
+    let test_pass = "GeekS3cur3Passw0rd2026!";
+
+    let export_res = compiler.export_encrypted_slide_package(
+        &doc_to_export,
+        false, // Do NOT include source.typ
+        &enc_path,
+        AuthMode::Passphrase,
+        Some(test_pass),
+        None,
+        None,
+    );
+    assert!(export_res.is_ok());
+
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", test_pass);
+    }
+
+    let opened_doc = EditorDocument::open(&enc_path).expect("open geek_no_source.slide");
+    println!("opened_doc total_slides = {}", opened_doc.total_slides());
+    println!(
+        "opened_doc deck slides = {}",
+        opened_doc
+            .deck
+            .as_ref()
+            .map(|d| d.slides.len())
+            .unwrap_or(0)
+    );
+    println!(
+        "opened_doc slide_chunks = {}",
+        opened_doc.get_slide_chunks().len()
+    );
+    println!("opened_doc source_text = \n{}", opened_doc.source_text);
+
+    let mut app = SlideEditorApp::new(Some(enc_path.clone()), false);
+    println!("app total_slides = {}", app.doc.total_slides());
+    println!("app engine slides = {}", app.engine.slides.len());
+    println!("app slide_images = {}", app.slide_images.len());
+
+    let _ = app.update(Message::SelectSlide(5));
+    assert_eq!(app.active_slide, 5);
+    assert_eq!(app.doc.deck.as_ref().unwrap().slides.len(), 22);
+
+    let _ = app.update(Message::SelectSlide(21));
+    assert_eq!(app.active_slide, 21);
+    assert_eq!(app.doc.deck.as_ref().unwrap().slides.len(), 22);
+
+    unsafe {
+        std::env::remove_var("SLIDE_PASSPHRASE");
+    }
+
+    assert_eq!(opened_doc.deck.as_ref().unwrap().slides.len(), 22);
+    assert_eq!(opened_doc.total_slides(), 22);
+    assert_eq!(app.doc.total_slides(), 22);
+    assert_eq!(app.engine.slides.len(), 22);
+}
+
+#[test]
+fn test_save_commits_all_modes_and_syncs_to_source_file() {
+    let tmp_dir = tempfile::tempdir().expect("tempdir");
+    let typ_path = tmp_dir.path().join("slides.typ");
+    let initial_content = "= Initial Title\n\n- Initial bullet\n";
+    std::fs::write(&typ_path, initial_content).expect("write initial typ");
+
+    let mut app = SlideEditorApp::new(Some(typ_path.clone()), false);
+
+    // 1. In-place editing buffer save test
+    app.in_place_editing_slide = Some(0);
+    app.in_place_content = iced::widget::text_editor::Content::with_text(
+        "= InPlace Modified Title\n\n- InPlace bullet",
+    );
+    let _ = app.update(Message::SaveDocument);
+
+    let saved_content = std::fs::read_to_string(&typ_path).expect("read saved typ");
+    assert!(
+        saved_content.contains("= InPlace Modified Title"),
+        "In-place edit must be saved to source file on disk"
+    );
+
+    // 2. Focus mode buffer save test
+    let _ = app.update(Message::SwitchMode(EditorMode::FocusMode));
+    app.focus_slide_content = iced::widget::text_editor::Content::with_text(
+        "= FocusMode Modified Title\n\n- Focus bullet",
+    );
+    let _ = app.update(Message::SaveDocument);
+
+    let saved_content_focus = std::fs::read_to_string(&typ_path).expect("read saved typ");
+    assert!(
+        saved_content_focus.contains("= FocusMode Modified Title"),
+        "Focus mode edit must be saved to source file on disk"
+    );
+
+    // 3. Source mode buffer save test
+    let _ = app.update(Message::SwitchMode(EditorMode::SourceMode));
+    app.source_content = iced::widget::text_editor::Content::with_text(
+        "= SourceMode Modified Title\n\n- Source bullet\n#set text(font: \"DejaVu Sans\", size: 14pt, fill: rgb(\"1e293b\"))\n",
+    );
+    let _ = app.update(Message::SaveDocument);
+
+    let saved_content_source = std::fs::read_to_string(&typ_path).expect("read saved typ");
+    assert!(
+        saved_content_source.contains("= SourceMode Modified Title"),
+        "Source mode edit must be saved to source file on disk"
+    );
+
+    // 4. Font selection syntax safety test (no double closing parenthesis)
+    let _ = app.update(Message::SelectFont("Cantarell".to_string()));
+    let _ = app.update(Message::SaveDocument);
+
+    let font_saved = std::fs::read_to_string(&typ_path).expect("read saved typ");
+    assert!(
+        font_saved.contains("font: \"Cantarell\""),
+        "Font must be updated to Cantarell"
+    );
+    assert!(
+        font_saved.contains("fill: rgb(\"1e293b\")"),
+        "Original fill attribute must be preserved"
+    );
+    assert!(
+        !font_saved.contains("#set text(font: \"Cantarell\"))"),
+        "Must NEVER produce double closing parenthesis syntax error"
+    );
+}
+
+#[test]
+fn test_encrypted_document_save_reopen_and_sibling_sync() {
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
+    let slide_path = temp_dir.path().join("secure_deck.slide");
+    let sibling_typ_path = temp_dir.path().join("secure_deck.typ");
+
+    let initial_source = "= Confidential Presentation\n\n== Security Strategy\n- Multi-factor authentication\n- PIV Slot 9d decryption\n";
+    let mut doc = EditorDocument::new_presentation("Secure Deck");
+    doc.source_text = initial_source.to_string();
+    doc.sync_chunks_from_source();
+    doc.is_encrypted = true;
+    doc.encryption_auth_mode = Some(slide_core::security::AuthMode::Passphrase);
+    doc.encryption_secret = Some("P@ssw0rdSecureDeck123!".to_string().into());
+
+    // 1. Save document to .slide package
+    let saved_path = doc.save(Some(&slide_path)).expect("save encrypted slide");
+    assert_eq!(saved_path, slide_path);
+
+    // 2. Sibling .typ file must be created and in sync on disk
+    assert!(
+        sibling_typ_path.is_file(),
+        "Sibling typ file must be created on disk"
+    );
+    let sibling_content = std::fs::read_to_string(&sibling_typ_path).expect("read sibling typ");
+    assert!(sibling_content.contains("Confidential Presentation"));
+    assert!(sibling_content.contains("PIV Slot 9d decryption"));
+
+    // 3. Reopen encrypted presentation document in protected mode
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", "P@ssw0rdSecureDeck123!");
+    }
+    let mut reopened = EditorDocument::open(&slide_path).expect("reopen encrypted slide");
+    unsafe {
+        std::env::remove_var("SLIDE_PASSPHRASE");
+    }
+
+    assert!(reopened.is_encrypted);
+    assert!(
+        reopened.has_editable_source(),
+        "Reopened encrypted presentation must have editable source"
+    );
+    assert!(
+        reopened.source_text.contains("Confidential Presentation"),
+        "Exact source text must be preserved"
+    );
+    assert!(
+        reopened.source_text.contains("PIV Slot 9d decryption"),
+        "Exact slide chunks must be preserved"
+    );
+    assert!(
+        !reopened
+            .source_text
+            .starts_with("// Imported from .slide package"),
+        "Must NOT fall back to dummy decompiled source"
+    );
+
+    // 4. Edit reopened document and save again
+    reopened.source_text = "= Confidential Presentation Edited\n\n== Security Strategy 2.0\n- Zero Trust Architecture\n".to_string();
+    reopened.sync_chunks_from_source();
+    reopened.is_dirty = true;
+    let _ = reopened.save(None).expect("resave encrypted slide");
+
+    // Verify sibling typ file updated with new edits
+    let updated_sibling =
+        std::fs::read_to_string(&sibling_typ_path).expect("read updated sibling typ");
+    assert!(updated_sibling.contains("Confidential Presentation Edited"));
+    assert!(updated_sibling.contains("Zero Trust Architecture"));
+
+    // 5. Reopen again and assert the second edit is preserved
+    unsafe {
+        std::env::set_var("SLIDE_PASSPHRASE", "P@ssw0rdSecureDeck123!");
+    }
+    let reopened_again = EditorDocument::open(&slide_path).expect("reopen second time");
+    unsafe {
+        std::env::remove_var("SLIDE_PASSPHRASE");
+    }
+
+    assert!(
+        reopened_again
+            .source_text
+            .contains("Confidential Presentation Edited")
+    );
+    assert!(
+        reopened_again
+            .source_text
+            .contains("Zero Trust Architecture")
+    );
+}
+
+#[test]
+fn test_inline_font_wraps_selected_text_without_styled_text_dummy() {
+    let mut app = SlideEditorApp::new(None, false);
+
+    // Set active block with text
+    let original_block = "The user requires Cantarell font formatting for this keyword.";
+    app.active_block_range = Some(0..original_block.len());
+    app.active_block_content = iced::widget::text_editor::Content::with_text(original_block);
+
+    // Simulate user selecting "Cantarell font"
+    let target = "Cantarell font";
+    let start_col = original_block.find(target).expect("find target");
+    let end_col = start_col + target.len();
+    app.active_block_content
+        .move_to(iced::advanced::text::editor::Cursor {
+            position: iced::advanced::text::editor::Position {
+                line: 0,
+                column: start_col,
+            },
+            selection: Some(iced::advanced::text::editor::Position {
+                line: 0,
+                column: end_col,
+            }),
+        });
+
+    // Verify selection is captured
+    let sel = app.active_block_content.selection();
+    assert_eq!(sel.as_deref(), Some(target));
+
+    // Open inline font modal
+    let _ = app.update(Message::OpenInlineFontModal);
+    if let Some(ActiveModal::FontSelector {
+        ref selected_text,
+        is_inline,
+        ..
+    }) = app.active_modal
+    {
+        assert!(is_inline);
+        assert_eq!(selected_text.as_deref(), Some(target));
+    } else {
+        panic!("FontSelector modal expected");
+    }
+
+    // Apply inline font
+    let _ = app.update(Message::ApplyInlineFont("Cantarell".to_string()));
+    assert!(app.active_modal.is_none());
+
+    // Verify the selected text is seamlessly wrapped, and no dummy "styled text" is present
+    let updated_block = app.active_block_content.text();
+    assert!(
+        updated_block.contains("#font(\"Cantarell\")[Cantarell font]"),
+        "Selected text must be seamlessly wrapped: {updated_block}"
+    );
+    assert!(
+        !updated_block.contains("styled text"),
+        "Must NEVER inject dummy 'styled text'"
+    );
+
+    // Test case 2: No text selected, cursor inside block
+    app.active_block_content = iced::widget::text_editor::Content::with_text("Plain text block");
+    app.active_block_range = Some(0.."Plain text block".len());
+    let _ = app.update(Message::OpenInlineFontModal);
+    let _ = app.update(Message::ApplyInlineFont("Fira Code".to_string()));
+
+    let empty_wrap_block = app.active_block_content.text();
+    assert!(
+        empty_wrap_block.contains("#font(\"Fira Code\")[]"),
+        "When no text is selected, must insert empty brackets #font(\"...\")[] without dummy text: {empty_wrap_block}"
+    );
+    assert!(!empty_wrap_block.contains("styled text"));
+}
+
+#[test]
+fn test_compiler_auto_resolves_theme_typ_in_isolated_temp_directory() {
+    let temp_dir = tempfile::tempdir().expect("create isolated temp dir");
+    let temp_typ = temp_dir.path().join("slides.typ");
+    let source = "#import \"theme.typ\": *\n#show: slide-theme.with(theme: \"dark\")\n\n= Isolated Slide Title\n\n- Point 1\n- Point 2\n";
+    std::fs::write(&temp_typ, source).expect("write slides.typ");
+
+    // Ensure theme.typ does NOT exist initially in this isolated temp directory
+    assert!(!temp_dir.path().join("theme.typ").exists());
+
+    let compiler = slide_core::compiler::SlideCompiler::new().expect("create slide compiler");
+    let deck = compiler
+        .compile_file(&temp_typ)
+        .expect("compile must succeed with auto-resolved theme.typ");
+
+    assert_eq!(deck.total_slides(), 1);
+    assert!(
+        temp_dir.path().join("theme.typ").exists(),
+        "theme.typ should be auto-created in root_dir"
+    );
 }

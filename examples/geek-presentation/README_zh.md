@@ -23,7 +23,7 @@
 | 交付范式 | 适用场景 | 产物形态与体积 | 目标机依赖 |
 | :--- | :--- | :--- | :--- |
 | **独立二进制 (Standalone Binary)** | 专用演播电脑、严肃演讲汇报 | 单个可执行文件（约 14–15 MB） | 无任何依赖（开箱即播） |
-| **通用归档包 (`.slide` Archive)** | 邮件分发、即时通讯传输、U盘随带 | 极限压缩包（约 1 MB，LZMA2 压缩） | 通过 `slide-viewer` 播放 |
+| **通用归档包 (`.slide` Archive)** | 邮件分发、即时通讯传输、U盘随带 | 压缩归档包（约 1 MB，LZMA2 压缩） | 通过 `slide-viewer` 播放 |
 | **WebAssembly CSR 网页端** | 在线网页预览、团队文档集成、在线投屏 | 纯静态站点（严格零内联 JavaScript） | 任何现代浏览器 |
 
 ---
@@ -112,7 +112,7 @@ cargo slide dev
 # 1. 编译为自包含单个可执行二进制（约 14 MB）
 cargo slide build
 
-# 2. 打包为极致压缩的 .slide 归档文件（约 1 MB，LZMA2 压缩）
+# 2. 打包为 .slide 归档文件（约 1 MB，LZMA2 压缩）
 cargo slide pack -o presentation.slide
 
 # 3. 导出为 Leptos WebAssembly CSR 纯静态网页
@@ -223,7 +223,7 @@ cargo-slide/
 └── examples/
     ├── geek-presentation/          # 22 页官方示例演讲（全景展示所有新增特性）
     ├── dist-web/                   # 预生成的 Leptos CSR 静态网页包
-    └── slides.slide                # 预生成的官方参考 .slide 演示包（LZMA2 extreme 压缩）
+    └── slides.slide                # 预生成的官方参考 .slide 演示包（LZMA2 压缩）
 ```
 
 ---

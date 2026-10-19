@@ -256,10 +256,14 @@ impl SlideCompiler {
                 std::path::Path::to_path_buf,
             );
 
-        // Ensure slide.typ exists in root_dir so `#import "slide.typ": *` always resolves
+        // Ensure slide.typ and theme.typ exist in root_dir so `#import "slide.typ": *` and `#import "theme.typ": *` always resolve
         let macro_path = root_dir.join("slide.typ");
         if !macro_path.exists() {
             let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
+        }
+        let theme_path = root_dir.join("theme.typ");
+        if !theme_path.exists() {
+            let _ = std::fs::write(&theme_path, slide_theme::DEFAULT_THEME);
         }
 
         // Preprocess any SQLite database and JSON chart queries so Typst can load cached CSV
@@ -301,7 +305,7 @@ impl SlideCompiler {
             crate::logger::log_event(
                 "info",
                 &format!(
-                    "[CACHE] Incremental rendering cache hit for {}: loaded {} slides in <1ms",
+                    "[CACHE] Incremental rendering cache hit for {}: loaded {} slides",
                     typ_file.display(),
                     m.deck.total_slides()
                 ),
@@ -539,6 +543,15 @@ impl SlideCompiler {
                 || std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
                 std::path::Path::to_path_buf,
             );
+
+        let macro_path = root_dir.join("slide.typ");
+        if !macro_path.exists() {
+            let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
+        }
+        let theme_path = root_dir.join("theme.typ");
+        if !theme_path.exists() {
+            let _ = std::fs::write(&theme_path, slide_theme::DEFAULT_THEME);
+        }
 
         let fonts_dir = root_dir.join("fonts");
         if fonts_dir.is_dir() {

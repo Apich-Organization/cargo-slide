@@ -57,6 +57,7 @@ pub fn view_slide_canvas<'a>(
     dragging_block: Option<(usize, usize)>,
     raw_code_blocks: &'a HashSet<String>,
     engine: &'a TypstDocumentEngine,
+    is_editable: bool,
 ) -> Element<'a, Message> {
     let scale = zoom_percent as f32 / 100.0;
     let card_width = 820.0 * scale;
@@ -92,17 +93,30 @@ pub fn view_slide_canvas<'a>(
         } else {
             theme.text_primary()
         };
-        let title_input = text_input("Slide Title...", &slide.title)
-            .size(13)
-            .padding([2, 6])
-            .style(move |_t, _s| clean_input_style(theme, title_color))
-            .on_input(move |new_title| {
-                Message::UpdateSlideTitle {
-                    slide_idx: idx,
-                    new_title,
-                }
-            })
-            .width(Length::Fill);
+        let title_element: Element<'a, Message> = if is_editable {
+            text_input("Slide Title...", &slide.title)
+                .size(13)
+                .padding([2, 6])
+                .style(move |_t, _s| clean_input_style(theme, title_color))
+                .on_input(move |new_title| {
+                    Message::UpdateSlideTitle {
+                        slide_idx: idx,
+                        new_title,
+                    }
+                })
+                .width(Length::Fill)
+                .into()
+        } else {
+            let display_title = if slide.title.trim().is_empty() {
+                format!("Slide {slide_num}")
+            } else {
+                slide.title.clone()
+            };
+            container(text(display_title).size(13).color(title_color))
+                .padding([2, 6])
+                .width(Length::Fill)
+                .into()
+        };
 
         let directive_count = slide
             .blocks
@@ -149,7 +163,7 @@ pub fn view_slide_canvas<'a>(
                 }
             },
         };
-        let trans_btn = button(text(trans_text).size(10).color(if has_trans {
+        let trans_btn = button(text(trans_text.clone()).size(10).color(if has_trans {
             theme.accent()
         } else {
             theme.text_secondary()
@@ -231,19 +245,52 @@ pub fn view_slide_canvas<'a>(
             })
             .on_press(Message::DeleteSlide(idx));
 
-        let mut right_actions = row![add_note_btn, add_comment_btn, trans_btn, view_toggle_btn,]
-            .spacing(if is_compact_header { 2 } else { 3 })
-            .align_y(Alignment::Center);
+        let right_actions: Element<'a, Message> = if is_editable {
+            let mut actions = row![add_note_btn, add_comment_btn, trans_btn, view_toggle_btn,]
+                .spacing(if is_compact_header { 2 } else { 3 })
+                .align_y(Alignment::Center);
 
-        if let Some(badge) = directive_badge {
-            right_actions = right_actions.push(badge);
-        }
-        right_actions = right_actions.push(delete_btn);
+            if let Some(badge) = directive_badge {
+                actions = actions.push(badge);
+            }
+            actions.push(delete_btn).into()
+        } else {
+            let mut actions = row![]
+                .spacing(if is_compact_header { 2 } else { 4 })
+                .align_y(Alignment::Center);
+            if has_trans {
+                let trans_badge =
+                    container(text(trans_text).size(10).color(theme.text_secondary()))
+                        .padding(if is_compact_header {
+                            [2, 4]
+                        } else {
+                            [2, 6]
+                        })
+                        .style(move |_| {
+                            container::Style {
+                                background: Some(iced::Background::Color(theme.bg_subtle())),
+                                border: iced::border::rounded(4.0),
+                                ..container::Style::default()
+                            }
+                        });
+                actions = actions.push(trans_badge);
+            }
+            let vector_badge = container(text("Vector View").size(10).color(theme.text_muted()))
+                .padding([2, 6])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.bg_subtle())),
+                        border: iced::border::rounded(4.0),
+                        ..container::Style::default()
+                    }
+                });
+            actions.push(vector_badge).into()
+        };
 
         let header_items = row![
             page_badge,
             Space::new().width(Length::Fixed(4.0)),
-            title_input,
+            title_element,
             Space::new().width(Length::Fixed(4.0)),
             right_actions,
         ]
@@ -292,7 +339,11 @@ pub fn view_slide_canvas<'a>(
         // When inactive: view_visual_block renders the styled Typora presentation block.
         // When active: view_active_block_editor renders the in-place Typst editor AT THAT EXACT LOCATION.
         // Zero drift, zero ghost text from a background image, seamless in-place editing!
-        let slide_surface: Element<'a, Message> = if is_vector_mode {
+        let slide_surface: Element<'a, Message> = if !is_editable {
+            mouse_area(img_widget)
+                .on_press(Message::SelectSlide(idx))
+                .into()
+        } else if is_vector_mode {
             let vector_view = button(img_widget)
                 .style(move |_t, _s| {
                     button::Style {

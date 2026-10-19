@@ -4,7 +4,7 @@ use slide_core::error::Result;
 use slide_core::error::SlideError;
 use slide_core::model::SlideDeck;
 use slide_core::package::SlidePackageMetadata;
-use slide_core::package::pack_deck_with_assets;
+use slide_core::package::pack_deck_with_source_and_assets;
 use slide_core::package::unpack_deck_and_assets;
 use std::path::Path;
 use std::path::PathBuf;
@@ -63,6 +63,18 @@ pub struct EditorDocument {
     pub preamble: String,
     /// Individual slide chunks (isolated source code per slide)
     pub slide_chunks: Vec<String>,
+    /// Whether this document was opened from or will be saved to an encrypted package
+    pub is_encrypted: bool,
+    /// Encryption authentication mode (Passphrase, Mnemonic, or Piv)
+    pub encryption_auth_mode: Option<slide_core::security::AuthMode>,
+    /// Decryption secret cached in memory with zeroization for saving modifications
+    pub encryption_secret: Option<slide_core::security::Zeroizing<String>>,
+    /// YubiKey PIV recipient slot (if PIV encrypted)
+    pub encryption_recipient_slot: Option<slide_core::security::PivSlot>,
+    /// YubiKey PIV signer slot (if PIV encrypted)
+    pub encryption_signer_slot: Option<slide_core::security::PivSlot>,
+    /// Number of mnemonic words (12 or 24)
+    pub encryption_mnemonic_words: Option<usize>,
 }
 
 impl Default for EditorDocument {
@@ -106,7 +118,7 @@ impl EditorDocument {
              }}\n\
              ```\n\n\
              - Edit directly in *Live Preview* or *Source Mode*\n\
-             - Instant visual feedback on every keystroke\n"
+             - Live visual feedback as you type\n"
         );
 
         let mut doc = Self {
@@ -121,6 +133,12 @@ impl EditorDocument {
             default_animation: "fade".to_string(),
             preamble: String::new(),
             slide_chunks: Vec::new(),
+            is_encrypted: false,
+            encryption_auth_mode: None,
+            encryption_secret: None,
+            encryption_recipient_slot: None,
+            encryption_signer_slot: None,
+            encryption_mnemonic_words: None,
         };
         doc.sync_chunks_from_source();
         doc
@@ -161,6 +179,12 @@ impl EditorDocument {
             default_animation: "fade".to_string(),
             preamble: String::new(),
             slide_chunks: Vec::new(),
+            is_encrypted: false,
+            encryption_auth_mode: None,
+            encryption_secret: None,
+            encryption_recipient_slot: None,
+            encryption_signer_slot: None,
+            encryption_mnemonic_words: None,
         };
         doc.sync_chunks_from_source();
         doc
@@ -175,27 +199,369 @@ impl EditorDocument {
             .to_lowercase();
 
         if ext == "slide" {
+            if slide_core::package::is_encrypted_package_file(path) {
+                use slide_core::security::AuthMode;
+                use slide_core::security::EncryptedSlideContainer;
+                use slide_core::security::PivManager;
+                use slide_core::security::Zeroizing;
+                use slide_core::security::prompt_secret_gui;
+                use slide_core::security::read_masked_secret;
+                use std::io::IsTerminal as _;
+
+                let bytes = std::fs::read(path)?;
+                let container = EncryptedSlideContainer::parse(&bytes)?;
+                let auth_mode = container.header.auth_mode;
+                let title = container.header.title.clone();
+                let recipient_slot = container.header.recipient_slot;
+                let signer_slot = container.header.signer_slot;
+
+                let mut cached_secret = None;
+                let max_attempts = 3;
+
+                let (deck, asset_store) = match auth_mode {
+                    | AuthMode::Passphrase | AuthMode::Mnemonic => {
+                        let mut last_err = None;
+                        let mut decrypted = None;
+
+                        let mut initial_secret = std::env::var("SLIDE_PASSPHRASE")
+                            .or_else(|_| std::env::var("SLIDE_SECRET"))
+                            .ok()
+                            .map(Zeroizing::new);
+
+                        for attempt in 0..max_attempts {
+                            let secret: Zeroizing<String> = if let Some(s) = initial_secret.take() {
+                                s
+                            } else {
+                                let attempts_left = max_attempts - attempt;
+                                let is_mnemonic = auth_mode == AuthMode::Mnemonic;
+                                let dialog_title = if attempt == 0 {
+                                    "Cargo Slide Editor - Decrypt Presentation"
+                                } else {
+                                    "Authentication Failed - Please Re-enter"
+                                };
+                                let gui_subtitle = if attempt == 0 {
+                                    if is_mnemonic {
+                                        "Enter 12/24-word BIP-39 recovery mnemonic:".to_string()
+                                    } else {
+                                        "Enter passphrase to open encrypted presentation:"
+                                            .to_string()
+                                    }
+                                } else if is_mnemonic {
+                                    format!(
+                                        "Incorrect mnemonic ({attempts_left} attempts remaining). Please re-enter:"
+                                    )
+                                } else {
+                                    format!(
+                                        "Incorrect passphrase ({attempts_left} attempts remaining). Please re-enter:"
+                                    )
+                                };
+
+                                if let Some(gui_sec) =
+                                    prompt_secret_gui(dialog_title, &gui_subtitle)
+                                {
+                                    gui_sec
+                                } else if std::io::stdin().is_terminal() {
+                                    let term_prompt = if attempt == 0 {
+                                        if is_mnemonic {
+                                            "Enter 12/24-word recovery mnemonic: ".to_string()
+                                        } else {
+                                            "Enter passphrase: ".to_string()
+                                        }
+                                    } else if is_mnemonic {
+                                        format!(
+                                            "\x1b[33mIncorrect mnemonic ({attempts_left} attempts remaining). Please re-enter:\x1b[0m "
+                                        )
+                                    } else {
+                                        format!(
+                                            "\x1b[33mIncorrect passphrase ({attempts_left} attempts remaining). Please re-enter:\x1b[0m "
+                                        )
+                                    };
+                                    read_masked_secret(&term_prompt)?
+                                } else {
+                                    break;
+                                }
+                            };
+
+                            match container.decrypt_with_secret(&secret) {
+                                | Ok(res) => {
+                                    cached_secret = Some(secret);
+                                    decrypted = Some(res);
+                                    break;
+                                },
+                                | Err(e) => {
+                                    last_err = Some(e);
+                                    if attempt + 1 < max_attempts {
+                                        eprintln!(
+                                            "[WARNING] Authentication failed. Please try again ({} attempts remaining).",
+                                            max_attempts - 1 - attempt
+                                        );
+                                    }
+                                },
+                            }
+                        }
+
+                        decrypted.ok_or_else(|| {
+                            last_err.unwrap_or_else(|| {
+                                SlideError::Crypto(
+                                    "Decryption canceled or retries exhausted".to_string(),
+                                )
+                            })
+                        })?
+                    },
+                    | AuthMode::Piv => {
+                        let env_pin = std::env::var("PIV_PIN").ok();
+                        let mut card = PivManager::acquire_card(env_pin.as_deref())?;
+
+                        if !card.is_authenticated() && env_pin.is_none() {
+                            for attempt in 0..max_attempts {
+                                let attempts_left = match card.check_pin_status() {
+                                    | Ok(slide_core::security::piv::PinStatus::NotVerified {
+                                        tries_remaining,
+                                    }) => (tries_remaining as usize).min(max_attempts - attempt),
+                                    | _ => max_attempts - attempt,
+                                };
+                                let dialog_title = if attempt == 0 {
+                                    "Cargo Slide Editor - YubiKey PIV Authentication"
+                                } else {
+                                    "PIN Verification Failed - Please Re-enter"
+                                };
+                                let subtitle = if attempt == 0 {
+                                    format!(
+                                        "Enter 6-8 digit User PIN to open encrypted presentation ({attempts_left} attempts remaining):"
+                                    )
+                                } else {
+                                    format!(
+                                        "Incorrect PIN ({attempts_left} attempts remaining). Please re-enter:"
+                                    )
+                                };
+
+                                if let Some(gui_pin) = prompt_secret_gui(dialog_title, &subtitle) {
+                                    match card.verify_pin(&gui_pin) {
+                                        | Ok(()) => break,
+                                        | Err(e) => {
+                                            if attempt + 1 == max_attempts {
+                                                return Err(e);
+                                            }
+                                        },
+                                    }
+                                } else if std::io::stdin().is_terminal() {
+                                    let term_prompt = format!(
+                                        "Enter YubiKey PIV PIN ({attempts_left} attempts remaining): "
+                                    );
+                                    let pin_sec = read_masked_secret(&term_prompt)?;
+                                    match card.verify_pin(&pin_sec) {
+                                        | Ok(()) => break,
+                                        | Err(e) => {
+                                            if attempt + 1 == max_attempts {
+                                                return Err(e);
+                                            }
+                                        },
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
+                        container.decrypt_in_memory(card.as_mut(), None)?
+                    },
+                };
+
+                let default_anim = deck.default_animation.clone();
+                let cache_dir = slide_core::package::get_package_cache_dir(path);
+                let _ = std::fs::remove_dir_all(&cache_dir);
+                let _ = std::fs::create_dir_all(&cache_dir);
+
+                // Unpack assets to disk for editing preview
+                for key in asset_store.keys() {
+                    if let Some(val) = asset_store.get(&key)
+                        && let Some(dest) =
+                            slide_core::package::sanitize_archive_path(&cache_dir, &key)
+                    {
+                        if let Some(parent) = dest.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let _ = std::fs::write(&dest, val);
+                    }
+                }
+
+                let meta: Option<slide_core::package::SlidePackageMetadata> =
+                    std::fs::read(cache_dir.join("manifest.json"))
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+
+                let mut is_editable = meta.as_ref().map_or(false, |m| m.is_editable);
+
+                let entrypoint_file = meta
+                    .as_ref()
+                    .and_then(|m| m.entrypoint.as_ref())
+                    .map(|ep| cache_dir.join(ep))
+                    .filter(|p| p.is_file());
+
+                let mut source_file = entrypoint_file
+                    .or_else(|| {
+                        let s = cache_dir.join("slides.typ");
+                        if s.is_file() { Some(s) } else { None }
+                    })
+                    .or_else(|| {
+                        let s = cache_dir.join("source.typ");
+                        if s.is_file() { Some(s) } else { None }
+                    })
+                    .or_else(|| {
+                        let s = cache_dir.join("presentation.typ");
+                        if s.is_file() { Some(s) } else { None }
+                    })
+                    .or_else(|| {
+                        if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+                            for entry in entries.flatten() {
+                                let p = entry.path();
+                                if p.is_file()
+                                    && p.extension().and_then(|e| e.to_str()) == Some("typ")
+                                {
+                                    let fname =
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                                    if fname != "slide.typ" && fname != "theme.typ" {
+                                        return Some(p);
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    });
+
+                let parent_dir = path
+                    .parent()
+                    .map(|p| {
+                        if p.as_os_str().is_empty() {
+                            Path::new(".")
+                        } else {
+                            p
+                        }
+                    })
+                    .unwrap_or(Path::new("."));
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("slides");
+                if source_file.is_none() {
+                    source_file = [
+                        parent_dir.join(format!("{stem}.typ")),
+                        parent_dir.join("slides.typ"),
+                        parent_dir.join("presentation.typ"),
+                    ]
+                    .into_iter()
+                    .find(|p| p.is_file());
+                }
+
+                if source_file.is_some() {
+                    is_editable = true;
+                }
+
+                let reconstructed_source = if let Some(ref sf) = source_file {
+                    std::fs::read_to_string(sf)
+                        .unwrap_or_else(|_| Self::deck_to_typst_source(&deck))
+                } else {
+                    Self::deck_to_typst_source(&deck)
+                };
+
+                let mut final_meta = meta;
+                if let Some(ref mut m) = final_meta {
+                    m.is_editable = is_editable;
+                }
+
+                let mut doc = Self {
+                    title: if title.is_empty() {
+                        deck.title.clone()
+                    } else {
+                        title
+                    },
+                    file_path: Some(path.to_path_buf()),
+                    format: DocumentFormat::SlidePackage,
+                    source_text: reconstructed_source,
+                    is_dirty: false,
+                    deck: Some(deck),
+                    package_metadata: final_meta,
+                    assets_dir: Some(cache_dir),
+                    default_animation: default_anim,
+                    preamble: String::new(),
+                    slide_chunks: Vec::new(),
+                    is_encrypted: true,
+                    encryption_auth_mode: Some(auth_mode),
+                    encryption_secret: cached_secret,
+                    encryption_recipient_slot: Some(recipient_slot),
+                    encryption_signer_slot: Some(signer_slot),
+                    encryption_mnemonic_words: None,
+                };
+                doc.sync_chunks_from_source();
+                return Ok(doc);
+            }
+
             // Unpack .slide archive
             let (deck, cache_dir) = unpack_deck_and_assets(path)?;
             let title = deck.title.clone();
             let default_anim = deck.default_animation.clone();
 
             let meta = slide_core::package::read_package_metadata(path).ok();
+            let mut is_editable = meta.as_ref().map_or(false, |m| m.is_editable);
 
-            // Check if unpacked archive has entrypoint or source.typ, otherwise reconstruct
             let entrypoint_file = meta
                 .as_ref()
                 .and_then(|m| m.entrypoint.as_ref())
                 .map(|ep| cache_dir.join(ep))
                 .filter(|p| p.is_file());
 
-            let source_file = entrypoint_file.unwrap_or_else(|| cache_dir.join("source.typ"));
-            let reconstructed_source = if source_file.is_file() {
-                std::fs::read_to_string(&source_file)
-                    .unwrap_or_else(|_| Self::deck_to_typst_source(&deck))
+            let mut source_file = entrypoint_file
+                .or_else(|| {
+                    let s = cache_dir.join("slides.typ");
+                    if s.is_file() { Some(s) } else { None }
+                })
+                .or_else(|| {
+                    let s = cache_dir.join("source.typ");
+                    if s.is_file() { Some(s) } else { None }
+                })
+                .or_else(|| {
+                    let s = cache_dir.join("presentation.typ");
+                    if s.is_file() { Some(s) } else { None }
+                });
+
+            let parent_dir = path
+                .parent()
+                .map(|p| {
+                    if p.as_os_str().is_empty() {
+                        Path::new(".")
+                    } else {
+                        p
+                    }
+                })
+                .unwrap_or(Path::new("."));
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("slides");
+            if source_file.is_none() {
+                source_file = [
+                    parent_dir.join(format!("{stem}.typ")),
+                    parent_dir.join("slides.typ"),
+                    parent_dir.join("presentation.typ"),
+                ]
+                .into_iter()
+                .find(|p| p.is_file());
+            }
+
+            if source_file.is_some() {
+                is_editable = true;
+            }
+
+            let reconstructed_source = if let Some(ref sf) = source_file {
+                std::fs::read_to_string(sf).unwrap_or_else(|_| Self::deck_to_typst_source(&deck))
             } else {
                 Self::deck_to_typst_source(&deck)
             };
+
+            let mut final_meta = meta;
+            if let Some(ref mut m) = final_meta {
+                m.is_editable = is_editable;
+            }
 
             let mut doc = Self {
                 title,
@@ -204,11 +570,17 @@ impl EditorDocument {
                 source_text: reconstructed_source,
                 is_dirty: false,
                 deck: Some(deck),
-                package_metadata: meta,
+                package_metadata: final_meta,
                 assets_dir: Some(cache_dir),
                 default_animation: default_anim,
                 preamble: String::new(),
                 slide_chunks: Vec::new(),
+                is_encrypted: false,
+                encryption_auth_mode: None,
+                encryption_secret: None,
+                encryption_recipient_slot: None,
+                encryption_signer_slot: None,
+                encryption_mnemonic_words: None,
             };
             doc.sync_chunks_from_source();
             Ok(doc)
@@ -238,6 +610,12 @@ impl EditorDocument {
                 default_animation: "fade".to_string(),
                 preamble: String::new(),
                 slide_chunks: Vec::new(),
+                is_encrypted: false,
+                encryption_auth_mode: None,
+                encryption_secret: None,
+                encryption_recipient_slot: None,
+                encryption_signer_slot: None,
+                encryption_mnemonic_words: None,
             };
             doc.sync_chunks_from_source();
             Ok(doc)
@@ -261,38 +639,225 @@ impl EditorDocument {
             .to_lowercase();
 
         if ext == "slide" {
-            // If we have a deck, pack it directly with assets
-            if let Some(ref deck) = self.deck {
-                if let Some(ref adir) = self.assets_dir {
-                    let _ = std::fs::write(adir.join("source.typ"), &self.source_text);
+            // Ensure assets_dir exists
+            let cache_dir = self.assets_dir.clone().unwrap_or_else(|| {
+                let d = slide_core::package::get_package_cache_dir(&path);
+                let _ = std::fs::create_dir_all(&d);
+                d
+            });
+            self.assets_dir = Some(cache_dir.clone());
+
+            // Write current source_text into cache_dir as slides.typ and source.typ
+            let _ = std::fs::write(cache_dir.join("slides.typ"), &self.source_text);
+            let _ = std::fs::write(cache_dir.join("source.typ"), &self.source_text);
+            if let Some(ref ep) = self
+                .package_metadata
+                .as_ref()
+                .and_then(|m| m.entrypoint.as_deref())
+            {
+                let _ = std::fs::write(cache_dir.join(ep), &self.source_text);
+            }
+
+            // Update or create manifest.json with is_editable = true
+            let mut meta = self.package_metadata.clone().unwrap_or_else(|| {
+                slide_core::package::SlidePackageMetadata {
+                    format_version: 1,
+                    title: self.title.clone(),
+                    total_slides: self.total_slides(),
+                    default_animation: self.default_animation.clone(),
+                    compression: "lzma2-max".to_string(),
+                    generator: format!("cargo-slide {}", env!("CARGO_PKG_VERSION")),
+                    is_editable: true,
+                    entrypoint: Some("slides.typ".to_string()),
+                    created_at: None,
+                    author: None,
+                    aspect_ratio: Some("16:9".to_string()),
+                    has_notes: false,
+                    tags: Vec::new(),
+                    checksum: None,
+                    uncompressed_size: None,
                 }
-                pack_deck_with_assets(deck, self.assets_dir.as_deref(), &path)?;
-            } else {
-                // Otherwise compile temp typ file and pack
-                let temp_dir = tempfile::tempdir()?;
-                let _ =
-                    std::fs::write(temp_dir.path().join("slide.typ"), slide_theme::SLIDE_MACROS);
+            });
+            meta.is_editable = true;
+            if meta.entrypoint.is_none() {
+                meta.entrypoint = Some("slides.typ".to_string());
+            }
+            let _ = std::fs::write(
+                cache_dir.join("manifest.json"),
+                serde_json::to_vec_pretty(&meta).unwrap_or_default(),
+            );
+            self.package_metadata = Some(meta);
+
+            // Ensure slide.typ and theme.typ exist in cache_dir
+            let cache_slide_typ = cache_dir.join("slide.typ");
+            if !cache_slide_typ.is_file() {
+                let _ = std::fs::write(&cache_slide_typ, slide_theme::SLIDE_MACROS);
+            }
+            let cache_theme_typ = cache_dir.join("theme.typ");
+            if !cache_theme_typ.is_file() {
+                let _ = std::fs::write(&cache_theme_typ, slide_theme::DEFAULT_THEME);
+            }
+
+            // Recompile deck from source_text if possible, falling back to existing deck
+            let deck = {
                 let (proc_src, _) =
                     crate::compiler_bridge::CompilerBridge::prepare_typst_source_with_macros(
                         &self.source_text,
                     );
-                let temp_typ = temp_dir.path().join("slides.typ");
-                std::fs::write(&temp_typ, &proc_src)?;
-
-                let compiler = slide_core::compiler::SlideCompiler::new()?;
-                let compiled_deck = compiler.compile_file(&temp_typ)?;
-                if let Some(ref adir) = self.assets_dir {
-                    let _ = std::fs::write(adir.join("source.typ"), &self.source_text);
+                let temp_dir = tempfile::tempdir().ok();
+                let recompiled = temp_dir.as_ref().and_then(|td| {
+                    let _ = std::fs::write(td.path().join("slide.typ"), slide_theme::SLIDE_MACROS);
+                    let _ = std::fs::write(td.path().join("theme.typ"), slide_theme::DEFAULT_THEME);
+                    if cache_theme_typ.is_file() {
+                        let _ = std::fs::copy(&cache_theme_typ, td.path().join("theme.typ"));
+                    }
+                    let temp_typ = td.path().join("slides.typ");
+                    std::fs::write(&temp_typ, &proc_src).ok()?;
+                    let compiler = slide_core::compiler::SlideCompiler::new().ok()?;
+                    compiler.compile_file(&temp_typ).ok()
+                });
+                if let Some(new_deck) = recompiled {
+                    self.deck = Some(new_deck.clone());
+                    new_deck
+                } else if let Some(ref existing) = self.deck {
+                    existing.clone()
+                } else {
+                    return Err(SlideError::Compilation(
+                        "Failed to compile presentation deck for saving".to_string(),
+                    ));
                 }
-                pack_deck_with_assets(&compiled_deck, self.assets_dir.as_deref(), &path)?;
-                self.deck = Some(compiled_deck);
+            };
+
+            if self.is_encrypted {
+                use slide_core::security::AuthMode;
+                use slide_core::security::EncryptedSlideContainer;
+                use slide_core::security::PivManager;
+                use slide_core::security::PivSlot;
+
+                match self.encryption_auth_mode {
+                    | Some(AuthMode::Passphrase) | Some(AuthMode::Mnemonic) => {
+                        let auth_mode = self.encryption_auth_mode.unwrap();
+                        let secret = self.encryption_secret.as_ref().ok_or_else(|| {
+                            SlideError::Crypto(
+                                "Cannot save encrypted package: encryption secret is missing from memory".to_string(),
+                            )
+                        })?;
+                        let (bytes, _) = EncryptedSlideContainer::pack_software(
+                            &deck,
+                            Some(&cache_dir),
+                            secret,
+                            auth_mode,
+                            self.encryption_mnemonic_words,
+                        )?;
+                        std::fs::write(&path, bytes)?;
+                    },
+                    | Some(AuthMode::Piv) => {
+                        let mut card = PivManager::acquire_card(None)?;
+                        let recipient_slot =
+                            self.encryption_recipient_slot.unwrap_or(PivSlot::Slot9D);
+                        let signer_slot = self.encryption_signer_slot.unwrap_or(PivSlot::Slot9C);
+                        slide_core::security::prompt_pin_for_slot(
+                            card.as_mut(),
+                            signer_slot,
+                            None,
+                            true,
+                        )?;
+                        let recipient_pub = card.get_public_key(recipient_slot)?;
+                        let bytes = EncryptedSlideContainer::pack_with_source(
+                            &deck,
+                            Some(&cache_dir),
+                            &recipient_pub,
+                            recipient_slot,
+                            card.as_mut(),
+                            signer_slot,
+                            true,
+                        )?;
+                        std::fs::write(&path, bytes)?;
+                    },
+                    | None => {
+                        let source_entry = cache_dir.join("slides.typ");
+                        pack_deck_with_source_and_assets(
+                            &deck,
+                            Some(&cache_dir),
+                            &path,
+                            true,
+                            Some(&source_entry),
+                        )?;
+                    },
+                }
+                self.format = DocumentFormat::SlidePackage;
+            } else {
+                let source_entry = cache_dir.join("slides.typ");
+                pack_deck_with_source_and_assets(
+                    &deck,
+                    Some(&cache_dir),
+                    &path,
+                    true,
+                    Some(&source_entry),
+                )?;
+                self.format = DocumentFormat::SlidePackage;
             }
-            self.format = DocumentFormat::SlidePackage;
+
+            // Sync source to sibling .typ file on disk
+            let parent_dir = path
+                .parent()
+                .map(|p| {
+                    if p.as_os_str().is_empty() {
+                        Path::new(".")
+                    } else {
+                        p
+                    }
+                })
+                .unwrap_or(Path::new("."));
+
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("slides");
+            let entrypoint_name = self
+                .package_metadata
+                .as_ref()
+                .and_then(|m| m.entrypoint.as_deref())
+                .unwrap_or("slides.typ");
+
+            let mut target_typ = None;
+            for candidate in [
+                parent_dir.join(entrypoint_name),
+                parent_dir.join(format!("{stem}.typ")),
+                parent_dir.join("slides.typ"),
+                parent_dir.join("presentation.typ"),
+            ] {
+                if candidate.is_file() {
+                    target_typ = Some(candidate);
+                    break;
+                }
+            }
+
+            let typ_to_write = target_typ.unwrap_or_else(|| {
+                if stem != "slides" && !stem.is_empty() {
+                    parent_dir.join(format!("{stem}.typ"))
+                } else {
+                    parent_dir.join(entrypoint_name)
+                }
+            });
+
+            if let Some(parent) = typ_to_write.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&typ_to_write, &self.source_text);
         } else {
             // Save as .typ
-            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                std::fs::create_dir_all(parent)?;
-            }
+            let parent_dir = path
+                .parent()
+                .map(|p| {
+                    if p.as_os_str().is_empty() {
+                        Path::new(".")
+                    } else {
+                        p
+                    }
+                })
+                .unwrap_or(Path::new("."));
+            let _ = std::fs::create_dir_all(parent_dir);
             std::fs::write(&path, &self.source_text)?;
             self.format = DocumentFormat::Typst;
         }
@@ -315,7 +880,16 @@ impl EditorDocument {
         ));
 
         if deck.slides.is_empty() {
-            source.push_str(&format!("= {}\n\nBlank presentation.", deck.title));
+            let deck_title = deck
+                .title
+                .replace(['\r', '\n', '"', '$', '#', '[', ']', '(', ')'], " ");
+            let dt = deck_title.trim();
+            let title = if dt.is_empty() {
+                "Untitled"
+            } else {
+                dt
+            };
+            source.push_str(&format!("= {title}\n\nBlank presentation."));
             return source;
         }
 
@@ -325,10 +899,29 @@ impl EditorDocument {
             }
             source.push_str(&format!("// --- Slide {} ---\n", slide.page_number));
 
-            // Extract clean title from slide SVG
-            let title = slide.extract_title();
-            if idx == 0 && title.starts_with("Slide ") {
-                source.push_str(&format!("= {}\n\n", deck.title));
+            // Extract clean title from slide SVG and sanitize special Typst characters
+            let raw_title = slide.extract_title();
+            let sanitized_title = raw_title
+                .replace(['\r', '\n', '"', '$', '#', '[', ']', '(', ')'], " ")
+                .trim()
+                .to_string();
+            let title = if sanitized_title.is_empty() {
+                format!("Slide {}", slide.page_number)
+            } else {
+                sanitized_title
+            };
+
+            if idx == 0 && (title.starts_with("Slide ") || title.is_empty()) {
+                let deck_title = deck
+                    .title
+                    .replace(['\r', '\n', '"', '$', '#', '[', ']', '(', ')'], " ");
+                let dt = deck_title.trim();
+                let main_title = if dt.is_empty() {
+                    "Presentation"
+                } else {
+                    dt
+                };
+                source.push_str(&format!("= {main_title}\n\n"));
             } else {
                 source.push_str(&format!("= {title}\n\n"));
             }
@@ -344,6 +937,32 @@ impl EditorDocument {
 
     /// Sync preamble and slide chunks from source_text
     pub fn sync_chunks_from_source(&mut self) {
+        if !self.has_editable_source()
+            && let Some(ref d) = self.deck
+            && !d.slides.is_empty()
+        {
+            self.preamble = "// Pre-compiled presentation package\n".to_string();
+            self.slide_chunks = d
+                .slides
+                .iter()
+                .enumerate()
+                .map(|(idx, s)| {
+                    let raw_title = s.extract_title();
+                    let clean_title = raw_title
+                        .replace(['\r', '\n', '"', '$', '#', '[', ']', '(', ')'], " ")
+                        .trim()
+                        .to_string();
+                    let title = if clean_title.is_empty() {
+                        format!("Slide {}", idx + 1)
+                    } else {
+                        clean_title
+                    };
+                    format!("= {title}\n\n// Pre-rendered slide vector content")
+                })
+                .collect();
+            return;
+        }
+
         let engine =
             crate::model::ast_engine::TypstDocumentEngine::from_source(self.source_text.clone());
         if !engine.slides.is_empty() {
@@ -521,6 +1140,12 @@ impl EditorDocument {
     /// Total number of slides (from compiled deck or parsed chunks)
     #[must_use]
     pub fn total_slides(&self) -> usize {
+        if !self.has_editable_source()
+            && let Some(ref d) = self.deck
+            && !d.slides.is_empty()
+        {
+            return d.slides.len();
+        }
         if !self.slide_chunks.is_empty() {
             return self.slide_chunks.len();
         }
@@ -538,12 +1163,15 @@ impl EditorDocument {
         if self.format == DocumentFormat::Typst {
             return true;
         }
-        if let Some(ref meta) = self.package_metadata
-            && meta.is_editable
-        {
-            return true;
+        if let Some(ref meta) = self.package_metadata {
+            if meta.is_editable {
+                return true;
+            }
         }
         !self.source_text.trim().is_empty()
+            && !self
+                .source_text
+                .starts_with("// Imported from .slide package")
     }
 
     /// Compute the path for auto-saved recovery draft (`.<filename>.draft.typ`)
