@@ -544,12 +544,12 @@ pub fn App() -> impl IntoView {
             }
         });
 
-        if let Some(false) = found_autoplay {
-            if let Some(prev) = audio_element.get() {
-                let _ = prev.pause();
-                audio_element.set(None);
-                is_audio_playing.set(false);
-            }
+        if let Some(false) = found_autoplay
+            && let Some(prev) = audio_element.get()
+        {
+            let _ = prev.pause();
+            audio_element.set(None);
+            is_audio_playing.set(false);
         }
     };
 
