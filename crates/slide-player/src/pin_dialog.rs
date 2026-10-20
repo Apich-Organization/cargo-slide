@@ -167,17 +167,15 @@ fn try_minifb_pin_dialog(
         // Collect key inputs
         let keys = window.get_keys_pressed(minifb::KeyRepeat::Yes);
         for key in keys {
-            if let Some(ch) = map_minifb_key_to_char(key, shift) {
-                if input.len() < 128 {
-                    input.push(ch);
-                }
+            if let Some(ch) = map_minifb_key_to_char(key, shift)
+                && input.len() < 128
+            {
+                input.push(ch);
             } else if key == Key::Backspace {
                 input.pop();
-            } else if key == Key::Enter {
-                if !input.is_empty() {
-                    confirmed = true;
-                    break;
-                }
+            } else if key == Key::Enter && !input.is_empty() {
+                confirmed = true;
+                break;
             }
         }
 

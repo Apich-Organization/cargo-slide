@@ -511,3 +511,38 @@ fn test_cli_build_cross_platform_flags_and_help() {
     assert!(help_txt.contains("--cross-tool"));
     assert!(help_txt.contains("--all-targets"));
 }
+
+#[test]
+fn test_cli_cross_subcommand_flags_and_aliases() {
+    let bin = env!("CARGO_BIN_EXE_cargo-slide");
+
+    // Test cargo-slide cross --help
+    let help_res = Command::new(bin)
+        .arg("cross")
+        .arg("--help")
+        .output()
+        .expect("cargo-slide cross --help");
+    assert!(help_res.status.success());
+    let help_txt = String::from_utf8_lossy(&help_res.stdout);
+    assert!(help_txt.contains("--target"));
+    assert!(help_txt.contains("--bin"));
+    assert!(help_txt.contains("--package"));
+    assert!(help_txt.contains("--tool"));
+    assert!(help_txt.contains("--output-dir"));
+
+    // Test dist alias
+    let dist_res = Command::new(bin)
+        .arg("dist")
+        .arg("--help")
+        .output()
+        .expect("cargo-slide dist --help");
+    assert!(dist_res.status.success());
+
+    // Test cross-build alias
+    let cross_build_res = Command::new(bin)
+        .arg("cross-build")
+        .arg("--help")
+        .output()
+        .expect("cargo-slide cross-build --help");
+    assert!(cross_build_res.status.success());
+}

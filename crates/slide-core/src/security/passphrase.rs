@@ -186,7 +186,7 @@ fn entropy_to_mnemonic(entropy: &[u8]) -> Result<Zeroizing<String>> {
         }
     }
     for bit_idx in (0..checksum_bits_len).rev() {
-        let first_byte = hash.get(0).copied().unwrap_or(0);
+        let first_byte = hash.first().copied().unwrap_or(0);
         bits.push((first_byte >> (7 - (checksum_bits_len - 1 - bit_idx))) & 1);
     }
 
@@ -253,7 +253,7 @@ pub fn validate_bip39_mnemonic(mnemonic: &str) -> Result<Zeroizing<Vec<u8>>> {
 
     // Verify checksum
     let hash = Sha256::digest(&entropy);
-    let first_byte = hash.get(0).copied().unwrap_or(0);
+    let first_byte = hash.first().copied().unwrap_or(0);
 
     for bit_idx in 0..checksum_bits_len {
         let expected_bit = (first_byte >> (7 - bit_idx)) & 1;

@@ -2,6 +2,7 @@
 
 pub mod build;
 pub mod check;
+pub mod cross;
 pub mod doctor;
 pub mod edit;
 pub mod export;

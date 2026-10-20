@@ -243,8 +243,8 @@ pub fn prepare_csr_bundle_with_options(
             "auth_mode": if is_mnemonic { "mnemonic" } else { "passphrase" },
             "token_ttl_seconds": ttl_hours * 3600,
             "iterations": 100_000,
-            "salt": b64.encode(&salt),
-            "nonce": b64.encode(&nonce),
+            "salt": b64.encode(salt),
+            "nonce": b64.encode(nonce),
             "ciphertext": b64.encode(&ciphertext),
             "title": deck.title,
         });
@@ -277,7 +277,12 @@ fn copy_dir_all(
 }
 
 /// Execute the `serve` command to launch an HTTP static web server.
-#[allow(clippy::pedantic, clippy::nursery, clippy::too_many_lines)]
+#[allow(
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::too_many_lines,
+    clippy::too_many_arguments
+)]
 pub fn execute(
     file: &Path,
     port: u16,

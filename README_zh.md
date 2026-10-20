@@ -160,15 +160,22 @@ cargo slide build slides.typ --format binary --encrypt --auth passphrase
 cargo slide serve --encrypt --auth passphrase --token-ttl 86400
 cargo slide export --format wasm --encrypt --auth mnemonic -o dist-web/
 
-# 7. 跨平台多架构编译（支持 Windows 与 Linux，x86_64 与 aarch64）
-# 使用 Zig 工具链在 Linux 交叉编译 Windows x86_64 单文件可执行程序：
-cargo slide build slides.typ --target x86_64-pc-windows-gnu --cross-tool zig
-# 使用 Cross 容器引擎交叉编译 Linux aarch64 (ARM64) 可执行程序：
-cargo slide build slides.typ --target aarch64-unknown-linux-gnu --cross-tool cross
-# 一键编译全部主流桌面架构可执行文件：
+# 7. 跨平台多架构编译（原生内置于 cargo-slide，无需下载任何额外脚本）
+# 一键交叉编译全部 4 种主流桌面架构（Linux x86_64, Linux ARM64, Windows x86_64, Windows ARM64）：
+cargo slide cross --target all
+
+# 单独交叉编译 Windows 64位版本（自动选用轻量 Zig 工具链）：
+cargo slide cross --target windows-x86_64
+
+# 单独交叉编译 Linux ARM64 版本：
+cargo slide cross --target linux-aarch64
+
+# 交叉编译演示文稿独立运行程序（产物自动归集至 ./dist/ 目录）：
+cargo slide cross slides.typ --target all
+
+# 兼容与别名命令（可使用 dist 或 cross-build）：
+cargo slide dist --target all
 cargo slide build slides.typ --all-targets
-# 批量交叉编译整个 cargo-slide 核心工程及配套工具链：
-./scripts/cross-build.sh --target all
 ```
 
 ---

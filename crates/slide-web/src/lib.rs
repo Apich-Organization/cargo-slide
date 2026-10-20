@@ -233,19 +233,16 @@ async fn fetch_deck_payload() -> Result<DeckFetchResult, String> {
         // Check if we have a valid saved token in browser storage
         if let Some(token_b64) = security::get_saved_token() {
             let b64 = &base64::engine::general_purpose::STANDARD;
-            if let Ok(key_bytes) = b64.decode(&token_b64) {
-                if key_bytes.len() == 32 {
-                    let mut key_arr = [0u8; 32];
-                    key_arr.copy_from_slice(&key_bytes);
-                    if let (Ok(nonce_bytes), Ok(ct_bytes)) =
-                        (b64.decode(&env.nonce), b64.decode(&env.ciphertext))
-                    {
-                        if let Ok(decrypted) =
-                            security::decrypt_deck(&key_arr, &nonce_bytes, &ct_bytes)
-                        {
-                            return Ok(DeckFetchResult::Ready(decrypted));
-                        }
-                    }
+            if let Ok(key_bytes) = b64.decode(&token_b64)
+                && key_bytes.len() == 32
+            {
+                let mut key_arr = [0u8; 32];
+                key_arr.copy_from_slice(&key_bytes);
+                if let (Ok(nonce_bytes), Ok(ct_bytes)) =
+                    (b64.decode(&env.nonce), b64.decode(&env.ciphertext))
+                    && let Ok(decrypted) = security::decrypt_deck(&key_arr, &nonce_bytes, &ct_bytes)
+                {
+                    return Ok(DeckFetchResult::Ready(decrypted));
                 }
             }
         }
@@ -408,7 +405,7 @@ pub fn App() -> impl IntoView {
 
     // Asynchronously fetch deck.json when mounted
     Effect::new(move |_| {
-        let apply = apply_loaded_deck.clone();
+        let apply = apply_loaded_deck;
         wasm_bindgen_futures::spawn_local(async move {
             match fetch_deck_payload().await {
                 | Ok(DeckFetchResult::Ready(loaded_deck)) => {
@@ -425,7 +422,7 @@ pub fn App() -> impl IntoView {
     });
 
     let on_submit_secret = {
-        let apply = apply_loaded_deck.clone();
+        let apply = apply_loaded_deck;
         move || {
             let secret = auth_input.get();
             let secret_trimmed = secret.trim();
@@ -488,7 +485,7 @@ pub fn App() -> impl IntoView {
 
             match security::decrypt_deck(&key, &nonce_bytes, &ct_bytes) {
                 | Ok(decrypted_deck) => {
-                    let token_b64 = b64.encode(&*key);
+                    let token_b64 = b64.encode(*key);
                     security::save_token(&token_b64, env.token_ttl_seconds);
                     protected_envelope.set(None);
                     auth_error.set(None);
@@ -664,12 +661,12 @@ pub fn App() -> impl IntoView {
         }
 
         // Ignore presentation navigation when typing in form inputs or textareas
-        if let Some(target) = ev.target() {
-            if let Ok(el) = target.dyn_into::<web_sys::HtmlElement>() {
-                let tag = el.tag_name().to_lowercase();
-                if tag == "input" || tag == "textarea" || el.is_content_editable() {
-                    return;
-                }
+        if let Some(target) = ev.target()
+            && let Ok(el) = target.dyn_into::<web_sys::HtmlElement>()
+        {
+            let tag = el.tag_name().to_lowercase();
+            if tag == "input" || tag == "textarea" || el.is_content_editable() {
+                return;
             }
         }
 
@@ -1039,8 +1036,8 @@ pub fn App() -> impl IntoView {
                 if let Some(env) = protected_envelope.get() {
                     let is_mnemonic = env.auth_mode == "mnemonic";
                     let title = env.title.clone().unwrap_or_else(|| "Protected Presentation".to_string());
-                    let on_submit = on_submit_secret.clone();
-                    let on_submit_btn = on_submit_secret.clone();
+                    let on_submit = on_submit_secret;
+                    let on_submit_btn = on_submit_secret;
                     view! {
                         <div class="auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(16px); display: flex; align-items: center; justify-content: center; z-index: 99999;">
                             <div class="auth-modal-card" style="background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 36px 32px; width: 450px; max-width: 90vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6); color: #f8fafc; font-family: system-ui, sans-serif;">

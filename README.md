@@ -160,15 +160,22 @@ cargo slide build slides.typ --format binary --encrypt --auth passphrase
 cargo slide serve --encrypt --auth passphrase --token-ttl 86400
 cargo slide export --format wasm --encrypt --auth mnemonic -o dist-web/
 
-# 7. Cross-Platform Compilation (Windows & Linux x86_64 & aarch64)
-# Build for Windows x86_64 using Zig toolchain:
-cargo slide build slides.typ --target x86_64-pc-windows-gnu --cross-tool zig
-# Build for Linux aarch64 (ARM64) using Cross container engine:
-cargo slide build slides.typ --target aarch64-unknown-linux-gnu --cross-tool cross
-# Build standalone executables for all 4 desktop targets in one command:
+# 7. Cross-Platform Compilation (Natively built into cargo-slide, no scripts needed)
+# Cross-compile for all 4 desktop targets (Linux x86_64, Linux ARM64, Windows x86_64, Windows ARM64):
+cargo slide cross --target all
+
+# Build specifically for Windows x86_64 (automatically uses lightweight Zig toolchain):
+cargo slide cross --target windows-x86_64
+
+# Build specifically for Linux ARM64:
+cargo slide cross --target linux-aarch64
+
+# Cross-compile standalone presentation runners (artifacts placed into ./dist/):
+cargo slide cross slides.typ --target all
+
+# Aliases and compatibility:
+cargo slide dist --target all
 cargo slide build slides.typ --all-targets
-# Cross-compile the entire cargo-slide workspace toolchain:
-./scripts/cross-build.sh --target all
 ```
 
 ---

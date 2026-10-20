@@ -8,16 +8,14 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
-/// Standard desktop cross-compilation targets supported by cargo-slide
-pub const SUPPORTED_CROSS_TARGETS: &[(&str, &str)] = &[
-    ("x86_64-unknown-linux-gnu", "linux-x86_64"),
-    ("aarch64-unknown-linux-gnu", "linux-aarch64"),
-    ("x86_64-pc-windows-gnu", "windows-x86_64"),
-    ("aarch64-pc-windows-gnullvm", "windows-aarch64"),
-];
+pub use crate::commands::cross::SUPPORTED_CROSS_TARGETS;
 
 /// Dispatch presentation build by format: binary, slide, or wasm.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::fn_params_excessive_bools
+)]
 pub fn execute(
     file: &Path,
     output: Option<PathBuf>,
@@ -83,22 +81,24 @@ pub fn execute(
                     "[CROSS] Building presentation for all supported desktop targets (x86_64/ARM64 Linux & Windows)..."
                 );
                 for &(triple, label) in SUPPORTED_CROSS_TARGETS {
+                    crate::commands::cross::ensure_target_installed(triple);
                     let is_win = triple.contains("windows");
                     let ext = if is_win { ".exe" } else { "" };
-                    let target_out = if let Some(ref out) = output {
-                        if out.is_dir() {
-                            out.join(format!("{file_stem}-{label}{ext}"))
-                        } else {
-                            let parent = out.parent().unwrap_or_else(|| Path::new("."));
-                            let stem = out
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or(file_stem);
-                            parent.join(format!("{stem}-{label}{ext}"))
-                        }
-                    } else {
-                        PathBuf::from(format!("{file_stem}-{label}{ext}"))
-                    };
+                    let target_out = output.as_ref().map_or_else(
+                        || PathBuf::from(format!("{file_stem}-{label}{ext}")),
+                        |out| {
+                            if out.is_dir() {
+                                out.join(format!("{file_stem}-{label}{ext}"))
+                            } else {
+                                let parent = out.parent().unwrap_or_else(|| Path::new("."));
+                                let stem = out
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or(file_stem);
+                                parent.join(format!("{stem}-{label}{ext}"))
+                            }
+                        },
+                    );
 
                     eprintln!(
                         ">>> Cross-compiling target [{triple}] -> {}",
@@ -125,11 +125,15 @@ pub fn execute(
                 eprintln!("[OK] Cross-platform compilation finished for all desktop targets!");
                 Ok(())
             } else {
+                let normalized_target = target.map(crate::commands::cross::normalize_target_triple);
+                if let Some(triple) = normalized_target {
+                    crate::commands::cross::ensure_target_installed(triple);
+                }
                 execute_binary(
                     target_file,
                     output,
                     animation,
-                    target,
+                    normalized_target,
                     cross,
                     cross_tool,
                     encrypt,
@@ -733,7 +737,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     Ok(())
 }
 
-fn find_repo_root(exe: &Path) -> Option<PathBuf> {
+/// Discover repository root for workspace dependencies
+pub fn find_repo_root(exe: &Path) -> Option<PathBuf> {
     // 1. Explicit environment variable override
     if let Ok(env_root) = std::env::var("CARGO_SLIDE_REPO_ROOT") {
         let p = PathBuf::from(env_root);
@@ -753,9 +758,8 @@ fn find_repo_root(exe: &Path) -> Option<PathBuf> {
         }
     }
 
-    // 3. Search upwards from compile-time manifest dir (for local dev installs)
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut cur = Some(manifest_dir);
+    // 3. Search upwards from executable location
+    let mut cur = exe.parent();
     while let Some(dir) = cur {
         if dir.join("crates").join("slide-core").exists() {
             return Some(dir.to_path_buf());
@@ -763,13 +767,16 @@ fn find_repo_root(exe: &Path) -> Option<PathBuf> {
         cur = dir.parent();
     }
 
-    // 4. Search upwards from executable location
-    let mut cur = exe.parent();
-    while let Some(dir) = cur {
-        if dir.join("crates").join("slide-core").exists() {
-            return Some(dir.to_path_buf());
+    // 4. Search upwards from compile-time manifest dir (if it actually exists on this host)
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if manifest_dir.exists() {
+        let mut cur = Some(manifest_dir);
+        while let Some(dir) = cur {
+            if dir.join("crates").join("slide-core").exists() {
+                return Some(dir.to_path_buf());
+            }
+            cur = dir.parent();
         }
-        cur = dir.parent();
     }
 
     None
@@ -810,36 +817,7 @@ fn estimate_total_units(
         .map_or(0, Vec::len)
 }
 
-/// Runs the actual `cargo build --release` for the generated standalone-runner project, emitting
-/// a real (not simulated) progress percentage as compilation proceeds -- each unit of work cargo
-/// itself reports finishing (`--message-format=json`'s `"reason":"compiler-artifact"` events)
-/// advances the count, scaled against `estimate_total_units`'s rough total. Reserves 0-5% for
-/// work already done before this function is called (Typst compilation, bundle generation) and
-/// 95-100% for copying the finished binary out afterward, so a caller watching the percentage
-/// climb sees it start above 0 and top out just under 100 while this function itself is running.
-///
-/// Real compiler diagnostics (errors and warnings) are forwarded too, via `"reason":
-/// "compiler-message"` events -- `--message-format=json` alone would otherwise swallow them
-/// entirely compared to the plain (non-JSON) invocation this replaces, since cargo routes
-/// per-file diagnostics through the JSON message stream rather than stderr in that mode.
-fn which_cmd(cmd: &str) -> bool {
-    if let Ok(path) = std::env::var("PATH") {
-        for p in std::env::split_paths(&path) {
-            let direct = p.join(cmd);
-            if direct.is_file() {
-                return true;
-            }
-            #[cfg(windows)]
-            {
-                if p.join(format!("{cmd}.exe")).is_file() {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
+#[allow(clippy::too_many_lines)]
 fn run_cargo_build_with_progress(
     build_path: &Path,
     target_dir: &Path,
@@ -850,41 +828,15 @@ fn run_cargo_build_with_progress(
     let total = estimate_total_units(build_path, target);
 
     let explicit_cross = cross || cross_tool != "auto";
-    let is_cross_target = target.is_some_and(|triple| {
-        let arch = std::env::consts::ARCH;
-        let os = std::env::consts::OS;
-        !triple.starts_with(arch) || !triple.contains(os)
-    });
+    let is_cross = target.is_some_and(crate::commands::cross::is_cross_target);
 
     let selected_backend = match cross_tool {
         | "zig" | "cargo-zigbuild" => "zig",
         | "cross" => "cross",
         | "cargo" | "native" => "cargo",
         | _ => {
-            if is_cross_target || explicit_cross {
-                if let Some(triple) = target {
-                    if triple.contains("windows") {
-                        if which_cmd("cargo-zigbuild") || which_cmd("zig") {
-                            "zig"
-                        } else if which_cmd("cross") {
-                            "cross"
-                        } else {
-                            "cargo"
-                        }
-                    } else if which_cmd("cross") {
-                        "cross"
-                    } else if which_cmd("cargo-zigbuild") || which_cmd("zig") {
-                        "zig"
-                    } else {
-                        "cargo"
-                    }
-                } else if which_cmd("cargo-zigbuild") {
-                    "zig"
-                } else if which_cmd("cross") {
-                    "cross"
-                } else {
-                    "cargo"
-                }
+            if is_cross || explicit_cross {
+                crate::commands::cross::select_backend(target.unwrap_or(""), cross_tool)
             } else {
                 "cargo"
             }
@@ -932,15 +884,16 @@ fn run_cargo_build_with_progress(
     }
 
     if selected_backend == "cross" {
-        if std::env::var("CROSS_CONTAINER_ENGINE").is_err() {
-            if which_cmd("podman") && !which_cmd("docker") {
-                cargo_cmd.env("CROSS_CONTAINER_ENGINE", "podman");
-            }
+        if std::env::var("CROSS_CONTAINER_ENGINE").is_err()
+            && crate::commands::cross::which_cmd("podman")
+            && !crate::commands::cross::which_cmd("docker")
+        {
+            cargo_cmd.env("CROSS_CONTAINER_ENGINE", "podman");
         }
-        let cross_toml = build_path.join("Cross.toml");
-        if !cross_toml.exists() {
+        let oci_cross_config = build_path.join("Cross.toml");
+        if !oci_cross_config.exists() {
             let _ = std::fs::write(
-                &cross_toml,
+                &oci_cross_config,
                 r#"[target.aarch64-unknown-linux-gnu]
 pre-build = [
     "dpkg --add-architecture arm64",

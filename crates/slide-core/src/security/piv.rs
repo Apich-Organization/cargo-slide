@@ -1168,28 +1168,26 @@ fn try_native_desktop_dialog(
             } else if let Ok(out) = std::process::Command::new("zenity")
                 .args(["--password", &zenity_title])
                 .output()
+                && out.status.success()
             {
-                if out.status.success() {
-                    let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if !s.is_empty() {
-                        let res = Zeroizing::new(s.clone());
-                        s.zeroize();
-                        return Some(res);
-                    }
+                let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() {
+                    let res = Zeroizing::new(s.clone());
+                    s.zeroize();
+                    return Some(res);
                 }
             }
 
             if let Ok(out) = std::process::Command::new("kdialog")
                 .args(["--password", prompt, "--title", title])
                 .output()
+                && out.status.success()
             {
-                if out.status.success() {
-                    let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if !s.is_empty() {
-                        let res = Zeroizing::new(s.clone());
-                        s.zeroize();
-                        return Some(res);
-                    }
+                let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() {
+                    let res = Zeroizing::new(s.clone());
+                    s.zeroize();
+                    return Some(res);
                 }
             }
         }

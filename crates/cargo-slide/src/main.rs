@@ -191,6 +191,25 @@ fn dispatch_command(
                 pin.as_deref(),
             )?;
         },
+        | Some(Commands::Cross {
+            target,
+            bin,
+            package,
+            file,
+            tool,
+            output_dir,
+            dev,
+        }) => {
+            commands::cross::execute(
+                &target,
+                bin.as_deref(),
+                package.as_deref(),
+                file.as_deref(),
+                &tool,
+                &output_dir,
+                dev,
+            )?;
+        },
         | Some(Commands::Pack {
             file,
             output,

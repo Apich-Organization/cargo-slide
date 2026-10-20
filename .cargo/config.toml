@@ -1,2 +1,2 @@
 [env]
-PKG_CONFIG_PATH = "/home/user/dev/cargo-slide/.pkgconfig"
+PKG_CONFIG_PATH = { value = ".pkgconfig", relative = true }

@@ -64,22 +64,22 @@ pub fn save_token(
     token: &str,
     ttl_seconds: u64,
 ) {
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.session_storage() {
-            let expiry = (js_sys::Date::now() / 1000.0) + (ttl_seconds as f64);
-            let _ = storage.set_item(TOKEN_KEY, token);
-            let _ = storage.set_item(EXPIRY_KEY, &expiry.to_string());
-        }
+    if let Some(window) = web_sys::window()
+        && let Ok(Some(storage)) = window.session_storage()
+    {
+        let expiry = (js_sys::Date::now() / 1000.0) + (ttl_seconds as f64);
+        let _ = storage.set_item(TOKEN_KEY, token);
+        let _ = storage.set_item(EXPIRY_KEY, &expiry.to_string());
     }
 }
 
 /// Clear saved token from sessionStorage
 pub fn clear_token() {
-    if let Some(window) = web_sys::window() {
-        if let Ok(Some(storage)) = window.session_storage() {
-            let _ = storage.remove_item(TOKEN_KEY);
-            let _ = storage.remove_item(EXPIRY_KEY);
-        }
+    if let Some(window) = web_sys::window()
+        && let Ok(Some(storage)) = window.session_storage()
+    {
+        let _ = storage.remove_item(TOKEN_KEY);
+        let _ = storage.remove_item(EXPIRY_KEY);
     }
 }
 
@@ -128,7 +128,7 @@ pub fn validate_bip39_mnemonic(mnemonic: &str) -> Result<Zeroizing<Vec<u8>>, Str
 
     // Verify checksum
     let hash = Sha256::digest(&entropy);
-    let first_byte = hash.get(0).copied().unwrap_or(0);
+    let first_byte = hash.first().copied().unwrap_or(0);
 
     for bit_idx in 0..checksum_bits_len {
         let expected_bit = (first_byte >> (7 - bit_idx)) & 1;

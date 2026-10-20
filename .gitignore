@@ -1,5 +1,6 @@
 # Rust build artifacts
 /target/
+/dist/
 **/*.rs.bk
 Cargo.lock.bak
 
@@ -32,3 +33,4 @@ examples/target/
 crates/slide-theme/target/
 **/.slide_cache/
 **/*.slide
+examples/geek-presentation/dist/

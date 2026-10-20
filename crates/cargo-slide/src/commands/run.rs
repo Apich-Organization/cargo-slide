@@ -54,15 +54,14 @@ pub fn execute(
                 let mut last_err = None;
                 let mut decrypted = None;
 
-                let mut initial_secret = if let Some(p) = passphrase {
-                    Some(slide_core::security::Zeroizing::new(p.to_string()))
-                } else if let Ok(env_pass) =
-                    std::env::var("SLIDE_PASSPHRASE").or_else(|_| std::env::var("SLIDE_SECRET"))
-                {
-                    Some(slide_core::security::Zeroizing::new(env_pass))
-                } else {
-                    None
-                };
+                let mut initial_secret = passphrase
+                    .map(|p| slide_core::security::Zeroizing::new(p.to_string()))
+                    .or_else(|| {
+                        std::env::var("SLIDE_PASSPHRASE")
+                            .or_else(|_| std::env::var("SLIDE_SECRET"))
+                            .ok()
+                            .map(slide_core::security::Zeroizing::new)
+                    });
 
                 for attempt in 0..max_attempts {
                     let secret: slide_core::security::Zeroizing<String> = if let Some(s) =

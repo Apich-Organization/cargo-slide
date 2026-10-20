@@ -172,7 +172,7 @@ pub enum Commands {
         #[arg(long, default_value = "auto")]
         cross_tool: String,
 
-        /// Cross-compile for all supported desktop targets (Linux x86_64, Linux aarch64, Windows x86_64, Windows aarch64)
+        /// Cross-compile for all supported desktop targets (Linux `x86_64`, Linux `aarch64`, Windows `x86_64`, Windows `aarch64`)
         #[arg(long)]
         all_targets: bool,
 
@@ -219,6 +219,39 @@ pub enum Commands {
         /// PIV User PIN
         #[arg(long)]
         pin: Option<String>,
+    },
+    /// Cross-compile presentation or Rust workspace binaries across multiple platforms and architectures
+    #[command(alias = "dist", alias = "cross-build")]
+    Cross {
+        /// Target platform to compile for: 'all' (default: 4 desktop platforms),
+        /// 'linux-x86_64', 'linux-aarch64', 'windows-x86_64', 'windows-aarch64', or a Rust target triple
+        #[arg(short, long, default_value = "all")]
+        target: String,
+
+        /// Binary name to compile (e.g. 'cargo-slide', 'slide-viewer', 'slide-editor')
+        #[arg(short, long)]
+        bin: Option<String>,
+
+        /// Package name to compile in a Cargo workspace
+        #[arg(short, long)]
+        package: Option<String>,
+
+        /// Path to .typ slide file to cross-compile (default: slides.typ if present)
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+
+        /// Cross-compilation toolchain backend: 'auto' (default: smart auto-detection),
+        /// 'zig' (cargo-zigbuild / Zig toolchain), 'cross' (cross container engine), or 'cargo'
+        #[arg(long, default_value = "auto")]
+        tool: String,
+
+        /// Output directory for compiled binaries (default: dist)
+        #[arg(short, long, default_value = "dist")]
+        output_dir: PathBuf,
+
+        /// Build in debug mode instead of release
+        #[arg(long)]
+        dev: bool,
     },
     /// Pack presentation into a standalone compressed .slide package (LZMA2)
     Pack {

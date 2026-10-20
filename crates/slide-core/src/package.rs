@@ -434,6 +434,7 @@ pub fn pack_encrypted_deck_to_file(
 }
 
 /// Package a `SlideDeck` into an encrypted standalone `.slide` file bound to a PIV slot with explicit `include_source` control.
+#[allow(clippy::too_many_arguments)]
 pub fn pack_encrypted_deck_to_file_with_source(
     deck: &SlideDeck,
     assets_dir: Option<&Path>,
