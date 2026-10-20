@@ -245,6 +245,7 @@ pub fn render_rich_text<'a>(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_typst_segments<'a>(
     input: &'a str,
     font_family: Option<&'a str>,
@@ -256,6 +257,7 @@ fn parse_typst_segments<'a>(
         return;
     }
 
+    #[allow(clippy::type_complexity)]
     let mut earliest_delim: Option<(usize, char, usize, usize, Option<&'a str>, usize)> = None;
 
     // Check inline `...` (single backtick, not part of ``` code fences)

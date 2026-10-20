@@ -33,10 +33,12 @@ fn try_native_os_dialog(
 ) -> Option<Zeroizing<String>> {
     #[cfg(target_os = "windows")]
     {
+        let safe_title = title.replace('\'', "''");
+        let safe_subtitle = subtitle.replace('\'', "''");
         let ps_script = format!(
             "[void][System.Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic'); \
              [Microsoft.VisualBasic.Interaction]::InputBox('{}', '{}')",
-            subtitle, title
+            safe_subtitle, safe_title
         );
         if let Ok(out) = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps_script])
@@ -55,9 +57,11 @@ fn try_native_os_dialog(
 
     #[cfg(target_os = "macos")]
     {
+        let safe_title = title.replace('\\', "\\\\").replace('"', "\\\"");
+        let safe_subtitle = subtitle.replace('\\', "\\\\").replace('"', "\\\"");
         let script = format!(
             "Tell application \"System Events\" to display dialog \"{}\" default answer \"\" with hidden answer with title \"{}\"",
-            subtitle, title
+            safe_subtitle, safe_title
         );
         if let Ok(out) = std::process::Command::new("osascript")
             .args(["-e", &script])
