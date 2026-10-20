@@ -390,6 +390,7 @@ impl EditorDocument {
                         .ok()
                         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
 
+                #[allow(clippy::unnecessary_map_or)]
                 let mut is_editable = meta.as_ref().map_or(false, |m| m.is_editable);
 
                 let entrypoint_file = meta
@@ -502,6 +503,7 @@ impl EditorDocument {
             let default_anim = deck.default_animation.clone();
 
             let meta = slide_core::package::read_package_metadata(path).ok();
+            #[allow(clippy::unnecessary_map_or)]
             let mut is_editable = meta.as_ref().map_or(false, |m| m.is_editable);
 
             let entrypoint_file = meta
@@ -1159,6 +1161,7 @@ impl EditorDocument {
 
     /// Check whether the document contains editable Typst source code
     #[must_use]
+    #[allow(clippy::collapsible_if)]
     pub fn has_editable_source(&self) -> bool {
         if self.format == DocumentFormat::Typst {
             return true;

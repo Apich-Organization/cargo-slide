@@ -798,6 +798,7 @@ impl SlideEditorApp {
     }
 
     /// Ensure AST engine slide list has an entry for each slide in the deck when viewing precompiled packages without source
+    #[allow(clippy::collapsible_if)]
     pub fn ensure_engine_slides_match_deck(&mut self) {
         if !self.doc.has_editable_source()
             && let Some(ref deck) = self.doc.deck
@@ -2461,6 +2462,7 @@ impl SlideEditorApp {
                             let leading_spaces = after_font.len() - after_font.trim_start().len();
                             let val_start = font_key_idx + 5 + leading_spaces;
                             let val_slice = &args_slice[val_start..];
+        #[allow(clippy::manual_strip)]
                             let val_end = if val_slice.starts_with('"') {
                                 val_slice[1..]
                                     .find('"')
