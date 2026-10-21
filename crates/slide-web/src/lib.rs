@@ -1552,6 +1552,7 @@ pub fn App() -> impl IntoView {
                     <div class="hud-divider"/>
                     <button
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
+                        aria-pressed=move || if laser_active.get() { "true" } else { "false" }
                         title="Laser Pointer (L)"
                         aria-label="Toggle Laser Pointer"
                         on:click=move |_| {
@@ -1561,6 +1562,7 @@ pub fn App() -> impl IntoView {
                     >"🔦"</button>
                     <button
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
+                        aria-pressed=move || if pen_active.get() { "true" } else { "false" }
                         title="Whiteboard Drawing Pen (P)"
                         aria-label="Toggle Whiteboard Drawing Pen"
                         on:click=move |_| {
@@ -1580,6 +1582,7 @@ pub fn App() -> impl IntoView {
                     <div class="hud-divider"/>
                     <button
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
+                        aria-pressed=move || if is_muted.get() { "true" } else { "false" }
                         title="Mute / Unmute Audio (M)"
                         aria-label="Toggle Audio Mute"
                         on:click=move |_| toggle_mute()
@@ -1587,6 +1590,7 @@ pub fn App() -> impl IntoView {
                     <div class="hud-divider"/>
                     <button
                         class="hud-btn"
+                        aria-pressed=move || if is_dark_theme.get() { "true" } else { "false" }
                         title="Toggle Light / Dark HUD Theme (T)"
                         aria-label="Toggle Light / Dark HUD Theme"
                         on:click=move |_| {
@@ -1595,10 +1599,10 @@ pub fn App() -> impl IntoView {
                             trigger_toast(format!("Theme: {}", mode));
                         }
                     >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
+                    <button class="hud-btn" aria-expanded=move || if notes_open.get() { "true" } else { "false" } title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
+                    <button class="hud-btn" aria-expanded=move || if overview_open.get() { "true" } else { "false" } title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
                     <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                    <button class="hud-btn" aria-expanded=move || if help_open.get() { "true" } else { "false" } title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
                 </div>
             </div>
 

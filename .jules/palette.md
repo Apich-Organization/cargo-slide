@@ -1,0 +1,3 @@
+## 2024-10-20 - ARIA States on Leptos HUD Buttons
+**Learning:** The WebAssembly presentation player (`slide-web`) manages several toggleable HUD states (Laser, Pen, Mute, Theme, Modals) reactively via Leptos. These buttons used dynamic CSS classes to visually indicate active state but lacked semantic ARIA state representations, which breaks screen reader accessibility for core presenter tools.
+**Action:** When creating toggle buttons or modal triggers in Leptos `view!` macros, always bind the `aria-pressed` or `aria-expanded` attributes reactively to the underlying boolean signals using closure syntax (e.g., `aria-pressed=move || if active.get() { "true" } else { "false" }`), ensuring state is communicated semantically alongside visual class toggling.
