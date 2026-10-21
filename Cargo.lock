@@ -673,7 +673,7 @@ checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
 
 [[package]]
 name = "cargo-slide"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -1967,7 +1967,7 @@ dependencies = [
 
 [[package]]
 name = "geek-presentation"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde_json",
  "slide-core",
@@ -5690,7 +5690,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slide-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -5729,7 +5729,7 @@ dependencies = [
 
 [[package]]
 name = "slide-editor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "iced",
@@ -5750,7 +5750,7 @@ dependencies = [
 
 [[package]]
 name = "slide-player"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "image",
@@ -5770,11 +5770,11 @@ dependencies = [
 
 [[package]]
 name = "slide-theme"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "slide-viewer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "iced",
@@ -5793,7 +5793,7 @@ dependencies = [
 
 [[package]]
 name = "slide-web"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
