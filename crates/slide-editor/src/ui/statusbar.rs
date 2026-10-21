@@ -44,49 +44,62 @@ pub fn view_statusbar<'a>(
 ) -> Element<'a, Message> {
     let is_narrow = window_width < 850.0;
     let is_tiny = window_width < 650.0;
+    let scale = (window_width / 1280.0).clamp(0.48, 1.15);
+
+    let scale_font =
+        |base: f32, min: f32, max: f32| -> f32 { (base * scale).clamp(min, max).round() };
+    let scale_pad = |base: f32, min: f32| -> f32 { (base * scale).max(min).round() };
+    let scale_spacing = |base: f32, min: f32| -> f32 { (base * scale).max(min).round() };
+
+    let status_font = scale_font(12.0, 8.0, 13.0);
+    let sub_font = scale_font(11.0, 7.5, 12.0);
+    let badge_font = scale_font(10.0, 7.0, 11.0);
+    let btn_pad: [f32; 2] = [scale_pad(2.0, 1.0), scale_pad(6.0, 2.0)];
+
     // Left: Slide Counter and Word/Char count
     let slide_info = text(format!(
         "Slide {} of {}",
         current_slide.saturating_add(1),
         total_slides.max(1)
     ))
-    .size(12)
+    .size(status_font)
     .color(theme.text_secondary());
 
     let stats_info = text(format!("{word_count} words, {char_count} chars"))
-        .size(11)
+        .size(sub_font)
         .color(theme.text_muted());
 
     let safe_wpm = (speaking_wpm as f32).max(50.0);
     let talk_mins = ((word_count as f32) / safe_wpm).max(1.0).ceil() as usize;
     let pacing_btn = button(
         text(format!("~{talk_mins} min ({speaking_wpm} WPM)"))
-            .size(11)
+            .size(sub_font)
             .color(theme.accent()),
     )
-    .padding([2, 6])
+    .padding(btn_pad)
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
     .on_press(Message::CycleSpeakingPace);
 
-    let health_btn = button(text("Health").size(11).color(theme.text_secondary()))
-        .padding([2, 6])
+    let health_btn = button(text("Health").size(sub_font).color(theme.text_secondary()))
+        .padding(btn_pad)
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
         .on_press(Message::OpenPresentationHealthModal);
 
     let cheatsheet_btn = button(
         text("Cheatsheet (F1)")
-            .size(11)
+            .size(sub_font)
             .color(theme.text_secondary()),
     )
-    .padding([2, 6])
+    .padding(btn_pad)
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
     .on_press(Message::OpenCheatsheetModal);
 
-    let divider_widget = || {
+    let divider_widget = move || {
+        let h = (10.0 * scale).clamp(6.0, 12.0);
         container(
             Space::new()
                 .width(Length::Fixed(1.0))
-                .height(Length::Fixed(10.0)),
+                .height(Length::Fixed(h)),
         )
         .style(move |_| {
             container::Style {
@@ -96,7 +109,9 @@ pub fn view_statusbar<'a>(
         })
     };
 
-    let mut left_info = row![slide_info].spacing(8).align_y(Alignment::Center);
+    let mut left_info = row![slide_info]
+        .spacing(scale_spacing(8.0, 2.0))
+        .align_y(Alignment::Center);
 
     if !is_tiny {
         left_info = left_info.push(divider_widget());
@@ -110,11 +125,12 @@ pub fn view_statusbar<'a>(
     left_info = left_info.push(cheatsheet_btn);
 
     // Center: Compiler Diagnostic status indicator
+    let dot_size = (7.0 * scale).clamp(3.5, 7.0);
     let compiler_indicator: Element<'a, Message> = match status {
         | CompilationStatus::Ready => {
             let dot = container(Space::new())
-                .width(Length::Fixed(7.0))
-                .height(Length::Fixed(7.0))
+                .width(Length::Fixed(dot_size))
+                .height(Length::Fixed(dot_size))
                 .style(move |_| {
                     container::Style {
                         background: Some(Background::Color(theme.success())),
@@ -132,16 +148,18 @@ pub fn view_statusbar<'a>(
                 });
             row![
                 dot,
-                text("Typst Ready").size(11).color(theme.text_secondary())
+                text("Typst Ready")
+                    .size(sub_font)
+                    .color(theme.text_secondary())
             ]
-            .spacing(7)
+            .spacing(scale_spacing(7.0, 2.0))
             .align_y(Alignment::Center)
             .into()
         },
         | CompilationStatus::Compiling => {
             let dot = container(Space::new())
-                .width(Length::Fixed(7.0))
-                .height(Length::Fixed(7.0))
+                .width(Length::Fixed(dot_size))
+                .height(Length::Fixed(dot_size))
                 .style(move |_| {
                     container::Style {
                         background: Some(Background::Color(theme.accent())),
@@ -157,10 +175,13 @@ pub fn view_statusbar<'a>(
                         ..container::Style::default()
                     }
                 });
-            row![dot, text("Compiling...").size(11).color(theme.accent())]
-                .spacing(7)
-                .align_y(Alignment::Center)
-                .into()
+            row![
+                dot,
+                text("Compiling...").size(sub_font).color(theme.accent())
+            ]
+            .spacing(scale_spacing(7.0, 2.0))
+            .align_y(Alignment::Center)
+            .into()
         },
         | CompilationStatus::Error(diag) => {
             let err_summary = diag.line.map_or_else(
@@ -170,13 +191,13 @@ pub fn view_statusbar<'a>(
 
             button(
                 row![
-                    text("!").size(11).color(theme.danger()),
-                    text(err_summary).size(11).color(theme.danger())
+                    text("!").size(sub_font).color(theme.danger()),
+                    text(err_summary).size(sub_font).color(theme.danger())
                 ]
-                .spacing(5)
+                .spacing(scale_spacing(5.0, 2.0))
                 .align_y(Alignment::Center),
             )
-            .padding([2, 8])
+            .padding([scale_pad(2.0, 1.0), scale_pad(8.0, 2.0)])
             .style(move |_theme, _status| theme::danger_button_style(theme))
             .on_press(Message::OpenErrorDetailsDialog)
             .into()
@@ -208,54 +229,65 @@ pub fn view_statusbar<'a>(
         },
     };
 
-    let mode_badge = container(text(mode_str).size(10).color(theme.text_secondary()))
-        .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(RADIUS_XS),
-                ..container::Style::default()
-            }
-        });
+    let badge_pad = [scale_pad(2.0, 1.0), scale_pad(6.0, 2.0)];
+    let mode_badge = container(
+        text(mode_str)
+            .size(badge_font)
+            .color(theme.text_secondary()),
+    )
+    .padding(badge_pad)
+    .style(move |_| {
+        container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(RADIUS_XS),
+            ..container::Style::default()
+        }
+    });
 
-    let format_badge = container(text(format.label()).size(10).color(theme.text_muted()))
-        .padding([2, 6])
-        .style(move |_| {
-            container::Style {
-                background: Some(Background::Color(theme.bg_subtle())),
-                border: border::rounded(RADIUS_XS),
-                ..container::Style::default()
-            }
-        });
+    let format_badge = container(
+        text(format.label())
+            .size(badge_font)
+            .color(theme.text_muted()),
+    )
+    .padding(badge_pad)
+    .style(move |_| {
+        container::Style {
+            background: Some(Background::Color(theme.bg_subtle())),
+            border: border::rounded(RADIUS_XS),
+            ..container::Style::default()
+        }
+    });
 
-    let zoom_out = button(text("-").size(11))
+    let zoom_btn_pad = [scale_pad(2.0, 1.0), scale_pad(7.0, 2.0)];
+    let zoom_out = button(text("-").size(sub_font))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-        .padding([2, 7])
+        .padding(zoom_btn_pad)
         .on_press(Message::ZoomOut);
 
     let zoom_val = button(
         text(format!("{zoom_percent}%"))
-            .size(11)
+            .size(sub_font)
             .color(theme.text_secondary()),
     )
-    .padding([2, 6])
+    .padding(btn_pad)
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
     .on_press(Message::ResetZoom);
 
-    let zoom_in = button(text("+").size(11))
+    let zoom_in = button(text("+").size(sub_font))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-        .padding([2, 7])
+        .padding(zoom_btn_pad)
         .on_press(Message::ZoomIn);
 
     let zoom_controls = row![zoom_out, zoom_val, zoom_in]
-        .spacing(4)
+        .spacing(scale_spacing(4.0, 1.0))
         .align_y(Alignment::Center);
 
-    let right_divider = || {
+    let right_divider = move || {
+        let h = (10.0 * scale).clamp(6.0, 12.0);
         container(
             Space::new()
                 .width(Length::Fixed(1.0))
-                .height(Length::Fixed(10.0)),
+                .height(Length::Fixed(h)),
         )
         .style(move |_| {
             container::Style {
@@ -269,13 +301,13 @@ pub fn view_statusbar<'a>(
         let amber = Color::from_rgb8(245, 158, 11);
         button(
             row![
-                text("●").size(9).color(amber),
-                text("Unsaved").size(10).color(amber),
+                text("●").size(scale_font(9.0, 6.0, 10.0)).color(amber),
+                text("Unsaved").size(badge_font).color(amber),
             ]
-            .spacing(4)
+            .spacing(scale_spacing(4.0, 1.0))
             .align_y(Alignment::Center),
         )
-        .padding([2, 6])
+        .padding(badge_pad)
         .style(move |_theme, _status| {
             button::Style {
                 background: Some(Background::Color(Color::from_rgba8(245, 158, 11, 0.12))),
@@ -293,13 +325,13 @@ pub fn view_statusbar<'a>(
         let green = theme.success();
         button(
             row![
-                text("✓").size(10).color(green),
-                text("Saved").size(10).color(green),
+                text("✓").size(badge_font).color(green),
+                text("Saved").size(badge_font).color(green),
             ]
-            .spacing(4)
+            .spacing(scale_spacing(4.0, 1.0))
             .align_y(Alignment::Center),
         )
-        .padding([2, 6])
+        .padding(badge_pad)
         .style(move |_theme, _status| {
             button::Style {
                 background: Some(Background::Color(Color::from_rgba8(34, 197, 94, 0.10))),
@@ -314,7 +346,9 @@ pub fn view_statusbar<'a>(
         })
     };
 
-    let mut right_info = row![].spacing(8).align_y(Alignment::Center);
+    let mut right_info = row![]
+        .spacing(scale_spacing(8.0, 2.0))
+        .align_y(Alignment::Center);
 
     right_info = right_info.push(dirty_pill);
     if !is_tiny {
@@ -327,6 +361,13 @@ pub fn view_statusbar<'a>(
     right_info = right_info.push(right_divider());
     right_info = right_info.push(zoom_controls);
 
+    let row_pad_v = scale_pad(5.0, 2.0);
+    let row_pad_h = if is_narrow {
+        scale_pad(8.0, 2.0)
+    } else {
+        scale_pad(16.0, 4.0)
+    };
+
     let main_row = row![
         left_info,
         Space::new().width(Length::Fill),
@@ -335,7 +376,7 @@ pub fn view_statusbar<'a>(
         right_info
     ]
     .align_y(Alignment::Center)
-    .padding([5, if is_narrow { 8 } else { 16 }]);
+    .padding([row_pad_v, row_pad_h]);
 
     container(main_row)
         .width(Length::Fill)

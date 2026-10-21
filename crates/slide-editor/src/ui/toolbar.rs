@@ -20,12 +20,15 @@ use iced::widget::scrollable;
 use iced::widget::text;
 use iced::widget::tooltip;
 
-/// Breakpoint widths for responsive toolbar layout
-const COMPACT_BREAKPOINT: f32 = 1100.0;
-const NARROW_BREAKPOINT: f32 = 850.0;
-const TINY_BREAKPOINT: f32 = 650.0;
+/// Baseline reference window width for 1.0x proportional scaling
+pub const BASE_WINDOW_WIDTH: f32 = 1280.0;
 
-/// Render the primary top toolbar with responsive layout
+/// Breakpoint widths for responsive toolbar layout
+const COMPACT_BREAKPOINT: f32 = 1180.0;
+const NARROW_BREAKPOINT: f32 = 920.0;
+const TINY_BREAKPOINT: f32 = 680.0;
+
+/// Render the primary top toolbar with responsive layout and proportional scaling
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn view_toolbar<'a>(
@@ -44,6 +47,21 @@ pub fn view_toolbar<'a>(
     let is_narrow = window_width < NARROW_BREAKPOINT;
     let is_tiny = window_width < TINY_BREAKPOINT;
 
+    // Continuous proportional scale factor based on window width
+    let scale = (window_width / BASE_WINDOW_WIDTH).clamp(0.48, 1.15);
+
+    // Dynamic proportional sizing helpers (returning f32 for iced Pixels / Padding)
+    let scale_font =
+        |base: f32, min: f32, max: f32| -> f32 { (base * scale).clamp(min, max).round() };
+    let scale_pad = |base: f32, min: f32| -> f32 { (base * scale).max(min).round() };
+    let scale_spacing = |base: f32, min: f32| -> f32 { (base * scale).max(min).round() };
+
+    let tb_font = scale_font(if is_compact { 11.0 } else { 12.0 }, 7.5, 13.0);
+    let tb_pad_v = scale_pad(if is_compact { 4.0 } else { 5.0 }, 2.0);
+    let tb_pad_h = scale_pad(if is_compact { 7.0 } else { 10.0 }, 3.0);
+    let tb_pad = [tb_pad_v, tb_pad_h];
+    let tb_spacing = scale_spacing(if is_compact { 3.0 } else { 6.0 }, 1.0);
+
     // 1. Left section: Outline toggle, document title, format badge
     let outline_label = if is_narrow {
         if sidebar_visible { "<" } else { ">" }
@@ -52,9 +70,18 @@ pub fn view_toolbar<'a>(
     } else {
         "> Outline"
     };
-    let outline_btn = button(text(outline_label).size(12))
+    let outline_font = scale_font(12.0, 7.5, 13.0);
+    let outline_pad = [
+        tb_pad_v,
+        if is_narrow {
+            scale_pad(6.0, 2.0)
+        } else {
+            scale_pad(11.0, 3.0)
+        },
+    ];
+    let outline_btn = button(text(outline_label).size(outline_font))
         .style(move |_theme, _status| theme::subtle_button_style(theme, sidebar_visible))
-        .padding([5, if is_narrow { 6 } else { 11 }])
+        .padding(outline_pad)
         .on_press(Message::ToggleSidebar);
 
     let display_title = if is_narrow {
@@ -67,8 +94,9 @@ pub fn view_toolbar<'a>(
     } else {
         title.to_string()
     };
+    let doc_title_font = scale_font(if is_narrow { 11.0 } else { 13.0 }, 8.0, 14.0);
     let doc_title = text(display_title)
-        .size(if is_narrow { 12 } else { 13 })
+        .size(doc_title_font)
         .color(theme.text_primary());
 
     let badge_bg = match format {
@@ -76,12 +104,14 @@ pub fn view_toolbar<'a>(
         | DocumentFormat::SlidePackage => theme.success(),
     };
 
+    let badge_font = scale_font(9.0, 6.0, 10.0);
+    let badge_pad = [scale_pad(2.0, 1.0), scale_pad(7.0, 2.0)];
     let format_badge = container(
         text(format.extension().to_uppercase())
-            .size(9)
+            .size(badge_font)
             .color(iced::Color::WHITE),
     )
-    .padding([2, 7])
+    .padding(badge_pad)
     .style(move |_| {
         container::Style {
             background: Some(iced::Background::Color(badge_bg)),
@@ -91,14 +121,15 @@ pub fn view_toolbar<'a>(
     });
 
     let mut left_bar = row![outline_btn, doc_title]
-        .spacing(if is_narrow { 4 } else { 10 })
+        .spacing(scale_spacing(if is_narrow { 4.0 } else { 10.0 }, 2.0))
         .align_y(Alignment::Center);
 
     if is_dirty {
+        let dot_size = (7.0 * scale).clamp(3.5, 7.0);
         let dirty_dot = container(
             Space::new()
-                .width(Length::Fixed(7.0))
-                .height(Length::Fixed(7.0)),
+                .width(Length::Fixed(dot_size))
+                .height(Length::Fixed(dot_size)),
         )
         .style(move |_| {
             container::Style {
@@ -126,35 +157,41 @@ pub fn view_toolbar<'a>(
         ("Live Preview", "Focus Mode", "Source Code")
     };
 
-    let btn_pad = if is_narrow { [5, 8] } else { [5, 14] };
+    let mode_font = scale_font(if is_narrow { 11.0 } else { 12.0 }, 7.5, 13.0);
+    let mode_pad_h = if is_narrow {
+        scale_pad(8.0, 3.0)
+    } else {
+        scale_pad(14.0, 4.0)
+    };
+    let mode_btn_pad = [tb_pad_v, mode_pad_h];
 
-    let live_btn = button(text(live_label).size(12))
+    let live_btn = button(text(live_label).size(mode_font))
         .style(move |_theme, _status| {
             theme::segmented_button_style(theme, mode == EditorMode::LivePreview)
         })
-        .padding(btn_pad)
+        .padding(mode_btn_pad)
         .on_press(Message::SwitchMode(EditorMode::LivePreview));
 
-    let focus_btn = button(text(focus_label).size(12))
+    let focus_btn = button(text(focus_label).size(mode_font))
         .style(move |_theme, _status| {
             theme::segmented_button_style(theme, mode == EditorMode::FocusMode)
         })
-        .padding(btn_pad)
+        .padding(mode_btn_pad)
         .on_press(Message::SwitchMode(EditorMode::FocusMode));
 
-    let source_btn = button(text(source_label).size(12))
+    let source_btn = button(text(source_label).size(mode_font))
         .style(move |_theme, _status| {
             theme::segmented_button_style(theme, mode == EditorMode::SourceMode)
         })
-        .padding(btn_pad)
+        .padding(mode_btn_pad)
         .on_press(Message::SwitchMode(EditorMode::SourceMode));
 
     let segmented_bar = container(
         row![live_btn, focus_btn, source_btn]
-            .spacing(2)
+            .spacing(scale_spacing(2.0, 1.0))
             .align_y(Alignment::Center),
     )
-    .padding([2, 2])
+    .padding([scale_pad(2.0, 1.0), scale_pad(2.0, 1.0)])
     .style(move |_| theme::segmented_pill_container_style(theme));
 
     let mode_switcher: Element<'a, Message> = if has_editable_source {
@@ -162,59 +199,55 @@ pub fn view_toolbar<'a>(
     } else {
         container(
             row![
-                container(text("VECTOR").size(9).color(iced::Color::WHITE),)
-                    .padding([1, 6])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.accent())),
-                            border: iced::border::rounded(RADIUS_FULL),
-                            ..container::Style::default()
-                        }
-                    }),
+                container(
+                    text("VECTOR")
+                        .size(scale_font(9.0, 6.0, 10.0))
+                        .color(iced::Color::WHITE),
+                )
+                .padding([scale_pad(1.0, 1.0), scale_pad(6.0, 2.0)])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.accent())),
+                        border: iced::border::rounded(RADIUS_FULL),
+                        ..container::Style::default()
+                    }
+                }),
                 text("Protected Presentation (Read-Only)")
-                    .size(12)
+                    .size(scale_font(12.0, 8.0, 13.0))
                     .color(theme.text_primary()),
             ]
-            .spacing(6)
+            .spacing(scale_spacing(6.0, 2.0))
             .align_y(Alignment::Center),
         )
-        .padding([3, 10])
+        .padding([scale_pad(3.0, 1.0), scale_pad(10.0, 3.0)])
         .style(move |_| theme::segmented_pill_container_style(theme))
         .into()
     };
 
-    // 3. Right section: Quick actions with responsive labels
-    let tb_size = if is_compact { 11 } else { 12 };
-    let tb_pad: [u16; 2] = if is_compact {
-        [4, 7]
-    } else {
-        [5, 10]
-    };
-    let tb_spacing = if is_compact { 3 } else { 6 };
-
+    // 3. Right section: Quick actions with responsive labels and proportional scaling
     let new_window_btn = button(
         text(if is_compact {
             "+ Win"
         } else {
             "+ Window"
         })
-        .size(tb_size),
+        .size(tb_font),
     )
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
     .padding(tb_pad)
     .on_press(Message::NewWindow(None));
 
-    let new_btn = button(text("New").size(tb_size))
+    let new_btn = button(text("New").size(tb_font))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
         .padding(tb_pad)
         .on_press(Message::NewDocument);
 
-    let open_btn = button(text("Open").size(tb_size))
+    let open_btn = button(text("Open").size(tb_font))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
         .padding(tb_pad)
         .on_press(Message::OpenDocumentDialog);
 
-    let save_btn = button(text("Save").size(tb_size))
+    let save_btn = button(text("Save").size(tb_font))
         .style(move |_theme, _status| {
             if is_dirty {
                 theme::primary_button_style(theme)
@@ -222,11 +255,14 @@ pub fn view_toolbar<'a>(
                 theme::subtle_button_style(theme, false)
             }
         })
-        .padding(if is_compact {
-            [4, 8]
-        } else {
-            [5, 12]
-        })
+        .padding([
+            tb_pad_v,
+            if is_compact {
+                scale_pad(8.0, 3.0)
+            } else {
+                scale_pad(12.0, 4.0)
+            },
+        ])
         .on_press(Message::SaveDocument);
 
     let export_btn = button(
@@ -235,36 +271,40 @@ pub fn view_toolbar<'a>(
         } else {
             "Export"
         })
-        .size(tb_size),
+        .size(tb_font),
     )
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
     .padding(tb_pad)
     .on_press(Message::OpenExportDialog);
 
     let present_btn = if is_narrow {
-        button(text("Play").size(tb_size).color(iced::Color::WHITE))
+        button(text("Play").size(tb_font).color(iced::Color::WHITE))
             .style(move |_theme, _status| theme::primary_button_style(theme))
-            .padding([4, 10])
+            .padding([tb_pad_v, scale_pad(10.0, 3.0)])
             .on_press(Message::PlayPresentation)
     } else {
         button(
             row![
-                container(text("PLAY").size(9).color(iced::Color::WHITE))
-                    .padding([1, 5])
-                    .style(move |_| {
-                        container::Style {
-                            background: Some(iced::Background::Color(theme.accent_hover())),
-                            border: iced::border::rounded(RADIUS_XS),
-                            ..container::Style::default()
-                        }
-                    }),
-                text("Present").size(12).color(iced::Color::WHITE),
+                container(
+                    text("PLAY")
+                        .size(scale_font(9.0, 6.0, 10.0))
+                        .color(iced::Color::WHITE)
+                )
+                .padding([scale_pad(1.0, 1.0), scale_pad(5.0, 2.0)])
+                .style(move |_| {
+                    container::Style {
+                        background: Some(iced::Background::Color(theme.accent_hover())),
+                        border: iced::border::rounded(RADIUS_XS),
+                        ..container::Style::default()
+                    }
+                }),
+                text("Present").size(tb_font).color(iced::Color::WHITE),
             ]
-            .spacing(6)
+            .spacing(scale_spacing(6.0, 2.0))
             .align_y(Alignment::Center),
         )
         .style(move |_theme, _status| theme::primary_button_style(theme))
-        .padding([5, 13])
+        .padding([tb_pad_v, scale_pad(13.0, 4.0)])
         .on_press(Message::PlayPresentation)
     };
 
@@ -285,7 +325,7 @@ pub fn view_toolbar<'a>(
                 }
             },
         })
-        .size(tb_size),
+        .size(tb_font),
     )
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
     .padding(tb_pad)
@@ -297,7 +337,7 @@ pub fn view_toolbar<'a>(
         } else {
             "↶ Undo"
         })
-        .size(tb_size)
+        .size(tb_font)
         .color(if can_undo {
             theme.text_primary()
         } else {
@@ -305,7 +345,14 @@ pub fn view_toolbar<'a>(
         }),
     )
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-    .padding(if is_compact { [4, 6] } else { [5, 9] })
+    .padding([
+        tb_pad_v,
+        if is_compact {
+            scale_pad(6.0, 2.0)
+        } else {
+            scale_pad(9.0, 3.0)
+        },
+    ])
     .on_press_maybe(if can_undo {
         Some(Message::Undo)
     } else {
@@ -318,7 +365,7 @@ pub fn view_toolbar<'a>(
         } else {
             "↷ Redo"
         })
-        .size(tb_size)
+        .size(tb_font)
         .color(if can_redo {
             theme.text_primary()
         } else {
@@ -326,7 +373,14 @@ pub fn view_toolbar<'a>(
         }),
     )
     .style(move |_theme, _status| theme::subtle_button_style(theme, false))
-    .padding(if is_compact { [4, 6] } else { [5, 9] })
+    .padding([
+        tb_pad_v,
+        if is_compact {
+            scale_pad(6.0, 2.0)
+        } else {
+            scale_pad(9.0, 3.0)
+        },
+    ])
     .on_press_maybe(if can_redo {
         Some(Message::Redo)
     } else {
@@ -334,15 +388,18 @@ pub fn view_toolbar<'a>(
     });
 
     // Helper to wrap buttons with tooltips for better UX and shortcut discovery
+    let tooltip_font = scale_font(11.0, 7.5, 12.0);
+    let tooltip_pad = [scale_pad(4.0, 2.0), scale_pad(8.0, 3.0)];
+    let tooltip_gap = scale_spacing(4.0, 1.0);
     let make_tooltip = |widget: Element<'a, Message>, hint: &'static str| -> Element<'a, Message> {
         tooltip(
             widget,
-            container(text(hint).size(11))
-                .padding([4, 8])
+            container(text(hint).size(tooltip_font))
+                .padding(tooltip_pad)
                 .style(move |_| theme::tooltip_container_style(theme)),
             tooltip::Position::Bottom,
         )
-        .gap(4)
+        .gap(tooltip_gap)
         .into()
     };
 
@@ -369,25 +426,25 @@ pub fn view_toolbar<'a>(
     }
 
     if !is_narrow && has_editable_source {
-        let templates_btn = button(text("Templates").size(tb_size))
+        let templates_btn = button(text("Templates").size(tb_font))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenTemplateLibraryModal);
         right_bar = right_bar.push(make_tooltip(templates_btn.into(), "Templates"));
 
-        let find_btn = button(text("Find").size(tb_size))
+        let find_btn = button(text("Find").size(tb_font))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenSearchModal);
         right_bar = right_bar.push(make_tooltip(find_btn.into(), "Find (Ctrl+F)"));
 
-        let font_btn = button(text("Font").size(tb_size))
+        let font_btn = button(text("Font").size(tb_font))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenFontModal);
         right_bar = right_bar.push(make_tooltip(font_btn.into(), "Select Font"));
 
-        let header_footer_btn = button(text("Header/Footer").size(tb_size))
+        let header_footer_btn = button(text("Header/Footer").size(tb_font))
             .style(move |_theme, _status| theme::subtle_button_style(theme, false))
             .padding(tb_pad)
             .on_press(Message::OpenHeaderFooterModal);
@@ -401,6 +458,13 @@ pub fn view_toolbar<'a>(
         right_bar = right_bar.push(make_tooltip(theme_btn.into(), "Toggle Theme"));
     }
 
+    let row_pad_v = scale_pad(6.0, 2.0);
+    let row_pad_h = if is_narrow {
+        scale_pad(8.0, 2.0)
+    } else {
+        scale_pad(16.0, 4.0)
+    };
+
     let main_row = row![
         left_bar,
         Space::new().width(Length::Fill),
@@ -409,7 +473,7 @@ pub fn view_toolbar<'a>(
         right_bar
     ]
     .align_y(Alignment::Center)
-    .padding([6, if is_narrow { 8 } else { 16 }]);
+    .padding([row_pad_v, row_pad_h]);
 
     container(main_row)
         .width(Length::Fill)
@@ -427,9 +491,19 @@ pub fn view_formatting_bar<'a>(
 ) -> Element<'a, Message> {
     let is_compact = window_width < COMPACT_BREAKPOINT;
     let is_narrow = window_width < NARROW_BREAKPOINT;
-    let btn_size = if is_compact { 10 } else { 11 };
-    let btn_pad: [u16; 2] = if is_compact { [2, 6] } else { [3, 8] };
-    let group_spacing = if is_compact { 3 } else { 4 };
+    let scale = (window_width / BASE_WINDOW_WIDTH).clamp(0.48, 1.15);
+
+    let scale_font =
+        |base: f32, min: f32, max: f32| -> f32 { (base * scale).clamp(min, max).round() };
+    let scale_pad = |base: f32, min: f32| -> f32 { (base * scale).max(min).round() };
+    let scale_spacing = |base: f32, min: f32| -> f32 { (base * scale).max(min).round() };
+
+    let btn_size = scale_font(if is_compact { 10.0 } else { 11.0 }, 7.5, 12.0);
+    let btn_pad: [f32; 2] = [
+        scale_pad(if is_compact { 2.0 } else { 3.0 }, 1.0),
+        scale_pad(if is_compact { 6.0 } else { 8.0 }, 2.0),
+    ];
+    let group_spacing = scale_spacing(if is_compact { 3.0 } else { 4.0 }, 1.0);
 
     let make_btn = |label: &'static str, msg: Message| {
         button(text(label).size(btn_size))
@@ -438,11 +512,12 @@ pub fn view_formatting_bar<'a>(
             .on_press(msg)
     };
 
-    let divider = || {
+    let divider_h = (14.0 * scale).clamp(8.0, 16.0);
+    let divider = move || {
         container(
             Space::new()
                 .width(Length::Fixed(1.0))
-                .height(Length::Fixed(14.0)),
+                .height(Length::Fixed(divider_h)),
         )
         .style(move |_| {
             container::Style {
@@ -456,8 +531,8 @@ pub fn view_formatting_bar<'a>(
         button(text("+ Slide").size(btn_size))
             .style(move |_theme, _status| theme::primary_button_style(theme))
             .padding([
-                if is_compact { 2 } else { 3 },
-                if is_compact { 7 } else { 10 }
+                scale_pad(if is_compact { 2.0 } else { 3.0 }, 1.0),
+                scale_pad(if is_compact { 7.0 } else { 10.0 }, 2.0)
             ])
             .on_press(Message::InsertSlide),
         button(
@@ -533,13 +608,13 @@ pub fn view_formatting_bar<'a>(
         divider(),
         block_group,
     ]
-    .spacing(if is_compact { 5 } else { 8 })
+    .spacing(scale_spacing(if is_compact { 5.0 } else { 8.0 }, 2.0))
     .align_y(Alignment::Center);
 
     let floating_capsule = container(bar)
         .padding([
-            if is_compact { 3 } else { 4 },
-            if is_compact { 8 } else { 12 },
+            scale_pad(if is_compact { 3.0 } else { 4.0 }, 1.0),
+            scale_pad(if is_compact { 8.0 } else { 12.0 }, 2.0),
         ])
         .style(move |_| theme::floating_capsule_style(theme));
 
@@ -557,6 +632,13 @@ pub fn view_formatting_bar<'a>(
     container(scrollable_capsule)
         .width(Length::Fill)
         .align_x(Alignment::Center)
-        .padding([4, if is_narrow { 8 } else { 16 }])
+        .padding([
+            scale_pad(4.0, 2.0),
+            if is_narrow {
+                scale_pad(8.0, 2.0)
+            } else {
+                scale_pad(16.0, 4.0)
+            },
+        ])
         .into()
 }

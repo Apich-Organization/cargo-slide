@@ -5884,3 +5884,84 @@ fn test_multi_window_keyboard_shortcuts() {
     let msg = handle_global_drag_event(ctrl_w, iced::event::Status::Ignored, win_id);
     assert!(matches!(msg, Some(Message::RequestCloseWindow)));
 }
+
+#[test]
+fn test_window_resized_event_updates_window_dimensions() {
+    use slide_editor::app::SlideEditorApp;
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    // 1. Single window app instance
+    let mut app = SlideEditorApp::new(None, false);
+    assert_eq!(app.window_size.width, 1280.0);
+    assert_eq!(app.window_size.height, 720.0);
+
+    let _ = app.update(Message::WindowResized(iced::Size::new(960.0, 640.0)));
+    assert_eq!(app.window_size.width, 960.0);
+    assert_eq!(app.window_size.height, 640.0);
+
+    let _ = app.update(Message::WindowResized(iced::Size::new(600.0, 400.0)));
+    assert_eq!(app.window_size.width, 600.0);
+    assert_eq!(app.window_size.height, 400.0);
+
+    // 2. Multi-window app instance
+    let (mut multi_app, _) = MultiWindowApp::boot(None, false);
+    let win_id = multi_app.window_ids()[0];
+    let _ = multi_app.update(MultiWindowMessage::WindowMessage(
+        win_id,
+        Message::WindowResized(iced::Size::new(720.0, 480.0)),
+    ));
+    let win = multi_app.get_window(&win_id).expect("window exists");
+    assert_eq!(win.window_size.width, 720.0);
+    assert_eq!(win.window_size.height, 480.0);
+}
+
+#[test]
+fn test_responsive_toolbar_proportional_scaling_views() {
+    use slide_editor::app::CompilationStatus;
+    use slide_editor::app::EditorMode;
+    use slide_editor::document::DocumentFormat;
+    use slide_editor::ui::statusbar::view_statusbar;
+    use slide_editor::ui::theme::AppTheme;
+    use slide_editor::ui::toolbar::BASE_WINDOW_WIDTH;
+    use slide_editor::ui::toolbar::view_formatting_bar;
+    use slide_editor::ui::toolbar::view_toolbar;
+
+    assert_eq!(BASE_WINDOW_WIDTH, 1280.0);
+
+    // Verify all toolbars render cleanly at diverse window resolutions
+    let test_widths = [1920.0, 1440.0, 1280.0, 1024.0, 800.0, 650.0, 480.0];
+    let status = CompilationStatus::Ready;
+
+    for width in test_widths {
+        let _tb = view_toolbar(
+            AppTheme::Light,
+            "Proportional Scaling Presentation",
+            DocumentFormat::Typst,
+            true,
+            EditorMode::LivePreview,
+            true,
+            true,
+            false,
+            width,
+            true,
+        );
+
+        let _fmt = view_formatting_bar(AppTheme::Light, 0, width);
+
+        let _sb = view_statusbar(
+            AppTheme::Light,
+            0,
+            5,
+            DocumentFormat::Typst,
+            EditorMode::LivePreview,
+            &status,
+            120,
+            24,
+            100,
+            130,
+            width,
+            true,
+        );
+    }
+}

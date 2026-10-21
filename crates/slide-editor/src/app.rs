@@ -5005,9 +5005,9 @@ pub fn handle_global_drag_event(
     _window: iced::window::Id,
 ) -> Option<Message> {
     match event {
-        | iced::Event::Window(iced::window::Event::Resized(size)) => {
-            Some(Message::WindowResized(size))
-        },
+        | iced::Event::Window(
+            iced::window::Event::Opened { size, .. } | iced::window::Event::Resized(size),
+        ) => Some(Message::WindowResized(size)),
         | iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             Some(Message::GlobalCursorMoved(position))
         },

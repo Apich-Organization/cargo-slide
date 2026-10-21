@@ -236,6 +236,9 @@ impl MultiWindowApp {
         Subscription::batch(vec![
             iced::window::close_requests().map(MultiWindowMessage::CloseRequested),
             iced::window::close_events().map(MultiWindowMessage::WindowClosed),
+            iced::window::resize_events().map(|(id, size)| {
+                MultiWindowMessage::WindowMessage(id, Message::WindowResized(size))
+            }),
             iced::event::listen_with(|event, status, window| {
                 handle_global_drag_event(event, status, window)
                     .map(move |msg| MultiWindowMessage::WindowMessage(window, msg))
