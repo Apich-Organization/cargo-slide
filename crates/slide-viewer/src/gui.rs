@@ -1553,11 +1553,17 @@ impl ViewerLauncherApp {
 
 /// Locate and launch slide-editor binary using multi-tier fallback strategy
 pub fn launch_slide_editor(path: &std::path::Path) -> std::io::Result<()> {
+    let exe_name = if cfg!(windows) {
+        "slide-editor.exe"
+    } else {
+        "slide-editor"
+    };
+
     // 1. Sibling binary to the current executable (e.g. target/debug/slide-editor)
     if let Ok(current_exe) = std::env::current_exe()
         && let Some(parent) = current_exe.parent()
     {
-        let sibling = parent.join("slide-editor");
+        let sibling = parent.join(exe_name);
         if sibling.is_file()
             && let Ok(child) = std::process::Command::new(&sibling).arg(path).spawn()
         {
@@ -1568,14 +1574,14 @@ pub fn launch_slide_editor(path: &std::path::Path) -> std::io::Result<()> {
 
     // 2. User local directories ~/.cargo/bin and ~/.local/bin
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        let cargo_bin = home.join(".cargo/bin/slide-editor");
+        let cargo_bin = home.join(format!(".cargo/bin/{exe_name}"));
         if cargo_bin.is_file()
             && let Ok(child) = std::process::Command::new(&cargo_bin).arg(path).spawn()
         {
             drop(child);
             return Ok(());
         }
-        let local_bin = home.join(".local/bin/slide-editor");
+        let local_bin = home.join(format!(".local/bin/{exe_name}"));
         if local_bin.is_file()
             && let Ok(child) = std::process::Command::new(&local_bin).arg(path).spawn()
         {
@@ -1585,7 +1591,7 @@ pub fn launch_slide_editor(path: &std::path::Path) -> std::io::Result<()> {
     }
 
     // 3. System PATH lookup
-    if let Ok(child) = std::process::Command::new("slide-editor").arg(path).spawn() {
+    if let Ok(child) = std::process::Command::new(exe_name).arg(path).spawn() {
         drop(child);
         return Ok(());
     }

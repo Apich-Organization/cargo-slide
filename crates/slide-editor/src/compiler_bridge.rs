@@ -525,6 +525,7 @@ impl CompilerBridge {
     /// Package document into an encrypted standalone .slide file with AES-256-GCM / PIV protection.
     /// Returns `Ok(Some(generated_mnemonic))` if an auto-generated recovery mnemonic was created,
     /// or `Ok(None)` otherwise.
+    #[allow(clippy::too_many_arguments)]
     pub fn export_encrypted_slide_package(
         &self,
         doc: &EditorDocument,
@@ -558,11 +559,9 @@ impl CompilerBridge {
             }
             tmp
         } else {
-            if include_source {
-                if let Some(ref adir) = doc.assets_dir {
-                    let src_path = adir.join("source.typ");
-                    let _ = std::fs::write(&src_path, &doc.source_text);
-                }
+            if include_source && let Some(ref adir) = doc.assets_dir {
+                let src_path = adir.join("source.typ");
+                let _ = std::fs::write(&src_path, &doc.source_text);
             }
             None
         };

@@ -188,7 +188,9 @@ fn test_build_encrypted_standalone_binary_embed() {
     // Initialize presentation
     let _ = slide_cmd(bin).arg("init").current_dir(dir.path()).output();
 
-    let out_bin = dir.path().join("encrypted_presentation_app");
+    let exe_suffix = std::env::consts::EXE_SUFFIX;
+    let out_bin_name = format!("encrypted_presentation_app{exe_suffix}");
+    let out_bin = dir.path().join(&out_bin_name);
     let build_res = slide_cmd(bin)
         .arg("build")
         .arg("slides.typ")
@@ -209,10 +211,21 @@ fn test_build_encrypted_standalone_binary_embed() {
         "Build failed: {:?}",
         String::from_utf8_lossy(&build_res.stderr)
     );
-    assert!(out_bin.exists());
+    let expected_bin = if out_bin.exists() {
+        out_bin.clone()
+    } else if out_bin.with_extension("exe").exists() {
+        out_bin.with_extension("exe")
+    } else {
+        out_bin.clone()
+    };
+    assert!(
+        expected_bin.exists(),
+        "Output binary must exist at {:?}",
+        expected_bin
+    );
 
     // Test running binary with --help
-    let help_res = Command::new(&out_bin)
+    let help_res = Command::new(&expected_bin)
         .arg("--help")
         .output()
         .expect("Run standalone binary --help");

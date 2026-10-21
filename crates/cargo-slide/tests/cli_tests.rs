@@ -117,7 +117,9 @@ fn test_cli_build_standalone_binary() {
         .expect("Execute cargo-slide init");
     assert!(init_res.status.success());
 
-    let out_bin = dir.path().join("standalone_app");
+    let exe_suffix = std::env::consts::EXE_SUFFIX;
+    let out_bin_name = format!("standalone_app{exe_suffix}");
+    let out_bin = dir.path().join(&out_bin_name);
     let build_res = Command::new(bin)
         .arg("build")
         .arg("slides.typ")
@@ -135,12 +137,19 @@ fn test_cli_build_standalone_binary() {
         stdout,
         stderr
     );
+    let expected_bin = if out_bin.exists() {
+        out_bin.clone()
+    } else if out_bin.with_extension("exe").exists() {
+        out_bin.with_extension("exe")
+    } else {
+        out_bin.clone()
+    };
     assert!(
-        out_bin.exists(),
+        expected_bin.exists(),
         "Output binary must exist at {:?}",
-        out_bin
+        expected_bin
     );
-    assert!(out_bin.metadata().unwrap().len() > 1_000_000);
+    assert!(expected_bin.metadata().unwrap().len() > 1_000_000);
 }
 
 #[test]

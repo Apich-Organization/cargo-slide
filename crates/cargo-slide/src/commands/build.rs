@@ -242,11 +242,10 @@ pub fn execute_binary(
     cert_path: Option<&Path>,
     pin: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // The *target* platform decides the binary's extension, not the host `cargo-slide` itself
-    // runs on (`cfg!(windows)` reflects the host, which is always false when cross-compiling
-    // from this Linux sandbox to a Windows target) -- a real bug in the original upstream
-    // implementation, fixed here as part of adding cross-compilation support at all.
-    let targets_windows = target.is_some_and(|t| t.contains("windows"));
+    // The target platform decides the binary's extension: check if an explicit Windows target
+    // was specified, or if we are building natively on a Windows host without an explicit target.
+    let targets_windows =
+        target.is_some_and(|t| t.contains("windows")) || (target.is_none() && cfg!(windows));
     if !file.exists() {
         return Err(format!("File does not exist: {}", file.display()).into());
     }
@@ -277,7 +276,10 @@ pub fn execute_binary(
     } else {
         format!("{stem}-presentation")
     };
-    let target_binary = output.unwrap_or_else(|| PathBuf::from(default_name));
+    let mut target_binary = output.unwrap_or_else(|| PathBuf::from(default_name));
+    if targets_windows && target_binary.extension().is_none() {
+        target_binary.set_extension("exe");
+    }
 
     slide_core::logger::log_event(
         "info",

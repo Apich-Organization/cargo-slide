@@ -823,22 +823,21 @@ impl SlideEditorApp {
     pub fn ensure_engine_slides_match_deck(&mut self) {
         if !self.doc.has_editable_source()
             && let Some(ref deck) = self.doc.deck
+            && self.engine.slides.len() < deck.slides.len()
         {
-            if self.engine.slides.len() < deck.slides.len() {
-                self.engine.slides.clear();
-                for (idx, slide) in deck.slides.iter().enumerate() {
-                    let title = slide.extract_title();
-                    self.engine
-                        .slides
-                        .push(crate::model::ast_engine::WysiwygSlide {
-                            page_number: idx + 1,
-                            title,
-                            blocks: Vec::new(),
-                            range: 0..0,
-                            transition: None,
-                            element_transitions: std::collections::HashMap::new(),
-                        });
-                }
+            self.engine.slides.clear();
+            for (idx, slide) in deck.slides.iter().enumerate() {
+                let title = slide.extract_title();
+                self.engine
+                    .slides
+                    .push(crate::model::ast_engine::WysiwygSlide {
+                        page_number: idx + 1,
+                        title,
+                        blocks: Vec::new(),
+                        range: 0..0,
+                        transition: None,
+                        element_transitions: std::collections::HashMap::new(),
+                    });
             }
         }
     }
@@ -2483,17 +2482,15 @@ impl SlideEditorApp {
                             let leading_spaces = after_font.len() - after_font.trim_start().len();
                             let val_start = font_key_idx + 5 + leading_spaces;
                             let val_slice = &args_slice[val_start..];
-                            let val_end = if val_slice.starts_with('"') {
-                                val_slice[1..]
+                            let val_end = if let Some(stripped) = val_slice.strip_prefix('"') {
+                                stripped
                                     .find('"')
                                     .map(|q| 1 + q + 1)
                                     .unwrap_or(val_slice.len())
-                            } else if val_slice.starts_with('(') {
-                                crate::model::ast_engine::find_balanced_closing_paren(
-                                    &val_slice[1..],
-                                )
-                                .map(|p| 1 + p + 1)
-                                .unwrap_or(val_slice.len())
+                            } else if let Some(stripped) = val_slice.strip_prefix('(') {
+                                crate::model::ast_engine::find_balanced_closing_paren(stripped)
+                                    .map(|p| 1 + p + 1)
+                                    .unwrap_or(val_slice.len())
                             } else {
                                 val_slice.find(',').unwrap_or(val_slice.len())
                             };

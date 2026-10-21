@@ -390,7 +390,7 @@ impl EditorDocument {
                         .ok()
                         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
 
-                let mut is_editable = meta.as_ref().map_or(false, |m| m.is_editable);
+                let mut is_editable = meta.as_ref().is_some_and(|m| m.is_editable);
 
                 let entrypoint_file = meta
                     .as_ref()
@@ -502,7 +502,7 @@ impl EditorDocument {
             let default_anim = deck.default_animation.clone();
 
             let meta = slide_core::package::read_package_metadata(path).ok();
-            let mut is_editable = meta.as_ref().map_or(false, |m| m.is_editable);
+            let mut is_editable = meta.as_ref().is_some_and(|m| m.is_editable);
 
             let entrypoint_file = meta
                 .as_ref()
@@ -1163,10 +1163,10 @@ impl EditorDocument {
         if self.format == DocumentFormat::Typst {
             return true;
         }
-        if let Some(ref meta) = self.package_metadata {
-            if meta.is_editable {
-                return true;
-            }
+        if let Some(ref meta) = self.package_metadata
+            && meta.is_editable
+        {
+            return true;
         }
         !self.source_text.trim().is_empty()
             && !self

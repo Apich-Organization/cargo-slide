@@ -456,3 +456,74 @@ pub fn execute(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cross_target_triples_and_extensions() {
+        for target in resolve_targets("all") {
+            let is_win = target.triple.contains("windows");
+            let ext = if is_win { ".exe" } else { "" };
+            if is_win {
+                assert_eq!(ext, ".exe");
+                assert!(target.label.starts_with("windows-"));
+            } else {
+                assert_eq!(ext, "");
+                assert!(target.label.starts_with("linux-"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_normalize_target_triple_aliases() {
+        assert_eq!(normalize_target_triple("win64"), "x86_64-pc-windows-gnu");
+        assert_eq!(
+            normalize_target_triple("windows-x86_64"),
+            "x86_64-pc-windows-gnu"
+        );
+        assert_eq!(
+            normalize_target_triple("windows-aarch64"),
+            "aarch64-pc-windows-gnullvm"
+        );
+        assert_eq!(
+            normalize_target_triple("win-arm64"),
+            "aarch64-pc-windows-gnullvm"
+        );
+        assert_eq!(
+            normalize_target_triple("linux-x86_64"),
+            "x86_64-unknown-linux-gnu"
+        );
+        assert_eq!(
+            normalize_target_triple("linux64"),
+            "x86_64-unknown-linux-gnu"
+        );
+        assert_eq!(
+            normalize_target_triple("linux-aarch64"),
+            "aarch64-unknown-linux-gnu"
+        );
+        assert_eq!(
+            normalize_target_triple("linux-arm64"),
+            "aarch64-unknown-linux-gnu"
+        );
+    }
+
+    #[test]
+    fn test_resolve_targets_windows_and_linux() {
+        let win_targets = resolve_targets("windows-x86_64");
+        assert_eq!(win_targets.len(), 1);
+        assert_eq!(win_targets[0].triple, "x86_64-pc-windows-gnu");
+        assert!(win_targets[0].triple.contains("windows"));
+
+        let linux_targets = resolve_targets("linux-x86_64");
+        assert_eq!(linux_targets.len(), 1);
+        assert_eq!(linux_targets[0].triple, "x86_64-unknown-linux-gnu");
+        assert!(!linux_targets[0].triple.contains("windows"));
+
+        let all = resolve_targets("all");
+        assert_eq!(all.len(), 4);
+        assert!(all.iter().any(|t| t.triple.contains("windows")));
+        assert!(all.iter().any(|t| t.triple.contains("linux")));
+    }
+}
