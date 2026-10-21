@@ -245,18 +245,21 @@ pub fn render_rich_text<'a>(
     }
 }
 
+type TextRun<'a> = (&'a str, Option<&'a str>, bool, bool, bool, bool);
+type DelimiterState<'a> = (usize, char, usize, usize, Option<&'a str>, usize);
+
 fn parse_typst_segments<'a>(
     input: &'a str,
     font_family: Option<&'a str>,
     is_bold: bool,
     is_italic: bool,
-    out: &mut Vec<(&'a str, Option<&'a str>, bool, bool, bool, bool)>,
+    out: &mut Vec<TextRun<'a>>,
 ) {
     if input.is_empty() {
         return;
     }
 
-    let mut earliest_delim: Option<(usize, char, usize, usize, Option<&'a str>, usize)> = None;
+    let mut earliest_delim: Option<DelimiterState<'a>> = None;
 
     // Check inline `...` (single backtick, not part of ``` code fences)
     let bytes = input.as_bytes();
