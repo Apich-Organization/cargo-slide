@@ -2860,3 +2860,137 @@ pub fn view_generated_mnemonic_modal<'a>(
         .style(move |_| theme::modal_backdrop_style(theme))
         .into()
 }
+
+/// Render the Unsaved Changes Confirmation modal dialog when a window is closed
+#[must_use]
+pub fn view_unsaved_changes_modal<'a>(
+    theme: AppTheme,
+    doc_title: &'a str,
+    target_window_id: Option<iced::window::Id>,
+) -> Element<'a, Message> {
+    let warning_badge = container(
+        row![
+            text("⚠").size(14).color(theme.warning()),
+            text("Unsaved Changes / 未保存的修改")
+                .size(13)
+                .color(theme.warning())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..iced::Font::DEFAULT
+                }),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center),
+    )
+    .padding([4, 10])
+    .style(move |_| {
+        container::Style {
+            background: Some(Background::Color(theme.warning().scale_alpha(0.12))),
+            border: iced::Border {
+                color: theme.warning().scale_alpha(0.4),
+                width: 1.0,
+                radius: iced::border::Radius::from(6.0),
+            },
+            ..container::Style::default()
+        }
+    });
+
+    let title = text(format!("Save changes to \"{doc_title}\" before closing?"))
+        .size(16)
+        .color(theme.text_primary())
+        .font(iced::Font {
+            weight: iced::font::Weight::Bold,
+            ..iced::Font::DEFAULT
+        });
+
+    let description = text(format!(
+        "当前文稿「{doc_title}」有未保存的改动。如果强行关闭此窗口，所有未保存的修改都将丢失。\n\
+         The document \"{doc_title}\" has unsaved changes. Closing without saving will discard your edits."
+    ))
+    .size(12)
+    .color(theme.text_secondary());
+
+    let cancel_btn = button(text("Cancel / 取消").size(12).color(theme.text_secondary()))
+        .padding([8, 14])
+        .style(move |_t, _s| {
+            button::Style {
+                background: Some(Background::Color(theme.bg_subtle())),
+                border: iced::Border {
+                    color: theme.border_color(),
+                    width: 1.0,
+                    radius: iced::border::Radius::from(6.0),
+                },
+                ..button::Style::default()
+            }
+        })
+        .on_press(Message::CancelCloseWindow);
+
+    let force_close_btn = button(
+        text("Force Close / 强行关闭")
+            .size(12)
+            .color(iced::Color::WHITE),
+    )
+    .padding([8, 14])
+    .style(move |_t, _s| {
+        button::Style {
+            background: Some(Background::Color(theme.danger())),
+            border: iced::Border {
+                radius: iced::border::Radius::from(6.0),
+                ..iced::Border::default()
+            },
+            ..button::Style::default()
+        }
+    })
+    .on_press(Message::ForceCloseWindow(target_window_id));
+
+    let save_close_btn = button(
+        text("Save & Close / 保存并关闭")
+            .size(12)
+            .color(iced::Color::WHITE),
+    )
+    .padding([8, 16])
+    .style(move |_t, _s| {
+        button::Style {
+            background: Some(Background::Color(theme.accent())),
+            border: iced::Border {
+                radius: iced::border::Radius::from(6.0),
+                ..iced::Border::default()
+            },
+            ..button::Style::default()
+        }
+    })
+    .on_press(Message::SaveAndCloseWindow(target_window_id));
+
+    let actions = row![
+        cancel_btn,
+        Space::new().width(Length::Fill),
+        force_close_btn,
+        Space::new().width(Length::Fixed(8.0)),
+        save_close_btn,
+    ]
+    .align_y(Alignment::Center);
+
+    let card = container(
+        column![
+            warning_badge,
+            Space::new().height(8),
+            title,
+            Space::new().height(6),
+            description,
+            Space::new().height(18),
+            actions,
+        ]
+        .spacing(4),
+    )
+    .width(Length::Fixed(520.0))
+    .padding(22)
+    .style(move |_| theme::modal_dialog_style(theme));
+
+    container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .style(move |_| theme::modal_backdrop_style(theme))
+        .into()
+}

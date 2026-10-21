@@ -192,6 +192,18 @@ pub fn view_toolbar<'a>(
     };
     let tb_spacing = if is_compact { 3 } else { 6 };
 
+    let new_window_btn = button(
+        text(if is_compact {
+            "+ Win"
+        } else {
+            "+ Window"
+        })
+        .size(tb_size),
+    )
+    .style(move |_theme, _status| theme::subtle_button_style(theme, false))
+    .padding(tb_pad)
+    .on_press(Message::NewWindow(None));
+
     let new_btn = button(text("New").size(tb_size))
         .style(move |_theme, _status| theme::subtle_button_style(theme, false))
         .padding(tb_pad)
@@ -348,6 +360,10 @@ pub fn view_toolbar<'a>(
     }
 
     if !is_tiny {
+        right_bar = right_bar.push(make_tooltip(
+            new_window_btn.into(),
+            "New Window (Ctrl+Shift+N)",
+        ));
         right_bar = right_bar.push(make_tooltip(new_btn.into(), "New Document (Ctrl+N)"));
         right_bar = right_bar.push(make_tooltip(open_btn.into(), "Open Document (Ctrl+O)"));
     }

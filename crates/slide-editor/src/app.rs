@@ -14,6 +14,7 @@ use crate::ui::modals::view_generated_mnemonic_modal;
 use crate::ui::modals::view_open_modal;
 use crate::ui::modals::view_presentation_health_modal;
 use crate::ui::modals::view_template_library_modal;
+use crate::ui::modals::view_unsaved_changes_modal;
 use crate::ui::sidebar::view_sidebar;
 use crate::ui::statusbar::view_statusbar;
 use crate::ui::theme::AppTheme;
@@ -171,6 +172,9 @@ pub enum ActiveModal {
     },
     Cheatsheet,
     GeneratedMnemonic(String),
+    UnsavedChangesConfirm {
+        target_window_id: Option<iced::window::Id>,
+    },
 }
 
 /// State for search and replace operations (supporting regular expressions)
@@ -254,6 +258,7 @@ pub struct SlideEditorApp {
     pub recent_files: Vec<String>,
     pub window_size: iced::Size,
     pub last_cursor_pos: Option<iced::Point>,
+    pub window_id: Option<iced::window::Id>,
 }
 
 /// Undo / Redo history snapshot
@@ -662,6 +667,12 @@ pub enum Message {
     DiscardRecoveryDraft,
     // Cheatsheet modal
     OpenCheatsheetModal,
+    // Multi-window & close confirmation management
+    NewWindow(Option<PathBuf>),
+    RequestCloseWindow,
+    ForceCloseWindow(Option<iced::window::Id>),
+    SaveAndCloseWindow(Option<iced::window::Id>),
+    CancelCloseWindow,
 }
 
 impl SlideEditorApp {
@@ -783,6 +794,7 @@ impl SlideEditorApp {
             recent_files: load_recent_editor_files(),
             window_size: iced::Size::new(1280.0, 720.0),
             last_cursor_pos: None,
+            window_id: None,
         };
         if let Some(ref p) = initial_file {
             save_recent_editor_file(p);
@@ -795,6 +807,16 @@ impl SlideEditorApp {
         app.ensure_engine_slides_match_deck();
         app.update_slide_cache();
         app
+    }
+
+    /// Associate this editor instance with a specific window ID
+    #[must_use]
+    pub fn with_window_id(
+        mut self,
+        window_id: iced::window::Id,
+    ) -> Self {
+        self.window_id = Some(window_id);
+        self
     }
 
     /// Ensure AST engine slide list has an entry for each slide in the deck when viewing precompiled packages without source
@@ -4526,6 +4548,38 @@ impl SlideEditorApp {
                 let _ = self.doc.clear_recovery_draft();
                 self.active_modal = None;
             },
+            | Message::NewWindow(_) => {
+                // Handled at MultiWindow coordinator level; no-op in standalone window
+            },
+            | Message::RequestCloseWindow => {
+                self.commit_all_editor_states();
+                if self.doc.is_dirty {
+                    self.active_modal = Some(ActiveModal::UnsavedChangesConfirm {
+                        target_window_id: self.window_id,
+                    });
+                } else if let Some(wid) = self.window_id {
+                    task = iced::window::close(wid);
+                }
+            },
+            | Message::ForceCloseWindow(target_id) => {
+                self.active_modal = None;
+                if let Some(wid) = target_id.or(self.window_id) {
+                    task = iced::window::close(wid);
+                }
+            },
+            | Message::SaveAndCloseWindow(target_id) => {
+                self.active_modal = None;
+                self.commit_all_editor_states();
+                let save_task = self.update(Message::SaveDocument);
+                if let Some(wid) = target_id.or(self.window_id) {
+                    task = Task::batch(vec![save_task, iced::window::close(wid)]);
+                } else {
+                    task = save_task;
+                }
+            },
+            | Message::CancelCloseWindow => {
+                self.active_modal = None;
+            },
         }
 
         task
@@ -4931,6 +4985,9 @@ impl SlideEditorApp {
                     crate::ui::modals::view_recovery_draft_modal(self.theme, draft_content)
                 },
                 | ActiveModal::Cheatsheet => crate::ui::modals::view_cheatsheet_modal(self.theme),
+                | ActiveModal::UnsavedChangesConfirm { target_window_id } => {
+                    view_unsaved_changes_modal(self.theme, &self.doc.title, *target_window_id)
+                },
             };
 
             // Overlay modal on top of base content
@@ -4942,7 +4999,7 @@ impl SlideEditorApp {
     }
 }
 
-fn handle_global_drag_event(
+pub fn handle_global_drag_event(
     event: iced::Event,
     _status: iced::event::Status,
     _window: iced::window::Id,
@@ -5063,7 +5120,18 @@ fn handle_global_drag_event(
             modifiers,
             ..
         }) if (c == "n" || c == "N") && (modifiers.control() || modifiers.command()) => {
-            Some(Message::NewDocument)
+            if modifiers.shift() {
+                Some(Message::NewWindow(None))
+            } else {
+                Some(Message::NewDocument)
+            }
+        },
+        | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Character(ref c),
+            modifiers,
+            ..
+        }) if (c == "w" || c == "W") && (modifiers.control() || modifiers.command()) => {
+            Some(Message::RequestCloseWindow)
         },
         | iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
             key: iced::keyboard::Key::Character(ref c),

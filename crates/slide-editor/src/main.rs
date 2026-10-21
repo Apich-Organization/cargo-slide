@@ -1,8 +1,7 @@
 //! Binary launcher for Slide Editor (`slide-editor`).
 
 use clap::Parser;
-use slide_editor::app::SlideEditorApp;
-use slide_editor::ui::theme::AppTheme;
+use slide_editor::multi_window::MultiWindowApp;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -26,29 +25,13 @@ fn main() -> iced::Result {
     let initial_file = args.file;
     let dark_mode = args.dark;
 
-    iced::application(
-        move || SlideEditorApp::new(initial_file.clone(), dark_mode),
-        SlideEditorApp::update,
-        SlideEditorApp::view,
+    iced::daemon(
+        move || MultiWindowApp::boot(initial_file.clone(), dark_mode),
+        MultiWindowApp::update,
+        MultiWindowApp::view,
     )
-    .subscription(SlideEditorApp::subscription)
-    .title(|app: &SlideEditorApp| {
-        let dirty = if app.doc.is_dirty { "* " } else { "" };
-        format!(
-            "{}{} - Slide Editor ({})",
-            dirty,
-            app.doc.title,
-            app.doc.format.label()
-        )
-    })
-    .theme(|app: &SlideEditorApp| {
-        match app.theme {
-            | AppTheme::Light => iced::Theme::Light,
-            | AppTheme::Dark => iced::Theme::Dark,
-        }
-    })
-    .window_size(iced::Size::new(1280.0, 820.0))
-    .centered()
-    .resizable(true)
+    .subscription(MultiWindowApp::subscription)
+    .title(MultiWindowApp::title)
+    .theme(MultiWindowApp::theme)
     .run()
 }

@@ -39,6 +39,7 @@
   - **Outline Sidebar & Navigation**: Thumbnail preview cards and outline hierarchy for rapid slide navigation.
   - **Speaker Notes & Pacing Engine**: Clear visual distinction between speaker notes (`SPEAKER NOTE`) and block comments (`[COMMENT]`), word count tracking (Latin words + CJK characters), target presentation pacing, and slide density analysis.
   - **Presentation Health Audit**: Diagnostic inspection checking missing asset paths, excessive text density, and compiler errors.
+  - **Multi-Window Support & Unsaved Changes Guard**: Open multiple concurrent editor windows (`Ctrl+Shift+N` or "+ Window" toolbar button) with isolated document states; closing any window (`Ctrl+W` or OS close button) with unsaved edits triggers a confirmation alert asking whether to force close, save and close, or cancel.
 - **Universal Viewer (`slide-viewer`)**:
   - Resizable modern GUI launcher with true fullscreen support (`F` / `F11`).
   - Automatic detection of local presentations and embedded 22-slide reference showcase.

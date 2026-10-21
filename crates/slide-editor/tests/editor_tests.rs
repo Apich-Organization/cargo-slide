@@ -5648,3 +5648,239 @@ fn test_compiler_auto_resolves_theme_typ_in_isolated_temp_directory() {
         "theme.typ should be auto-created in root_dir"
     );
 }
+
+#[test]
+fn test_multi_window_lifecycle_and_state_isolation() {
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    let (mut app, _task) = MultiWindowApp::boot(None, false);
+    assert_eq!(app.window_count(), 1);
+
+    let initial_win_id = app.window_ids()[0];
+    let initial_title = app.title(initial_win_id);
+    assert!(!initial_title.starts_with("* "));
+    assert!(initial_title.contains("Slide Editor"));
+
+    // Open a second window
+    let _ = app.update(MultiWindowMessage::OpenNewWindow(None));
+    assert_eq!(app.window_count(), 2);
+
+    let win_ids = app.window_ids();
+    let win2_id = *win_ids
+        .iter()
+        .find(|id| **id != initial_win_id)
+        .expect("second window exists");
+
+    // Modify document in window 2 only
+    {
+        let win2 = app.get_window_mut(&win2_id).expect("win2 exists");
+        assert!(!win2.doc.is_dirty);
+        let _ = win2.update(Message::SourceEditorAction(
+            iced::widget::text_editor::Action::Edit(iced::widget::text_editor::Edit::Paste(
+                std::sync::Arc::new("Extra Content".to_string()),
+            )),
+        ));
+        assert!(win2.doc.is_dirty);
+    }
+
+    // Verify window 1 remains clean (state isolation)
+    let win1 = app.get_window(&initial_win_id).expect("win1 exists");
+    assert!(!win1.doc.is_dirty);
+
+    // Verify titles reflect dirty status
+    assert!(!app.title(initial_win_id).starts_with("* "));
+    assert!(app.title(win2_id).starts_with("* "));
+}
+
+#[test]
+fn test_multi_window_close_clean_window() {
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    let (mut app, _) = MultiWindowApp::boot(None, false);
+    let _ = app.update(MultiWindowMessage::OpenNewWindow(None));
+    assert_eq!(app.window_count(), 2);
+
+    let win_ids = app.window_ids();
+    let win1_id = win_ids[0];
+
+    // Close clean window 1 -> closes immediately without confirmation
+    let _ = app.update(MultiWindowMessage::CloseRequested(win1_id));
+    assert_eq!(app.window_count(), 1);
+    assert!(app.get_window(&win1_id).is_none());
+}
+
+#[test]
+fn test_multi_window_close_dirty_window_prompts_confirmation() {
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    let (mut app, _) = MultiWindowApp::boot(None, false);
+    let win_id = app.window_ids()[0];
+
+    // Mark window dirty
+    {
+        let win = app.get_window_mut(&win_id).expect("win exists");
+        win.doc.is_dirty = true;
+    }
+
+    // Request close on dirty window
+    let _ = app.update(MultiWindowMessage::CloseRequested(win_id));
+
+    // Window must NOT be closed!
+    assert_eq!(app.window_count(), 1);
+
+    // Modal dialog must be UnsavedChangesConfirm
+    let win = app.get_window(&win_id).expect("win exists");
+    assert_eq!(
+        win.active_modal,
+        Some(ActiveModal::UnsavedChangesConfirm {
+            target_window_id: Some(win_id)
+        })
+    );
+
+    // View rendering should succeed and show modal
+    let _ = app.view(win_id);
+}
+
+#[test]
+fn test_unsaved_changes_cancel_close() {
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    let (mut app, _) = MultiWindowApp::boot(None, false);
+    let win_id = app.window_ids()[0];
+
+    {
+        let win = app.get_window_mut(&win_id).expect("win exists");
+        win.doc.is_dirty = true;
+    }
+
+    // Trigger close request to open confirmation modal
+    let _ = app.update(MultiWindowMessage::CloseRequested(win_id));
+    assert!(matches!(
+        app.get_window(&win_id)
+            .and_then(|w| w.active_modal.as_ref()),
+        Some(ActiveModal::UnsavedChangesConfirm { .. })
+    ));
+
+    // User chooses Cancel
+    let _ = app.update(MultiWindowMessage::WindowMessage(
+        win_id,
+        Message::CancelCloseWindow,
+    ));
+
+    // Modal is dismissed, window is still open
+    assert_eq!(app.window_count(), 1);
+    let win = app.get_window(&win_id).expect("win exists");
+    assert!(win.active_modal.is_none());
+    assert!(win.doc.is_dirty);
+}
+
+#[test]
+fn test_unsaved_changes_force_close_discards_and_closes() {
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    let (mut app, _) = MultiWindowApp::boot(None, false);
+    let _ = app.update(MultiWindowMessage::OpenNewWindow(None));
+    assert_eq!(app.window_count(), 2);
+
+    let win_ids = app.window_ids();
+    let win1_id = win_ids[0];
+
+    // Mark win1 dirty and request close
+    {
+        let win = app.get_window_mut(&win1_id).expect("win exists");
+        win.doc.is_dirty = true;
+    }
+    let _ = app.update(MultiWindowMessage::CloseRequested(win1_id));
+
+    // Send ForceCloseWindow
+    let _ = app.update(MultiWindowMessage::WindowMessage(
+        win1_id,
+        Message::ForceCloseWindow(Some(win1_id)),
+    ));
+
+    // Window must be closed despite being dirty
+    assert_eq!(app.window_count(), 1);
+    assert!(app.get_window(&win1_id).is_none());
+}
+
+#[test]
+fn test_unsaved_changes_save_and_close() {
+    use slide_editor::multi_window::MultiWindowApp;
+    use slide_editor::multi_window::MultiWindowMessage;
+
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let test_file = temp_dir.path().join("pres.typ");
+    std::fs::write(&test_file, "= Original Title\n\n- Point A\n").expect("write test file");
+
+    let (mut app, _) = MultiWindowApp::boot(Some(test_file.clone()), false);
+    let _ = app.update(MultiWindowMessage::OpenNewWindow(None));
+    assert_eq!(app.window_count(), 2);
+
+    let win_ids = app.window_ids();
+    let win_with_file = *win_ids
+        .iter()
+        .find(|id| app.get_window(id).unwrap().doc.file_path.is_some())
+        .expect("win with file exists");
+
+    // Modify file in editor
+    {
+        let win = app.get_window_mut(&win_with_file).expect("win exists");
+        win.doc.source_text.push_str("\n- New Saved Point\n");
+        win.doc.is_dirty = true;
+    }
+
+    // Trigger SaveAndCloseWindow
+    let _ = app.update(MultiWindowMessage::WindowMessage(
+        win_with_file,
+        Message::SaveAndCloseWindow(Some(win_with_file)),
+    ));
+
+    // Window must be closed
+    assert_eq!(app.window_count(), 1);
+    assert!(app.get_window(&win_with_file).is_none());
+
+    // File on disk must have the saved content
+    let on_disk = std::fs::read_to_string(&test_file).expect("read file");
+    assert!(
+        on_disk.contains("New Saved Point"),
+        "Disk content should contain saved edits: {on_disk}"
+    );
+}
+
+#[test]
+fn test_multi_window_keyboard_shortcuts() {
+    use slide_editor::app::handle_global_drag_event;
+
+    let win_id = iced::window::Id::unique();
+
+    // 1. Ctrl+Shift+N -> NewWindow
+    let ctrl_shift_n = iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+        key: iced::keyboard::Key::Character("n".into()),
+        modified_key: iced::keyboard::Key::Character("N".into()),
+        physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyN),
+        location: iced::keyboard::Location::Standard,
+        modifiers: iced::keyboard::Modifiers::CTRL | iced::keyboard::Modifiers::SHIFT,
+        text: None,
+        repeat: false,
+    });
+    let msg = handle_global_drag_event(ctrl_shift_n, iced::event::Status::Ignored, win_id);
+    assert!(matches!(msg, Some(Message::NewWindow(None))));
+
+    // 2. Ctrl+W -> RequestCloseWindow
+    let ctrl_w = iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+        key: iced::keyboard::Key::Character("w".into()),
+        modified_key: iced::keyboard::Key::Character("w".into()),
+        physical_key: iced::keyboard::key::Physical::Code(iced::keyboard::key::Code::KeyW),
+        location: iced::keyboard::Location::Standard,
+        modifiers: iced::keyboard::Modifiers::CTRL,
+        text: None,
+        repeat: false,
+    });
+    let msg = handle_global_drag_event(ctrl_w, iced::event::Status::Ignored, win_id);
+    assert!(matches!(msg, Some(Message::RequestCloseWindow)));
+}

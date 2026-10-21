@@ -26,4 +26,5 @@ pub mod app;
 pub mod compiler_bridge;
 pub mod document;
 pub mod model;
+pub mod multi_window;
 pub mod ui;
