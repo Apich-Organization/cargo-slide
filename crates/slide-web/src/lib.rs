@@ -1912,7 +1912,6 @@ fn ChartInspectorModal(
         indices
     });
 
-
     let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
@@ -2072,6 +2071,8 @@ fn ChartInspectorModal(
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
+                                    aria-label=format!("Toggle series {}", name)
+                                    aria-pressed=if is_visible { "true" } else { "false" }
                                     on:click=move |_| {
                                         let n = name.clone();
                                         visible_series.update(|list| {
