@@ -32,6 +32,14 @@
 
 - **Typst-Centric Authoring**: Slide decks are written in pure Typst markup (`slides.typ`). Rust is only required when implementing custom transition algorithms or shader-like effects via traits.
 - **Minimal Project Scaffolding**: `cargo slide init` initializes a clean 5-file project structure without unnecessary boilerplate.
+- **Typora-Style WYSIWYG Desktop Editor (`slide-editor`)**:
+  - Live visual preview canvas rendering vector slides directly in the document flow.
+  - **In-Place Slide Editing**: Click directly inside the visual presentation flow to edit Typst markup inline with debounced live recompilation.
+  - **Categorized Insertion Bar**: 1-click addition of content blocks (Paragraph, Headings, Lists, Code, Math Formulas), media & data (Table, SQL Chart, Video, Audio, Links), and presentation cues (Speaker Notes, Comments, Callouts, Grids).
+  - **Outline Sidebar & Navigation**: Thumbnail preview cards and outline hierarchy for rapid slide navigation.
+  - **Speaker Notes & Pacing Engine**: Clear visual distinction between speaker notes (`SPEAKER NOTE`) and block comments (`[COMMENT]`), word count tracking (Latin words + CJK characters), target presentation pacing, and slide density analysis.
+  - **Presentation Health Audit**: Diagnostic inspection checking missing asset paths, excessive text density, and compiler errors.
+  - **Multi-Window Support & Unsaved Changes Guard**: Open multiple concurrent editor windows (`Ctrl+Shift+N` or "+ Window" toolbar button) with isolated document states; closing any window (`Ctrl+W` or OS close button) with unsaved edits triggers a confirmation alert asking whether to force close, save and close, or cancel.
 - **Universal Viewer (`slide-viewer`)**:
   - Resizable modern GUI launcher with true fullscreen support (`F` / `F11`).
   - Automatic detection of local presentations and embedded 22-slide reference showcase.
@@ -48,8 +56,17 @@
   - Execute in-memory SQL queries (`SELECT ... WHERE ...`) or pipeline DSL transformations.
   - In-presentation HUD Data Inspector: click any chart or table to switch visualization types (Bar, Line, Area, Scatter), apply transform presets (`TOP 5`, `SORT ▼`, `SORT ▲`, `CUM`, `% SHARE`, `MA3`), filter by condition (`>50`), sort columns, and export filtered data to CSV.
 - **Slide Overflow Protection**: Compares compiled vector pages against declared `#slide(...)` counts. If content exceeds vertical canvas bounds, compilation reports the specific slide title and source line number.
-- **Vectorized Typography & Multilingual Support**: Typst resolves text (Latin, CJK, math formulas, and Unicode emojis) into vector Bézier `<path>` outlines, ensuring identical rendering across platforms without requiring target fonts.
+- **Universal Rendering & Vector Typography**:
+  - Native GUI components (`slide-editor`, `slide-viewer`) and CLI logs rely on universal Unicode/ASCII indicators (`[OK]`, `[WARN]`, `[ERR]`, `[INFO]`, `+ Note`, etc.) to prevent missing-glyph boxes across minimal Linux environments, Wayland/X11 desktops, macOS, and Windows without requiring color emoji fonts.
+  - Typst resolves slide content (Latin, CJK, math formulas, and symbols) into vector Bézier `<path>` outlines, ensuring consistent cross-platform presentation display.
 - **13 Built-in Transitions & In-Slide Fragments**: `fade`, `cut`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `zoom`, `wipe-left`, `wipe-right`, `iris`, `glitch`, `cube`, and `particles`. Control sequential item reveals with `#step(order, effect: "...")`.
+- **Presentation Encryption & Integrity Protection**:
+  - **Hardware PIV Token Mode** (YubiKey / Smartcard): Binds presentation decryption to an on-card private key (`9d` Key Management slot) and verifies SHA3-512 integrity digests with an on-card signature (`9c` Digital Signature slot). Requires physical token presence and PIN authentication.
+  - **Software Dual-Key Keystore Mode** (Passphrase / BIP-39 Recovery Mnemonic): Provides hardware-independent encryption by packaging asymmetric P-256 recipient and signing keys within an encrypted keystore protected by AES-256-GCM. Session keys are derived via PBKDF2-HMAC-SHA512 (600,000 iterations) and HKDF-SHA256 from a passphrase (with complexity validation) or a configurable 12/24-word BIP-39 recovery mnemonic (`--mnemonic-words 12|24`).
+  - **In-Memory Zero-Disk Unpacking & Process Hardening**: Presentations are decrypted and decompressed strictly in RAM (`MemoryAssetStore`) and never written to physical disk. Decrypted buffers are locked in RAM via `mlock` to reduce swap file leakage, with automatic zeroization (`zeroize`) on termination. Process memory dumping is restricted via `RLIMIT_CORE = 0`, Linux dumpability suppression (`PR_SET_DUMPABLE = 0`), and macOS debugger attach denial (`PT_DENY_ATTACH`).
+  - **Masked Input & Authentication Retry Loops**: Secret inputs (PIN, passphrase, mnemonic) are masked in terminal CLI prompts and native GUI dialogs. Verification failures prompt the user to re-enter (up to 3 attempts with remaining feedback) instead of aborting immediately. Constant-time comparisons protect against padding side-channel timing leaks.
+  - **Editor GUI Encryption Integration (`slide-editor`)**: Open, edit, and save encrypted `.slide` presentations directly in the native editor GUI with graphical credential prompts. The Export modal supports 1-click encrypted packaging with passphrase, 12/24-word BIP-39 mnemonic, or YubiKey PIV.
+  - **Web Protected Deployment & Session Tokens**: In WebAssembly mode (`cargo slide build/serve/export --format wasm --encrypt`), presentation decks are compiled into an encrypted envelope. Visitors authenticate in-browser with their passphrase or mnemonic, which decrypts the presentation in pure Rust WebAssembly and caches a scoped session token in browser `sessionStorage` with configurable TTL (`--token-ttl <seconds>`, default 24h), preventing plaintext decks from sitting unprotected on static hosting.
 
 ---
 
@@ -99,11 +116,17 @@ my-talk/
 Edit `slides.typ` with your favorite text editor, then run:
 
 ```bash
+# Launch Typora-style WYSIWYG desktop editor with live preview
+cargo slide edit
+
 # Launch native presentation player with 60 FPS rendering
 cargo slide run
 
 # Or launch development mode with live hot-reloading
 cargo slide dev
+
+# Run comprehensive presentation health audit (density, assets, pacing)
+cargo slide check
 ```
 
 ### Step 4: Build, Pack, or Serve
@@ -124,6 +147,36 @@ cargo slide serve --open
 # 5. Export to multi-page PDF or individual SVGs
 cargo slide export --format pdf -o presentation.pdf
 cargo slide export --format svg -o exported-svgs/
+
+# 6. Package with encryption & integrity protection
+# Hardware PIV token mode (YubiKey / Smartcard):
+cargo slide pack slides.typ --encrypt
+# Software passphrase mode (complexity enforced: >=10 chars, 3+ classes):
+cargo slide pack slides.typ --encrypt --auth passphrase
+# Software BIP-39 recovery mnemonic mode (12 or 24 words):
+cargo slide pack slides.typ --encrypt --auth mnemonic --mnemonic-words 12
+# Standalone encrypted executable:
+cargo slide build slides.typ --format binary --encrypt --auth passphrase
+# Protected Web deployment with TTL session tokens (client-side Wasm decryption):
+cargo slide serve --encrypt --auth passphrase --token-ttl 86400
+cargo slide export --format wasm --encrypt --auth mnemonic -o dist-web/
+
+# 7. Cross-Platform Compilation (Natively built into cargo-slide, no scripts needed)
+# Cross-compile for all 4 desktop targets (Linux x86_64, Linux ARM64, Windows x86_64, Windows ARM64):
+cargo slide cross --target all
+
+# Build specifically for Windows x86_64 (automatically uses lightweight Zig toolchain):
+cargo slide cross --target windows-x86_64
+
+# Build specifically for Linux ARM64:
+cargo slide cross --target linux-aarch64
+
+# Cross-compile standalone presentation runners (artifacts placed into ./dist/):
+cargo slide cross slides.typ --target all
+
+# Aliases and compatibility:
+cargo slide dist --target all
+cargo slide build slides.typ --all-targets
 ```
 
 ---
@@ -216,10 +269,11 @@ cargo-slide/
 ├── crates/
 │   ├── slide-core/                 # Typst compiler bridge, SVG parser, charts/SQL, package (LZMA2)
 │   ├── slide-player/               # Native player: tiny-skia blitter, windowing, audio mixer, presenter tools, HUD
+│   ├── slide-editor/               # Typora-style WYSIWYG live-preview desktop editor for Typst decks and documents
 │   ├── slide-viewer/               # Standalone universal presentation player binary with GUI launcher for .slide files
 │   ├── slide-web/                  # Pure Rust Leptos 0.7 CSR Web presentation player (strictly zero inline JS)
 │   ├── slide-theme/                # Built-in themes, default templates, and Typst macros (#slide, #step, #chart)
-│   └── cargo-slide/                # CLI tool implementing init, new, run, dev, build, pack, serve, export
+│   └── cargo-slide/                # CLI tool implementing init, new, run, dev, edit, check, build, pack, serve, export
 └── examples/
     ├── geek-presentation/          # 22-slide reference showcase demonstrating all engine capabilities
     ├── dist-web/                   # Exported Leptos CSR static web bundle

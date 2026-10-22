@@ -32,6 +32,14 @@
 
 - **纯 Typst 语言编写**：文稿完全由 Typst 标记语言（`slides.typ`）书写，语法直观。仅在需要编写自定义底层转场算法或光栅着色器时才需要引入 Rust。
 - **轻量工作区脚手架**：`cargo slide init` 生成恰好 5 个必要文件，不产生多余配置文件。
+- **Typora 风格所见即所得桌面编辑器 (`slide-editor`)**：
+  - 实时矢量渲染画布，支持在自然画卷流中连续预览幻灯片。
+  - **行内就地编辑 (In-Place Edit)**：点击幻灯片内容即可就地修改 Typst 标记源码，内置防抖实时重编译更新。
+  - **分类插入栏**：快捷插入基础图文（段落、各级标题、列表、代码块、数学公式）、多媒体与数据（表格、SQL 图表、视频、音频、超链接）、演播标记（演讲备忘笔记、块注释、标注框、网格分栏）。
+  - **大纲与缩略图侧边栏**：提供 16:9 矢量缩略图预览卡片与紧凑层级列表，方便快速翻页定位。
+  - **演讲配速模型与备忘可视化**：明确区分演讲者备忘笔记（`SPEAKER NOTE`）与文档注释（`[COMMENT]`），支持中英双模字数统计（西文字词 + CJK 汉字）、预计用时与单页信息密度监控。
+  - **文稿健康度体检**：自动排查本地素材路径有效性、排版文字密度与编译器潜在告警。
+  - **多窗口支持与防丢失退出防护**：支持打开多窗口独立编辑不同文稿（快捷键 `Ctrl+Shift+N` 或工具栏 `+ Window` 按钮）；任何窗口被关闭时（点击窗口关闭按钮或快捷键 `Ctrl+W`），若存在未保存的修改，自动弹出告警弹窗询问是否强行关闭，并提供「强行关闭」、「保存并关闭」与「取消」选项。
 - **通用演示查看器 (`slide-viewer`)**：
   - 现代化自适应 GUI 启动引导界面，支持按 `F` / `F11` 进入真全屏模式。
   - 自动扫描当前目录中的演示文档，内置 22 页完整示例演讲文稿。
@@ -48,8 +56,17 @@
   - 支持执行内存 SQL（`SELECT ... WHERE ...`）或管道链式 DSL 计算。
   - 放映时点击任何图表或数据表即可唤起 HUD 检查器：动态切换图表形态（柱状图、折线图、面积图、散点图），应用快速分析预设（`TOP 5`、`SORT ▼` 降序、`SORT ▲` 升序、`CUM` 累积、`% SHARE` 占比、`MA3` 均线），数值条件筛选（如 `>50`），并支持将筛选后的明细一键导出为 CSV。
 - **页面内容垂直溢出防护**：编译时比对生成的矢量页面数与实际声明的 `#slide(...)` 数量。一旦内容高度超出纵向限制，编译器将准确定位溢出的幻灯片标题与源代码行号。
-- **完全矢量化与跨平台排版**：Typst 会将所有西文、中日韩汉字（CJK）、数学公式符号与 Emoji 转化为矢量贝塞尔 `<path>` 轮廓。在各操作系统上均具备一致的排版渲染，无需目标机器预装特定字体。
+- **通用渲染稳定性与全矢量排版**：
+  - 原生 GUI 界面（`slide-editor`、`slide-viewer`）与 CLI 终端日志统一采用标准通用 Unicode / ASCII 字符标识（如 `[OK]`、`[WARN]`、`[ERR]`、`[INFO]`、`+ Note` 等），避免在未安装彩色 Emoji 字体的 Linux 环境或极简容器中出现方块乱码（Tofu）；
+  - Typst 排版将文稿内容（西文、中日韩汉字、数学公式与特殊符号）编译解析为高精度贝塞尔 `<path>` 矢量轮廓，保障跨平台渲染一致。
 - **13 种内置转场与页内分步显现**：支持 `fade`、`cut`、`slide-left`、`slide-right`、`slide-up`、`slide-down`、`zoom`、`wipe-left`、`wipe-right`、`iris`、`glitch`、`cube` 与 `particles`。支持 `#step(order, effect: "...")` 页内元素逐步呈现。
+- **文稿加密与完整性保护 (Presentation Encryption)**：
+  - **硬件 PIV 令牌模式 (YubiKey / 智能卡)**：将文稿解密绑定至硬件私钥（`9d` 密钥管理槽位），并通过硬件签名私钥（`9c` 数字签名槽位）对 SHA3-512 完整性摘要进行签名验证。演播需插入物理令牌并验证 PIN 码。
+  - **软件双钥密钥库模式 (密码口令 / BIP-39 助记词)**：面向无物理硬件令牌场景，将非对称 P-256 接收密钥与签名密钥封装于受 AES-256-GCM 保护的密钥库中。基于高强度密码或可选 12/24 词 BIP-39 助记词（`--mnemonic-words 12|24`），经由 PBKDF2-HMAC-SHA512 (600,000 次迭代) 与 HKDF-SHA256 安全派生保护密钥。
+  - **内存解密防落盘与运行时加固**：文稿与多媒体素材在 RAM 中直接解包并由 `MemoryAssetStore` 调度，全程不写入物理磁盘。解密数据段调用 `mlock` 锁定内存以防止写入交换分区，并在销毁时通过 `zeroize` 覆写清零。运行时限制核心转储（`RLIMIT_CORE = 0`），在 Linux 上设置 `PR_SET_DUMPABLE = 0` 阻止内存转储与未授权附加，在 macOS 上启用 `PT_DENY_ATTACH` 阻止调试器附加。
+  - **掩码输入与重试反馈机制**：终端命令行与 GUI 弹窗输入密码、PIN 及助记词时均进行掩码显示。密码或 PIN 验证失败时提供最多 3 次重试机会并实时提示剩余尝试次数，避免误输入直接中断。RSA/ECDSA 比对采用严格恒定时间比对杜绝时序泄漏。
+  - **可视化编辑器集成 (`slide-editor`)**：原生编辑器完整支持加密 `.slide` 幻灯片的读取、编辑与保存，打开加密文稿时自动唤起图形凭据验证弹窗。导出对话框支持直接打包为加密文稿（口令、12/24 词助记词或 YubiKey PIV）。
+  - **Web 模式受保护部署与会话令牌**：在 WebAssembly 导出与托管时（`cargo slide build/serve/export --format wasm --encrypt`），文稿编译为加密信封，访问者在浏览器内输入口令或助记词后在纯 Rust WASM 客户端完成解密，并生成带有可配置存活时长（`--token-ttl <秒>`，默认 24 小时）的会话令牌保存在 `sessionStorage` 中，避免明文文稿泄露在静态服务器或 CDN 上。
 
 ---
 
@@ -99,11 +116,17 @@ my-talk/
 使用任何文本编辑器打开 `slides.typ`，随后运行：
 
 ```bash
+# 启动 Typora 风格所见即所得桌面编辑器实时预览与就地编辑
+cargo slide edit
+
 # 启动原生 60 FPS 播放器放映
 cargo slide run
 
 # 或启动带文件监控的实时热重载开发模式
 cargo slide dev
+
+# 全面体检文稿健康度（元素密度、素材路径有效性、演讲配速）
+cargo slide check
 ```
 
 ### 第 4 步：发布、打包与导出
@@ -124,6 +147,36 @@ cargo slide serve --open
 # 5. 导出为多页 PDF 讲义或独立 SVG 矢量图
 cargo slide export --format pdf -o presentation.pdf
 cargo slide export --format svg -o exported-svgs/
+
+# 6. 打包与加密演示文稿
+# 硬件 PIV 模式 (需要已连接的 YubiKey / 智能卡):
+cargo slide pack slides.typ --encrypt
+# 软件密码口令模式 (强制密码强度检查：至少 10 位且包含 3 类字符):
+cargo slide pack slides.typ --encrypt --auth passphrase
+# 软件 BIP-39 助记词模式 (支持指定 12 或 24 词):
+cargo slide pack slides.typ --encrypt --auth mnemonic --mnemonic-words 12
+# 编译带加密保护的独立可执行文件:
+cargo slide build slides.typ --format binary --encrypt --auth passphrase
+# 导出受保护的 Web 静态站点并配置会话 Token 存活时长 (纯 Rust WASM 客户端解密):
+cargo slide serve --encrypt --auth passphrase --token-ttl 86400
+cargo slide export --format wasm --encrypt --auth mnemonic -o dist-web/
+
+# 7. 跨平台多架构编译（原生内置于 cargo-slide，无需下载任何额外脚本）
+# 一键交叉编译全部 4 种主流桌面架构（Linux x86_64, Linux ARM64, Windows x86_64, Windows ARM64）：
+cargo slide cross --target all
+
+# 单独交叉编译 Windows 64位版本（自动选用轻量 Zig 工具链）：
+cargo slide cross --target windows-x86_64
+
+# 单独交叉编译 Linux ARM64 版本：
+cargo slide cross --target linux-aarch64
+
+# 交叉编译演示文稿独立运行程序（产物自动归集至 ./dist/ 目录）：
+cargo slide cross slides.typ --target all
+
+# 兼容与别名命令（可使用 dist 或 cross-build）：
+cargo slide dist --target all
+cargo slide build slides.typ --all-targets
 ```
 
 ---
@@ -216,10 +269,11 @@ cargo-slide/
 ├── crates/
 │   ├── slide-core/                 # Typst 编译桥接、SVG 解析、图表计算/SQL、LZMA2 压缩打包
 │   ├── slide-player/               # 原生播放引擎：tiny-skia 渲染、窗口事件、音频混音、演播工具、HUD
+│   ├── slide-editor/               # Typora 风格所见即所得桌面编辑器（实时矢量预览、就地编辑、大纲与导出）
 │   ├── slide-viewer/               # 通用桌面演示文稿播放器（带交互式 GUI 启动台与多平台安装器）
 │   ├── slide-web/                  # 纯 Rust Leptos 0.7 CSR Web 播放器（严格零内联 JavaScript）
 │   ├── slide-theme/                # 内置排版主题、模板与 Typst 组件宏（#slide, #step, #chart）
-│   └── cargo-slide/                # 命令行主入口（init, new, run, dev, build, pack, serve, export）
+│   └── cargo-slide/                # 命令行主入口（init, new, run, dev, edit, check, build, pack, serve, export）
 └── examples/
     ├── geek-presentation/          # 22 页官方示例演讲（全景展示所有新增特性）
     ├── dist-web/                   # 预生成的 Leptos CSR 静态网页包
