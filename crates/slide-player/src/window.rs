@@ -790,7 +790,7 @@ fn set_macos_fullscreen(
     }
     unsafe {
         #[link(name = "objc", kind = "dylib")]
-        extern "C" {
+        unsafe extern "C" {
             fn sel_registerName(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
             fn objc_getClass(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
             fn objc_msgSend(
@@ -884,7 +884,7 @@ fn is_mouse_left_physically_down() -> bool {
 fn is_mouse_left_physically_down() -> bool {
     unsafe {
         #[link(name = "objc", kind = "dylib")]
-        extern "C" {
+        unsafe extern "C" {
             fn sel_registerName(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
             fn objc_getClass(name: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
             fn objc_msgSend(

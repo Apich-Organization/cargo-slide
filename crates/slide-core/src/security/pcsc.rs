@@ -213,6 +213,11 @@ impl PcscLibrary {
                     "/System/Library/Frameworks/PCSC.framework/PCSC",
                     "/Library/Frameworks/PCSC.framework/PCSC",
                     "PCSC",
+                    "/opt/homebrew/lib/libpcsclite.dylib",
+                    "/opt/homebrew/lib/libpcsclite.1.dylib",
+                    "/usr/local/lib/libpcsclite.dylib",
+                    "/usr/local/lib/libpcsclite.1.dylib",
+                    "libpcsclite.dylib",
                 ]
             } else {
                 vec![
@@ -240,9 +245,12 @@ impl PcscLibrary {
             }
 
             if handle.is_null() {
-                return Err(
-                    "PC/SC smart card library (libpcsclite) not found on system. Please ensure pcscd / pcsc-lite is installed.".to_string(),
-                );
+                let msg = if cfg!(target_os = "macos") {
+                    "macOS PC/SC framework (PCSC.framework) not found on system. Please ensure SmartCardServices are available or run 'sudo killall com.apple.ctkpcscd'."
+                } else {
+                    "PC/SC smart card library (libpcsclite) not found on system. Please ensure pcscd / pcsc-lite is installed."
+                };
+                return Err(msg.to_string());
             }
 
             macro_rules! get_sym {
@@ -502,8 +510,15 @@ impl PcscContext {
 
         if res != SCARD_S_SUCCESS {
             let detail = self.lib.stringify_error(res);
+            let macos_ctk_hint = if cfg!(target_os = "macos")
+                && (res as u32) == SCARD_E_SHARING_VIOLATION
+            {
+                "\nOn macOS, CryptoTokenKit (pivtoken) may hold an exclusive lock on the token. Try resetting the smartcard daemon: 'sudo killall com.apple.ctkpcscd' or disconnect and reconnect your YubiKey."
+            } else {
+                ""
+            };
             return Err(SlideError::Piv(format!(
-                "Failed to connect to smart card reader '{reader}' (error code: 0x{res:08X}{detail}). Is the YubiKey firmly inserted?"
+                "Failed to connect to smart card reader '{reader}' (error code: 0x{res:08X}{detail}). Is the YubiKey firmly inserted?{macos_ctk_hint}"
             )));
         }
 

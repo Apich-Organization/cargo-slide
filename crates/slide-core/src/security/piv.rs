@@ -891,13 +891,22 @@ impl PivManager {
         }
 
         #[cfg(not(any(test, feature = "test-mock", debug_assertions)))]
-        Err(SlideError::Piv(
-            "No YubiKey or PIV smartcard detected.\n\
-             Please ensure:\n\
-             1. Your YubiKey is connected to a USB port.\n\
-             2. PC/SC smartcard service is running ('systemctl status pcscd' on Linux).\n\
-             3. Your PIV slots are provisioned with certificates using Yubico's official tool ('ykman piv info').".to_string(),
-        ))
+        {
+            let service_hint = if cfg!(target_os = "macos") {
+                "2. macOS SmartCardServices are running (check 'system_profiler SPSmartCardsDataType' or reset with 'sudo killall com.apple.ctkpcscd').\n"
+            } else if cfg!(target_os = "windows") {
+                "2. Windows Smart Card service is running ('sc query SCardSvr' or 'Start-Service SCardSvr').\n"
+            } else {
+                "2. PC/SC smartcard service is running ('systemctl status pcscd' on Linux).\n"
+            };
+            Err(SlideError::Piv(format!(
+                "No YubiKey or PIV smartcard detected.\n\
+                 Please ensure:\n\
+                 1. Your YubiKey is connected to a USB port.\n\
+                 {service_hint}\
+                 3. Your PIV slots are provisioned with certificates using Yubico's official tool ('ykman piv info')."
+            )))
+        }
     }
 }
 
@@ -1103,45 +1112,103 @@ fn try_native_desktop_dialog(
 ) -> Option<Zeroizing<String>> {
     #[cfg(target_os = "windows")]
     {
-        let ps_script = format!(
-            "[void][System.Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic'); \
-             [Microsoft.VisualBasic.Interaction]::InputBox('{}', '{}')",
-            prompt, title
+        use base64::Engine as _;
+        let safe_title = title.replace('\'', "''");
+        let safe_prompt = prompt.replace('\'', "''");
+        let script = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; \
+             Add-Type -AssemblyName System.Drawing; \
+             $form = New-Object System.Windows.Forms.Form; \
+             $form.Text = '{safe_title}'; \
+             $form.Size = New-Object System.Drawing.Size(440, 190); \
+             $form.StartPosition = 'CenterScreen'; \
+             $form.FormBorderStyle = 'FixedDialog'; \
+             $form.MaximizeBox = $false; \
+             $form.MinimizeBox = $false; \
+             $form.TopMost = $true; \
+             $lbl = New-Object System.Windows.Forms.Label; \
+             $lbl.Location = New-Object System.Drawing.Point(20, 16); \
+             $lbl.Size = New-Object System.Drawing.Size(390, 42); \
+             $lbl.Text = '{safe_prompt}'; \
+             $form.Controls.Add($lbl); \
+             $txt = New-Object System.Windows.Forms.TextBox; \
+             $txt.Location = New-Object System.Drawing.Point(20, 66); \
+             $txt.Size = New-Object System.Drawing.Size(385, 25); \
+             $txt.UseSystemPasswordChar = $true; \
+             $form.Controls.Add($txt); \
+             $btnOk = New-Object System.Windows.Forms.Button; \
+             $btnOk.Location = New-Object System.Drawing.Point(225, 106); \
+             $btnOk.Size = New-Object System.Drawing.Size(85, 28); \
+             $btnOk.Text = 'OK'; \
+             $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK; \
+             $form.AcceptButton = $btnOk; \
+             $form.Controls.Add($btnOk); \
+             $btnCancel = New-Object System.Windows.Forms.Button; \
+             $btnCancel.Location = New-Object System.Drawing.Point(320, 106); \
+             $btnCancel.Size = New-Object System.Drawing.Size(85, 28); \
+             $btnCancel.Text = 'Cancel'; \
+             $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; \
+             $form.CancelButton = $btnCancel; \
+             $form.Controls.Add($btnCancel); \
+             $form.Add_Shown({{ $form.Activate(); $txt.Focus() }}); \
+             if ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ \
+                 [Console]::Out.Write($txt.Text) \
+             }}"
         );
-        if let Ok(out) = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps_script])
+
+        let utf16_bytes: Vec<u8> = script
+            .encode_utf16()
+            .flat_map(|u| u.to_le_bytes())
+            .collect();
+        let encoded_cmd = base64::engine::general_purpose::STANDARD.encode(&utf16_bytes);
+
+        if let Ok(mut out) = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                &encoded_cmd,
+            ])
             .output()
             && out.status.success()
         {
-            let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !s.is_empty() {
-                let res = Zeroizing::new(s.clone());
-                s.zeroize();
-                return Some(res);
+            let raw_str = String::from_utf8_lossy(&out.stdout);
+            let trimmed = raw_str.trim_matches(|c| c == '\r' || c == '\n');
+            let result = if !trimmed.is_empty() {
+                Some(Zeroizing::new(trimmed.to_string()))
+            } else {
+                None
+            };
+            out.stdout.zeroize();
+            if result.is_some() {
+                return result;
             }
         }
     }
 
     #[cfg(target_os = "macos")]
     {
+        // Use "text returned of (display dialog ...)" directly via Standard Additions.
+        // Do NOT wrap in "tell application System Events" — that triggers macOS TCC
+        // Automation permission popup (Mojave+) which users may deny, breaking the dialog.
+        let safe_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
+        let safe_title = title.replace('\\', "\\\\").replace('"', "\\\"");
         let script = format!(
-            "Tell application \"System Events\" to display dialog \"{}\" default answer \"\" with hidden answer with title \"{}\"",
-            prompt, title
+            "text returned of (display dialog \"{safe_prompt}\" default answer \"\" with hidden answer with title \"{safe_title}\")"
         );
         if let Ok(out) = std::process::Command::new("osascript")
             .args(["-e", &script])
             .output()
         {
             if out.status.success() {
-                let stdout_str = String::from_utf8_lossy(&out.stdout);
-                if let Some(pos) = stdout_str.find("text returned:") {
-                    let after = &stdout_str[pos + "text returned:".len()..];
-                    let mut pin = after.split(',').next().unwrap_or("").trim().to_string();
-                    if !pin.is_empty() {
-                        let res = Zeroizing::new(pin.clone());
-                        pin.zeroize();
-                        return Some(res);
-                    }
+                // With "text returned of (...)", stdout is the raw secret text followed by a newline.
+                let mut pin = String::from_utf8_lossy(&out.stdout)
+                    .trim_end_matches('\n')
+                    .to_string();
+                if !pin.is_empty() {
+                    let res = Zeroizing::new(pin.clone());
+                    pin.zeroize();
+                    return Some(res);
                 }
             }
         }

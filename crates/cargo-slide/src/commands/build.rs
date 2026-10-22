@@ -389,8 +389,12 @@ pub fn execute_binary(
                 let signer_slot = PivSlot::parse(sign_slot_str)
                     .ok_or_else(|| format!("Invalid signer PIV slot: {sign_slot_str}"))?;
 
-                let mut card = PivManager::acquire_card(pin)?;
-                slide_core::security::prompt_pin_if_needed(card.as_mut(), pin)?;
+                let mut card = PivManager::acquire_card(pin).map_err(|e| {
+                    format!(
+                        "{e}\n\n[TIP] To compile without a hardware YubiKey, use software passphrase mode:\n  cargo slide build slides.typ --encrypt --auth passphrase\nor BIP-39 recovery mnemonic mode:\n  cargo slide build slides.typ --encrypt --auth mnemonic"
+                    )
+                })?;
+                slide_core::security::prompt_pin_for_slot(card.as_mut(), signer_slot, pin, false)?;
 
                 let recipient_pub = if let Some(cp) = cert_path {
                     let raw_data = std::fs::read(cp)?;

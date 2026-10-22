@@ -44,7 +44,8 @@ fn apply_anti_dump_os_primitives() -> Result<()> {
     {
         // PT_DENY_ATTACH (31 on Darwin): prevents debuggers from attaching
         const PT_DENY_ATTACH: i32 = 31;
-        extern "C" {
+        #[allow(unsafe_op_in_unsafe_fn)]
+        unsafe extern "C" {
             fn ptrace(
                 req: i32,
                 pid: i32,
