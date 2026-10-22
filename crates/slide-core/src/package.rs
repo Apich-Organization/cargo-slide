@@ -37,6 +37,8 @@ pub struct SlidePackageMetadata {
     pub checksum: Option<String>,
     #[serde(default)]
     pub uncompressed_size: Option<u64>,
+    #[serde(default)]
+    pub default_theme: Option<String>,
 }
 
 impl Default for SlidePackageMetadata {
@@ -57,6 +59,7 @@ impl Default for SlidePackageMetadata {
             tags: Vec::new(),
             checksum: None,
             uncompressed_size: None,
+            default_theme: None,
         }
     }
 }
@@ -112,6 +115,10 @@ pub fn pack_deck_with_source_and_assets(
         tags: Vec::new(),
         checksum: Some(checksum),
         uncompressed_size: Some(deck_json.len() as u64),
+        default_theme: deck
+            .default_theme
+            .clone()
+            .or_else(|| deck.extract_default_theme()),
     };
 
     let metadata_json = serde_json::to_vec_pretty(&metadata)?;
@@ -672,10 +679,16 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
             }
         }
         if let Some(data) = deck_data {
-            let deck: SlideDeck = serde_json::from_slice(&data)?;
+            let mut deck: SlideDeck = serde_json::from_slice(&data)?;
+            if deck.default_theme.is_none() {
+                deck.default_theme = deck.extract_default_theme();
+            }
             return Ok((deck, cache_dir));
         }
-        if let Ok(deck) = serde_json::from_slice::<SlideDeck>(&uncompressed) {
+        if let Ok(mut deck) = serde_json::from_slice::<SlideDeck>(&uncompressed) {
+            if deck.default_theme.is_none() {
+                deck.default_theme = deck.extract_default_theme();
+            }
             return Ok((deck, cache_dir));
         }
     }
@@ -726,7 +739,10 @@ pub fn unpack_deck_and_assets_from_bytes(
     }
 
     if let Some(data) = deck_data {
-        let deck: SlideDeck = serde_json::from_slice(&data)?;
+        let mut deck: SlideDeck = serde_json::from_slice(&data)?;
+        if deck.default_theme.is_none() {
+            deck.default_theme = deck.extract_default_theme();
+        }
         return Ok((deck, cache_dir));
     }
 
@@ -769,6 +785,7 @@ pub fn read_package_metadata(input_path: &Path) -> Result<SlidePackageMetadata> 
             ],
             checksum: Some(container.header.sha3_512_digest),
             uncompressed_size: Some(container.header.uncompressed_size),
+            default_theme: None,
         });
     }
 
@@ -812,6 +829,10 @@ pub fn read_package_metadata(input_path: &Path) -> Result<SlidePackageMetadata> 
         tags: Vec::new(),
         checksum: None,
         uncompressed_size: None,
+        default_theme: deck
+            .default_theme
+            .clone()
+            .or_else(|| deck.extract_default_theme()),
     })
 }
 

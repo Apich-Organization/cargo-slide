@@ -974,8 +974,42 @@ pub fn extract_text_from_svg(svg: &str) -> String {
 /// Ignores pure numbers, page indicators (e.g. "1 / 15"), tiny glyph labels, and selects the first prominent title text.
 #[must_use]
 pub fn extract_title_from_svg(svg: &str) -> Option<String> {
+    // 1. Check for explicit slide-meta embedded by slide macros (#slide, #title-slide)
+    if let Some(pos) = svg.find("slide-meta:") {
+        let after = &svg[pos.saturating_add("slide-meta:".len())..];
+        let end = after.find(['"', '\'', '<', '>', ')', ']']);
+        let raw = end.map_or(after, |idx| &after[..idx]).trim();
+        if !raw.is_empty() && raw != "slide" && raw != "title-slide" {
+            let decoded = decode_xml_entities(raw);
+            let cleaned = decoded.replace(['<', '>'], " ").trim().to_string();
+            if !cleaned.is_empty() && cleaned != "slide" && cleaned != "title-slide" {
+                return Some(cleaned);
+            }
+        }
+    }
+
     let sanitized = sanitize_svg(svg);
     if let Ok(doc) = roxmltree::Document::parse(&sanitized) {
+        // 2. Check for explicit SVG <title> elements
+        for node in doc.descendants() {
+            if node.tag_name().name() == "title" {
+                let mut title_text = String::new();
+                for child in node.descendants() {
+                    if child.is_text()
+                        && let Some(t) = child.text()
+                    {
+                        title_text.push_str(t);
+                    }
+                }
+                let decoded = decode_xml_entities(&title_text);
+                let trimmed = decoded.trim();
+                if !trimmed.is_empty() && trimmed.len() >= 2 && trimmed.len() <= 120 {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+
+        // 3. Check <text> elements
         for node in doc.descendants() {
             let tag = node.tag_name().name();
             if tag == "style" || tag == "defs" || tag == "script" {

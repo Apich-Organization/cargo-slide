@@ -340,3 +340,82 @@ fn test_auto_fix_source() {
     assert!(res.fixed_source.contains(']'));
     assert!(!res.repairs.is_empty());
 }
+
+#[test]
+fn test_resolve_presentation_target() {
+    use slide_core::compiler::resolve_presentation_target;
+
+    let dir = tempdir().expect("tempdir");
+
+    // Case 1: Specific existing file
+    let custom_file = dir.path().join("my_talk.typ");
+    write(&custom_file, "= My Talk").unwrap();
+    let res = resolve_presentation_target(&custom_file).unwrap();
+    assert_eq!(res, custom_file);
+
+    // Case 2: Directory target with slides.typ
+    let sub_dir = dir.path().join("sub_deck");
+    std::fs::create_dir(&sub_dir).unwrap();
+    let slides_file = sub_dir.join("slides.typ");
+    write(&slides_file, "= Sub Deck").unwrap();
+
+    let res = resolve_presentation_target(&sub_dir).unwrap();
+    assert_eq!(res, slides_file);
+
+    // Case 3: Directory target with single other candidate
+    let other_dir = dir.path().join("other_deck");
+    std::fs::create_dir(&other_dir).unwrap();
+    let lecture_file = other_dir.join("lecture.typ");
+    write(&lecture_file, "= Lecture").unwrap();
+
+    let res = resolve_presentation_target(&other_dir).unwrap();
+    assert_eq!(res, lecture_file);
+}
+
+#[test]
+fn test_extract_deck_theme_and_slide_title() {
+    let source_light_macro = r#"
+#import "slide.typ": *
+#show: slide-theme.with(theme: "light", aspect-ratio: "16-9")
+
+= Introduction Slide
+Welcome!
+"#;
+    let theme_opt = slide_core::compiler::extract_deck_theme_from_source(source_light_macro);
+    assert_eq!(theme_opt, Some("light".to_string()));
+
+    let source_dark_comment = r#"
+// [theme]: dark
+#import "slide.typ": *
+
+= Overview Slide
+Details...
+"#;
+    let theme_opt_dark = slide_core::compiler::extract_deck_theme_from_source(source_dark_comment);
+    assert_eq!(theme_opt_dark, Some("dark".to_string()));
+
+    let source_set_theme = r#"
+#set-theme("light")
+= My Slide
+"#;
+    assert_eq!(
+        slide_core::compiler::extract_deck_theme_from_source(source_set_theme),
+        Some("light".to_string())
+    );
+
+    // Test title extraction from slide-meta
+    let svg_with_meta = r#"<svg><g><a xlink:href="slide-meta:System Architecture Overview"><rect width="100" height="100"/></a></g></svg>"#;
+    let title = slide_core::svg::extract_title_from_svg(svg_with_meta);
+    assert_eq!(title, Some("System Architecture Overview".to_string()));
+
+    // Test SlideDeck theme resolution
+    let mut deck = slide_core::model::SlideDeck::new("Theme Test");
+    deck.default_theme = Some("light".to_string());
+    assert!(deck.is_light());
+    assert!(!deck.is_dark());
+
+    let mut deck_dark = slide_core::model::SlideDeck::new("Dark Test");
+    deck_dark.default_theme = Some("dark".to_string());
+    assert!(deck_dark.is_dark());
+    assert!(!deck_dark.is_light());
+}

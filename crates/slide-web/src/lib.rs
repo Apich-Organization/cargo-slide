@@ -177,6 +177,7 @@ fn create_fallback_deck() -> SlideDeck {
     SlideDeck {
         title: "Cargo Slide Presentation".to_string(),
         default_animation: "fade".to_string(),
+        default_theme: None,
         slides: vec![
             model::Slide {
                 page_number: 1,
@@ -398,6 +399,8 @@ pub fn App() -> impl IntoView {
                 .map(|s| s.max_step())
                 .unwrap_or(0);
             current_step.set(if first_max_step > 0 { 1 } else { 0 });
+            let is_light = loaded_deck.is_light();
+            is_dark_theme.set(!is_light);
             active_transition.set(loaded_deck.default_animation.clone());
             deck.set(loaded_deck);
         }
@@ -1704,6 +1707,7 @@ pub fn App() -> impl IntoView {
                                 <div class="grid-container">
                                     {d.slides.into_iter().enumerate().map(|(idx, slide)| {
                                         let is_active = idx == cur_idx;
+                                        let slide_title = slide.extract_title();
                                         view! {
                                             <div
                                                 class=if is_active { "slide-card active" } else { "slide-card" }
@@ -1712,7 +1716,7 @@ pub fn App() -> impl IntoView {
                                                 <div class="card-thumbnail" inner_html=slide.svg_data/>
                                                 <div class="card-label">
                                                     <span class="card-page">{format!("#{}", idx + 1)}</span>
-                                                    <span class="card-title">{format!("Slide {}", idx + 1)}</span>
+                                                    <span class="card-title">{slide_title}</span>
                                                 </div>
                                             </div>
                                         }

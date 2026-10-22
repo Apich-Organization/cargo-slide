@@ -303,6 +303,35 @@ impl Slide {
     pub fn max_step(&self) -> usize {
         self.steps.iter().map(|s| s.order).max().unwrap_or(0)
     }
+
+    /// Extract slide title from SVG metadata or `<title>` tag
+    pub fn extract_title(&self) -> String {
+        // 1. Look for slide-meta link: link("slide-meta:" + title)
+        if let Some(pos) = self.svg_data.find("slide-meta:") {
+            let rest = &self.svg_data[pos + "slide-meta:".len()..];
+            let end = rest
+                .find(['"', '\'', '<', '&', '#', ' '])
+                .unwrap_or(rest.len());
+            let title = &rest[..end];
+            if !title.is_empty() {
+                return title.replace('+', " ");
+            }
+        }
+
+        // 2. Look for <title> tag
+        if let Some(pos) = self.svg_data.find("<title>") {
+            let rest = &self.svg_data[pos + 7..];
+            if let Some(end) = rest.find("</title>") {
+                let title = rest[..end].trim();
+                if !title.is_empty() {
+                    return title.to_string();
+                }
+            }
+        }
+
+        // 3. Fallback to Slide N
+        format!("Slide {}", self.page_number)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -311,6 +340,42 @@ pub struct SlideDeck {
     pub slides: Vec<Slide>,
     #[serde(default = "default_animation")]
     pub default_animation: String,
+    #[serde(default)]
+    pub default_theme: Option<String>,
+}
+
+impl SlideDeck {
+    /// Return the resolved theme ("light" or "dark")
+    pub fn resolved_theme(&self) -> &str {
+        if let Some(ref t) = self.default_theme {
+            let lower = t.trim().to_ascii_lowercase();
+            if lower == "light" {
+                return "light";
+            }
+            if lower == "dark" {
+                return "dark";
+            }
+        }
+        for slide in &self.slides {
+            if slide.svg_data.contains("deck-theme:light") {
+                return "light";
+            }
+            if slide.svg_data.contains("deck-theme:dark") {
+                return "dark";
+            }
+        }
+        "dark"
+    }
+
+    /// Check if deck defaults to light mode
+    pub fn is_light(&self) -> bool {
+        self.resolved_theme() == "light"
+    }
+
+    /// Check if deck defaults to dark mode
+    pub fn is_dark(&self) -> bool {
+        !self.is_light()
+    }
 }
 
 fn default_animation() -> String {

@@ -245,7 +245,7 @@ pub fn execute(
         })),
     );
 
-    let hud_theme = if light {
+    let hud_theme = if light || deck.is_light() {
         slide_player::hud::HudTheme::Light
     } else {
         slide_player::hud::HudTheme::Dark

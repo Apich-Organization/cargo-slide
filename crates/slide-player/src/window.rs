@@ -81,6 +81,7 @@ pub struct PlayerConfig {
     pub default_animation: String,
     pub watch: bool,
     pub hud_theme: HudTheme,
+    pub hud_theme_explicit: bool,
     pub target_duration_secs: Option<u64>,
     pub kiosk_interval_secs: Option<u64>,
 }
@@ -95,6 +96,7 @@ impl Default for PlayerConfig {
             default_animation: "fade".to_string(),
             watch: false,
             hud_theme: HudTheme::Dark,
+            hud_theme_explicit: false,
             target_duration_secs: None,
             kiosk_interval_secs: None,
         }
@@ -126,12 +128,19 @@ impl SlideApp {
     pub fn from_deck(deck: SlideDeck) -> Self {
         let title = deck.title.clone();
         let default_animation = deck.default_animation.clone();
+        let hud_theme = if deck.is_light() {
+            HudTheme::Light
+        } else {
+            HudTheme::Dark
+        };
         Self {
             source_file: None,
             deck: Some(deck),
             config: PlayerConfig {
                 title,
                 default_animation,
+                hud_theme,
+                hud_theme_explicit: false,
                 ..Default::default()
             },
             registry: AnimationRegistry::default(),
@@ -203,6 +212,7 @@ impl SlideApp {
         theme: HudTheme,
     ) -> Self {
         self.config.hud_theme = theme;
+        self.config.hud_theme_explicit = true;
         self
     }
 
@@ -215,6 +225,7 @@ impl SlideApp {
         } else {
             HudTheme::Dark
         };
+        self.config.hud_theme_explicit = true;
         self
     }
 
@@ -278,8 +289,17 @@ impl SlideApp {
             },
         };
 
+        let mut config = self.config;
+        if !config.hud_theme_explicit {
+            config.hud_theme = if deck.is_light() {
+                HudTheme::Light
+            } else {
+                HudTheme::Dark
+            };
+        }
+
         SlidePlayer::new(deck)
-            .with_config(self.config)
+            .with_config(config)
             .with_source_file(self.source_file)
             .with_registry(self.registry)
             .with_asset_store(self.asset_store)
@@ -1209,6 +1229,9 @@ impl SlidePlayer {
         let mut presentation_paused_at: Option<Instant> = None;
         let mut presentation_paused_duration = std::time::Duration::ZERO;
         let mut speaker_notes_scroll_offset = 0usize;
+        let mut grid_scroll_row = 0usize;
+        let mut grid_max_scroll_row = 0usize;
+        let mut grid_thumbnail_cache: crate::hud::GridThumbnailCache = HashMap::new();
         let mut grid_click_rects: Vec<(usize, slide_core::model::Rect)> = Vec::new();
         let mut hovered_grid_idx: Option<usize>;
         let mut exit_requested = false;
@@ -1313,6 +1336,12 @@ impl SlidePlayer {
                         inspector.table_scroll = (inspector.table_scroll + 1).min(max_scroll);
                     } else {
                         inspector.table_scroll = inspector.table_scroll.saturating_sub(1);
+                    }
+                } else if show_grid {
+                    if scroll_y < 0.0 {
+                        grid_scroll_row = (grid_scroll_row + 1).min(grid_max_scroll_row);
+                    } else {
+                        grid_scroll_row = grid_scroll_row.saturating_sub(1);
                     }
                 } else {
                     let delta = if scroll_y > 0.0 {
@@ -1872,7 +1901,13 @@ impl SlidePlayer {
                             }
                         },
                         | DockAction::ToggleTimer => show_timer = !show_timer,
-                        | DockAction::ToggleGrid => show_grid = !show_grid,
+                        | DockAction::ToggleGrid => {
+                            show_grid = !show_grid;
+                            if show_grid {
+                                grid_scroll_row =
+                                    (current_idx / 4).saturating_sub(1).min(grid_max_scroll_row);
+                            }
+                        },
                         | DockAction::ToggleNotes => show_notes = !show_notes,
                         | DockAction::ToggleBlank => {
                             blank_mode = if blank_mode.is_some() {
@@ -2547,6 +2582,20 @@ impl SlidePlayer {
                             | Key::Right | Key::Down | Key::Space | Key::PageDown | Key::Enter => {
                                 if blank_mode.is_some() {
                                     blank_mode = None;
+                                } else if show_grid {
+                                    match key {
+                                        | Key::Down => {
+                                            grid_scroll_row =
+                                                (grid_scroll_row + 1).min(grid_max_scroll_row);
+                                        },
+                                        | Key::PageDown => {
+                                            grid_scroll_row =
+                                                (grid_scroll_row + 3).min(grid_max_scroll_row);
+                                        },
+                                        | _ => {
+                                            trigger_forward = true;
+                                        },
+                                    }
                                 } else {
                                     trigger_forward = true;
                                 }
@@ -2554,12 +2603,36 @@ impl SlidePlayer {
                             | Key::Left | Key::Up | Key::Backspace | Key::PageUp => {
                                 if blank_mode.is_some() {
                                     blank_mode = None;
+                                } else if show_grid {
+                                    match key {
+                                        | Key::Up => {
+                                            grid_scroll_row = grid_scroll_row.saturating_sub(1);
+                                        },
+                                        | Key::PageUp => {
+                                            grid_scroll_row = grid_scroll_row.saturating_sub(3);
+                                        },
+                                        | _ => {
+                                            trigger_backward = true;
+                                        },
+                                    }
                                 } else {
                                     trigger_backward = true;
                                 }
                             },
-                            | Key::Home => jump_target = Some(0),
-                            | Key::End => jump_target = Some(total_slides.saturating_sub(1)),
+                            | Key::Home => {
+                                if show_grid {
+                                    grid_scroll_row = 0;
+                                } else {
+                                    jump_target = Some(0);
+                                }
+                            },
+                            | Key::End => {
+                                if show_grid {
+                                    grid_scroll_row = grid_max_scroll_row;
+                                } else {
+                                    jump_target = Some(total_slides.saturating_sub(1));
+                                }
+                            },
                             | Key::NumPad1 | Key::Key1 => {
                                 if palette_open {
                                     active_color_idx = 0;
@@ -2682,6 +2755,9 @@ impl SlidePlayer {
                             | Key::G | Key::Tab => {
                                 show_grid = !show_grid;
                                 if show_grid {
+                                    grid_scroll_row = (current_idx / 4)
+                                        .saturating_sub(1)
+                                        .min(grid_max_scroll_row);
                                     hud_toast =
                                         Some(("Slide Grid Navigator".to_string(), Instant::now()));
                                 }
@@ -3242,7 +3318,7 @@ impl SlidePlayer {
 
             // Interactive slide grid navigator overlay
             if show_grid {
-                grid_click_rects = draw_slide_grid_overlay(
+                let (rects, max_row) = draw_slide_grid_overlay(
                     &mut buffer,
                     width,
                     height,
@@ -3250,7 +3326,12 @@ impl SlidePlayer {
                     current_idx,
                     hovered_grid_idx,
                     hud_theme,
+                    grid_scroll_row,
+                    Some(&renderer),
+                    Some(&mut grid_thumbnail_cache),
                 );
+                grid_click_rects = rects;
+                grid_max_scroll_row = max_row;
             }
 
             // Interactive slide jump dialog overlay

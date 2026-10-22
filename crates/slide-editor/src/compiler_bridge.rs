@@ -59,6 +59,64 @@ impl Default for CompilerBridge {
     }
 }
 
+fn contains_macro_call(
+    source: &str,
+    macro_name: &str,
+) -> bool {
+    // 1. Check for `#macro_name`
+    let needle = format!("#{macro_name}");
+    let mut search_from = 0;
+    while let Some(pos) = source[search_from..].find(&needle) {
+        let abs_pos = search_from + pos;
+        let after_idx = abs_pos + needle.len();
+        let remaining = &source[after_idx..];
+        let next_char = remaining.chars().next();
+        match next_char {
+            | None => return true,
+            | Some(c) if c == '(' || c == '[' || c == '{' => return true,
+            | Some(c) if c.is_whitespace() => {
+                let trimmed = remaining.trim_start();
+                if trimmed.starts_with('(') || trimmed.starts_with('[') || trimmed.starts_with('{')
+                {
+                    return true;
+                }
+            },
+            | _ => {},
+        }
+        search_from = after_idx;
+    }
+
+    // 2. Check for `macro_name(` or `macro_name[` in code blocks
+    let mut search_from = 0;
+    while let Some(pos) = source[search_from..].find(macro_name) {
+        let abs_pos = search_from + pos;
+        let is_prev_ident = if abs_pos > 0 {
+            let prev_char = source[..abs_pos].chars().next_back().unwrap_or(' ');
+            prev_char.is_alphanumeric() || prev_char == '_' || prev_char == '-'
+        } else {
+            false
+        };
+        if !is_prev_ident {
+            let after_idx = abs_pos + macro_name.len();
+            let remaining = &source[after_idx..];
+            let next_char = remaining.chars().next();
+            match next_char {
+                | Some(c) if c == '(' || c == '[' => return true,
+                | Some(c) if c.is_whitespace() => {
+                    let trimmed = remaining.trim_start();
+                    if trimmed.starts_with('(') || trimmed.starts_with('[') {
+                        return true;
+                    }
+                },
+                | _ => {},
+            }
+        }
+        search_from = abs_pos + macro_name.len();
+    }
+
+    false
+}
+
 impl CompilerBridge {
     /// Create new compiler bridge instance
     #[must_use]
@@ -68,27 +126,57 @@ impl CompilerBridge {
         Self { compiler }
     }
 
+    /// Checks if source code references any cargo-slide macros (e.g. #slide, #title-slide, #step, etc.)
+    #[must_use]
+    pub fn has_slide_macros(source: &str) -> bool {
+        const MACRO_NAMES: &[&str] = &[
+            "title-slide",
+            "slide",
+            "step",
+            "video",
+            "audio",
+            "audio-player",
+            "chart",
+            "cols",
+            "badge",
+            "callout",
+            "code-window",
+            "metric",
+            "speaker-notes",
+            "two-columns",
+            "slide-theme",
+            "centered-slide",
+            "focus-slide",
+        ];
+
+        for &name in MACRO_NAMES {
+            if contains_macro_call(source, name) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Checks if source code explicitly defines or imports slide macros
+    #[must_use]
+    pub fn has_macro_definitions(source: &str) -> bool {
+        source.contains("slide.typ")
+            || source.contains("theme.typ")
+            || source.contains("#let title-slide")
+            || source.contains("#let slide(")
+            || source.contains("#let slide =")
+            || source.contains("#let slide[")
+            || source.contains("@preview/polylux")
+            || source.contains("@preview/touying")
+            || source.contains("@preview/slydst")
+    }
+
     /// Compile document source text into a SlideDeck
     /// Ensure Typst source has slide macros imported if macros are referenced
     #[must_use]
     pub fn prepare_typst_source_with_macros(source: &str) -> (String, bool) {
-        let has_macro_ref = source.contains("#title-slide")
-            || source.contains("title-slide(")
-            || source.contains("#slide(")
-            || source.contains("#step(")
-            || source.contains("#video(")
-            || source.contains("#audio(")
-            || source.contains("#audio-player(")
-            || source.contains("#chart(")
-            || source.contains("#cols(")
-            || source.contains("#badge(")
-            || source.contains("#callout(")
-            || source.contains("#code-window(")
-            || source.contains("#metric(");
-
-        let has_macro_def = source.contains("#import \"slide.typ\"")
-            || source.contains("#import \"theme.typ\"")
-            || source.contains("#let title-slide");
+        let has_macro_ref = Self::has_slide_macros(source);
+        let has_macro_def = Self::has_macro_definitions(source);
 
         if has_macro_ref && !has_macro_def {
             (format!("#import \"slide.typ\": *\n{source}"), true)
@@ -126,32 +214,66 @@ impl CompilerBridge {
             let counter = TMP_FILE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let pid = std::process::id();
             let tmp = root.join(format!(".slide_preview_tmp_{pid}_{counter}.typ"));
-            let slide_typ = root.join("slide.typ");
-            if !slide_typ.exists() {
-                let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
-            }
-            let theme_typ = root.join("theme.typ");
-            if !theme_typ.exists() {
-                let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
-            } else if let Ok(existing_theme) = std::fs::read_to_string(&theme_typ)
-                && existing_theme.contains("slide-theme(")
-                && !existing_theme.contains("header:")
+            if prepended_import
+                || processed_source.contains("slide.typ")
+                || processed_source.contains("theme.typ")
             {
-                let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
-            }
-            std::fs::write(&tmp, &processed_source).map_err(|e| {
-                CompilerDiagnostic {
-                    message: format!(
-                        "Failed to write temporary typst file in {}: {e}",
-                        root.display()
-                    ),
-                    line: None,
-                    column: None,
-                    full_stderr: String::new(),
-                    quick_fix: None,
+                let slide_typ = root.join("slide.typ");
+                if !slide_typ.exists() {
+                    let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
                 }
-            })?;
-            (tmp.clone(), Cleanup::File(tmp))
+                let theme_typ = root.join("theme.typ");
+                if !theme_typ.exists() {
+                    let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
+                } else if let Ok(existing_theme) = std::fs::read_to_string(&theme_typ)
+                    && existing_theme.contains("slide-theme(")
+                    && !existing_theme.contains("header:")
+                {
+                    let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
+                }
+            }
+            if let Err(e) = std::fs::write(&tmp, &processed_source) {
+                // If writing to root directory fails (e.g. read-only filesystem or permissions),
+                // fall back to a safe temporary directory so viewing/compiling still succeeds.
+                let temp_dir = tempfile::tempdir().map_err(|te| {
+                    CompilerDiagnostic {
+                        message: format!(
+                            "Failed to write temporary typst file in {} ({e}) and tempdir creation failed: {te}",
+                            root.display()
+                        ),
+                        line: None,
+                        column: None,
+                        full_stderr: String::new(),
+                        quick_fix: None,
+                    }
+                })?;
+                let fallback_tmp = temp_dir.path().join("document.typ");
+                if prepended_import
+                    || processed_source.contains("slide.typ")
+                    || processed_source.contains("theme.typ")
+                {
+                    let _ = std::fs::write(
+                        temp_dir.path().join("slide.typ"),
+                        slide_theme::SLIDE_MACROS,
+                    );
+                    let _ = std::fs::write(
+                        temp_dir.path().join("theme.typ"),
+                        slide_theme::DEFAULT_THEME,
+                    );
+                }
+                std::fs::write(&fallback_tmp, &processed_source).map_err(|te| {
+                    CompilerDiagnostic {
+                        message: format!("Failed to write fallback temporary typst file: {te}"),
+                        line: None,
+                        column: None,
+                        full_stderr: String::new(),
+                        quick_fix: None,
+                    }
+                })?;
+                (fallback_tmp, Cleanup::Dir(temp_dir))
+            } else {
+                (tmp.clone(), Cleanup::File(tmp))
+            }
         } else {
             let temp_dir = tempfile::tempdir().map_err(|e| {
                 CompilerDiagnostic {
@@ -304,17 +426,23 @@ impl CompilerBridge {
             .as_deref()
             .or_else(|| doc.file_path.as_deref().and_then(|p| p.parent()));
 
-        let (processed_source, _) = Self::prepare_typst_source_with_macros(&doc.source_text);
+        let (processed_source, prepended_import) =
+            Self::prepare_typst_source_with_macros(&doc.source_text);
 
         let (temp_file, _cleanup) = if let Some(root) = project_root.filter(|p| p.is_dir()) {
             let tmp = root.join(".slide_export_tmp.typ");
-            let slide_typ = root.join("slide.typ");
-            if !slide_typ.exists() {
-                let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
-            }
-            let theme_typ = root.join("theme.typ");
-            if !theme_typ.exists() {
-                let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
+            if prepended_import
+                || processed_source.contains("slide.typ")
+                || processed_source.contains("theme.typ")
+            {
+                let slide_typ = root.join("slide.typ");
+                if !slide_typ.exists() {
+                    let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
+                }
+                let theme_typ = root.join("theme.typ");
+                if !theme_typ.exists() {
+                    let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
+                }
             }
             std::fs::write(&tmp, &processed_source).map_err(|e| {
                 SlideError::Compilation(format!(

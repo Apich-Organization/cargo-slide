@@ -51,11 +51,32 @@ pub fn get_render_cache_dir(typ_file: &Path) -> PathBuf {
 
 /// Resolve a requested slide presentation file, or intelligently auto-detect available candidates in current directory.
 pub fn resolve_presentation_target(requested: &Path) -> Result<PathBuf> {
-    if requested.exists() {
+    if requested.is_file() {
         return Ok(requested.to_path_buf());
     }
 
-    let dir = requested.parent().unwrap_or_else(|| Path::new("."));
+    let dir = if requested.is_dir() {
+        requested
+    } else {
+        requested
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."))
+    };
+
+    // Check if preferred standard presentation entrypoints exist in dir
+    for preferred in [
+        "slides.typ",
+        "presentation.typ",
+        "slides.slide",
+        "presentation.slide",
+    ] {
+        let p = dir.join(preferred);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+
     let mut candidates = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(dir) {
@@ -492,8 +513,21 @@ impl SlideCompiler {
                     .to_string()
             });
 
+        let default_theme = extract_deck_theme_from_source(&source_str).or_else(|| {
+            for s in &slides {
+                if s.svg_data.contains("deck-theme:light") {
+                    return Some("light".to_string());
+                }
+                if s.svg_data.contains("deck-theme:dark") {
+                    return Some("dark".to_string());
+                }
+            }
+            None
+        });
+
         let mut deck = SlideDeck::new(title);
         deck.slides = slides;
+        deck.default_theme = default_theme;
 
         // Persist to incremental rendering cache
         if use_cache {
@@ -950,6 +984,75 @@ pub fn extract_deck_title_from_source(source: &str) -> Option<String> {
             }
         }
     }
+    None
+}
+
+/// Extract deck default theme from Typst source document directives or macros
+#[must_use]
+pub fn extract_deck_theme_from_source(source: &str) -> Option<String> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        // 1. Direct comment directive: // [theme]: light or // theme: dark
+        if let Some(comment) = trimmed.strip_prefix("//") {
+            let c = comment.trim();
+            if let Some(rest) = c
+                .strip_prefix("[theme]:")
+                .or_else(|| c.strip_prefix("theme:"))
+                .or_else(|| c.strip_prefix("[deck-theme]:"))
+                .or_else(|| c.strip_prefix("deck-theme:"))
+            {
+                let val = rest.trim().to_lowercase();
+                if val == "light" || val == "dark" {
+                    return Some(val);
+                }
+            }
+        }
+    }
+
+    // 2. #show: slide-theme.with(...) or #slide-theme(...)
+    if let Some(idx) = source.find("slide-theme") {
+        let chunk = &source[idx..];
+        let end = chunk.find(')').unwrap_or_else(|| chunk.len().min(400));
+        let slice = &chunk[..end];
+        if slice.contains("theme: \"light\"")
+            || slice.contains("theme: 'light'")
+            || slice.contains("theme: [light]")
+            || slice.contains("dark: false")
+            || slice.contains("light: true")
+        {
+            return Some("light".to_string());
+        }
+        if slice.contains("theme: \"dark\"")
+            || slice.contains("theme: 'dark'")
+            || slice.contains("theme: [dark]")
+            || slice.contains("dark: true")
+            || slice.contains("light: false")
+        {
+            return Some("dark".to_string());
+        }
+    }
+
+    // 3. #set-theme(...)
+    if let Some(idx) = source.find("set-theme") {
+        let chunk = &source[idx..];
+        let end = chunk.find(')').unwrap_or_else(|| chunk.len().min(200));
+        let slice = &chunk[..end];
+        if slice.contains("\"light\"")
+            || slice.contains("'light'")
+            || slice.contains("dark: false")
+            || slice.contains("light: true")
+        {
+            return Some("light".to_string());
+        }
+        if slice.contains("\"dark\"")
+            || slice.contains("'dark'")
+            || slice.contains("dark: true")
+            || slice.contains("light: false")
+        {
+            return Some("dark".to_string());
+        }
+    }
+
     None
 }
 

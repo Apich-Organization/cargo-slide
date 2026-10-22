@@ -205,6 +205,161 @@ fn test_open_and_save_typ_file() {
 }
 
 #[test]
+fn test_open_typ_file_in_app() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let typ_path = temp_dir.path().join("sample.typ");
+    std::fs::write(&typ_path, "= Sample Title\n\nSample body text.").expect("write sample");
+
+    let app = SlideEditorApp::new(Some(typ_path.clone()), false);
+    println!("app.compilation_status: {:?}", app.compilation_status);
+    println!("app.doc.total_slides(): {}", app.doc.total_slides());
+    println!("app.slide_images.len(): {}", app.slide_images.len());
+    println!("app.slide_titles: {:?}", app.slide_titles);
+    assert_eq!(app.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app.doc.total_slides(), 1);
+    assert_eq!(app.slide_images.len(), 1);
+}
+
+#[test]
+fn test_open_regular_typst_document_without_macros() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let typ_path = temp_dir.path().join("my_document.typ");
+    std::fs::write(
+        &typ_path,
+        "= Introduction\nThis is a regular typst document.\n\n== Section 1\nHere is some text.",
+    )
+    .expect("write");
+
+    let app = SlideEditorApp::new(Some(typ_path), false);
+    println!("Status: {:?}", app.compilation_status);
+    println!("Total slides: {}", app.doc.total_slides());
+    println!("Slide images: {}", app.slide_images.len());
+    println!("Engine slides: {}", app.engine.slides.len());
+    assert_eq!(app.compilation_status, CompilationStatus::Ready);
+    assert!(app.doc.total_slides() > 0);
+    assert_eq!(app.slide_images.len(), app.doc.total_slides());
+    let _element = app.view();
+}
+
+#[test]
+fn test_open_various_typ_files() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+
+    // Kind 1: cargo-slide macros with import
+    let p1 = temp_dir.path().join("kind1.typ");
+    std::fs::write(
+        &p1,
+        "#import \"slide.typ\": *\n#title-slide(title: \"Title\")\n#slide(title: \"S1\")[Hello]",
+    )
+    .unwrap();
+    let app1 = SlideEditorApp::new(Some(p1), false);
+    assert_eq!(app1.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app1.doc.total_slides(), 2);
+    assert_eq!(app1.slide_images.len(), 2);
+    let _ = app1.view();
+
+    // Kind 2: pagebreak separated slides
+    let p2 = temp_dir.path().join("kind2.typ");
+    std::fs::write(
+        &p2,
+        "= Page 1\nContent 1\n#pagebreak()\n= Page 2\nContent 2",
+    )
+    .unwrap();
+    let app2 = SlideEditorApp::new(Some(p2), false);
+    assert_eq!(app2.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app2.doc.total_slides(), 2);
+    assert_eq!(app2.slide_images.len(), 2);
+    let _ = app2.view();
+
+    // Kind 4: plain text without slide macros or pagebreak
+    let p4 = temp_dir.path().join("kind4.typ");
+    std::fs::write(&p4, "= Title\nParagraph 1").unwrap();
+    let app4 = SlideEditorApp::new(Some(p4), false);
+    assert_eq!(app4.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app4.doc.total_slides(), 1);
+    assert_eq!(app4.slide_images.len(), 1);
+    let _ = app4.view();
+
+    // Kind 5: #slide[...] without parens and without explicit import
+    let p5 = temp_dir.path().join("kind5.typ");
+    std::fs::write(&p5, "#slide[\n= Hello\n]").unwrap();
+    let app5 = SlideEditorApp::new(Some(p5), false);
+    assert_eq!(app5.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app5.doc.total_slides(), 1);
+    assert_eq!(app5.slide_images.len(), 1);
+    let _ = app5.view();
+
+    // Kind 6: empty file
+    let p6 = temp_dir.path().join("kind6.typ");
+    std::fs::write(&p6, "").unwrap();
+    let app6 = SlideEditorApp::new(Some(p6), false);
+    assert_eq!(app6.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app6.doc.total_slides(), 1);
+    assert_eq!(app6.slide_images.len(), 1);
+    let _ = app6.view();
+
+    // Kind 7: document with relative image asset and relative path loading
+    // Create a minimal 1x1 valid PNG
+    let png_bytes: [u8; 67] = [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    let img_path = temp_dir.path().join("logo.png");
+    std::fs::write(&img_path, png_bytes).unwrap();
+
+    let p7 = temp_dir.path().join("with_asset.typ");
+    std::fs::write(&p7, "= Slide with Image\n\n#image(\"logo.png\")").unwrap();
+    let app7 = SlideEditorApp::new(Some(p7), false);
+    assert_eq!(app7.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app7.doc.total_slides(), 1);
+    assert_eq!(app7.slide_images.len(), 1);
+    let _ = app7.view();
+}
+
+#[test]
+fn test_open_new_non_existent_file_preserves_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let target_path = temp_dir.path().join("future_deck.typ");
+    assert!(!target_path.exists());
+
+    let app = SlideEditorApp::new(Some(target_path.clone()), false);
+    assert_eq!(app.doc.file_path.as_deref(), Some(target_path.as_path()));
+    assert_eq!(app.compilation_status, CompilationStatus::Ready);
+    assert!(app.doc.total_slides() >= 1);
+}
+
+#[test]
+fn test_in_editor_execute_open_clears_stale_state() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let file1 = temp_dir.path().join("doc1.typ");
+    std::fs::write(&file1, "= First Document\nSlide 1\n#pagebreak()\n= Slide 2").unwrap();
+
+    let file2 = temp_dir.path().join("doc2.typ");
+    std::fs::write(&file2, "= Second Document\nOnly One Slide").unwrap();
+
+    let mut app = SlideEditorApp::new(Some(file1), false);
+    assert_eq!(app.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app.doc.total_slides(), 2);
+    assert_eq!(app.slide_images.len(), 2);
+
+    // Now simulate in-editor open of file2
+    let _ = app.update(Message::OpenPathChanged(
+        file2.to_string_lossy().to_string(),
+    ));
+    let _ = app.update(Message::ExecuteOpen);
+
+    assert_eq!(app.doc.file_path.as_deref(), Some(file2.as_path()));
+    assert_eq!(app.doc.total_slides(), 1);
+    // Stale images from doc1 must have been cleared
+    assert_eq!(app.slide_images.len(), 0);
+    assert_eq!(app.slide_titles.len(), 0);
+    assert_eq!(app.undo_stack.len(), 0);
+}
+
+#[test]
 fn test_geek_presentation_loading_and_image_caching() {
     let example_path = std::path::PathBuf::from("../../examples/geek-presentation/slides.typ");
     if !example_path.exists() {

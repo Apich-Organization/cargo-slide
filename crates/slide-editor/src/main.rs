@@ -22,7 +22,17 @@ struct Args {
 
 fn main() -> iced::Result {
     let args = Args::parse();
-    let initial_file = args.file;
+    let initial_file = args.file.map(|p| {
+        if p.is_absolute() {
+            p
+        } else if let Ok(can) = p.canonicalize() {
+            can
+        } else if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(p)
+        } else {
+            p
+        }
+    });
     let dark_mode = args.dark;
 
     iced::daemon(

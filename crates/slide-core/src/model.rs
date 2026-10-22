@@ -231,6 +231,8 @@ pub struct SlideDeck {
     pub title: String,
     pub slides: Vec<Slide>,
     pub default_animation: String,
+    #[serde(default)]
+    pub default_theme: Option<String>,
 }
 
 impl SlideDeck {
@@ -239,7 +241,59 @@ impl SlideDeck {
             title: title.into(),
             slides: Vec::new(),
             default_animation: "fade".to_string(),
+            default_theme: None,
         }
+    }
+
+    /// Return the resolved theme string ("dark" or "light")
+    #[must_use]
+    pub fn resolved_theme(&self) -> &str {
+        if let Some(ref t) = self.default_theme {
+            if t.eq_ignore_ascii_case("light") {
+                return "light";
+            }
+            if t.eq_ignore_ascii_case("dark") {
+                return "dark";
+            }
+        }
+        for slide in &self.slides {
+            if slide.svg_data.contains("deck-theme:light") {
+                return "light";
+            }
+            if slide.svg_data.contains("deck-theme:dark") {
+                return "dark";
+            }
+        }
+        "dark"
+    }
+
+    /// Check if deck defaults to light mode
+    #[must_use]
+    pub fn is_light(&self) -> bool {
+        self.resolved_theme() == "light"
+    }
+
+    /// Check if deck defaults to dark mode
+    #[must_use]
+    pub fn is_dark(&self) -> bool {
+        !self.is_light()
+    }
+
+    /// Extract declared default theme from slide SVGs if not explicitly set
+    #[must_use]
+    pub fn extract_default_theme(&self) -> Option<String> {
+        if let Some(ref t) = self.default_theme {
+            return Some(t.clone());
+        }
+        for slide in &self.slides {
+            if slide.svg_data.contains("deck-theme:light") {
+                return Some("light".to_string());
+            }
+            if slide.svg_data.contains("deck-theme:dark") {
+                return Some("dark".to_string());
+            }
+        }
+        None
     }
 }
 

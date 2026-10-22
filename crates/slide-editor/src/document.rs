@@ -192,13 +192,24 @@ impl EditorDocument {
 
     /// Open a document from a path (.typ or .slide)
     pub fn open(path: &Path) -> Result<Self> {
-        let ext = path
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else if let Ok(can) = path.canonicalize() {
+            can
+        } else if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(path)
+        } else {
+            path.to_path_buf()
+        };
+
+        let ext = abs_path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
 
         if ext == "slide" {
+            let path = &abs_path;
             if slide_core::package::is_encrypted_package_file(path) {
                 use slide_core::security::AuthMode;
                 use slide_core::security::EncryptedSlideContainer;
@@ -586,21 +597,22 @@ impl EditorDocument {
             Ok(doc)
         } else {
             // Read .typ source file
-            let content = std::fs::read_to_string(path)?;
-            let title = path
+            let content = std::fs::read_to_string(&abs_path)?;
+            let title = abs_path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("Untitled")
                 .to_string();
 
-            let parent_dir = path
+            let parent_dir = abs_path
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(Path::to_path_buf);
+                .map(Path::to_path_buf)
+                .or_else(|| std::env::current_dir().ok());
 
             let mut doc = Self {
                 title,
-                file_path: Some(path.to_path_buf()),
+                file_path: Some(abs_path),
                 format: DocumentFormat::Typst,
                 source_text: content,
                 is_dirty: false,
@@ -676,6 +688,7 @@ impl EditorDocument {
                     tags: Vec::new(),
                     checksum: None,
                     uncompressed_size: None,
+                    default_theme: self.deck.as_ref().and_then(|d| d.default_theme.clone()),
                 }
             });
             meta.is_editable = true;
@@ -847,7 +860,14 @@ impl EditorDocument {
             let _ = std::fs::write(&typ_to_write, &self.source_text);
         } else {
             // Save as .typ
-            let parent_dir = path
+            let abs_path = if path.is_absolute() {
+                path.clone()
+            } else if let Ok(cwd) = std::env::current_dir() {
+                cwd.join(&path)
+            } else {
+                path.clone()
+            };
+            let parent_dir = abs_path
                 .parent()
                 .map(|p| {
                     if p.as_os_str().is_empty() {
@@ -858,8 +878,9 @@ impl EditorDocument {
                 })
                 .unwrap_or(Path::new("."));
             let _ = std::fs::create_dir_all(parent_dir);
-            std::fs::write(&path, &self.source_text)?;
+            std::fs::write(&abs_path, &self.source_text)?;
             self.format = DocumentFormat::Typst;
+            self.assets_dir = Some(parent_dir.to_path_buf());
         }
 
         self.file_path = Some(path.clone());
@@ -986,9 +1007,8 @@ impl EditorDocument {
 
     /// Rebuild full source_text from preamble and slide_chunks
     pub fn rebuild_source_from_chunks(&mut self) {
-        let is_macro = self.source_text.contains("#slide(")
-            || self.source_text.contains("#title-slide(")
-            || self.preamble.contains("#slide");
+        let is_macro = crate::compiler_bridge::CompilerBridge::has_slide_macros(&self.source_text)
+            || crate::compiler_bridge::CompilerBridge::has_slide_macros(&self.preamble);
         if is_macro {
             if self.preamble.trim().is_empty() {
                 self.source_text = self.slide_chunks.join("\n\n");
@@ -1140,21 +1160,9 @@ impl EditorDocument {
     /// Total number of slides (from compiled deck or parsed chunks)
     #[must_use]
     pub fn total_slides(&self) -> usize {
-        if !self.has_editable_source()
-            && let Some(ref d) = self.deck
-            && !d.slides.is_empty()
-        {
-            return d.slides.len();
-        }
-        if !self.slide_chunks.is_empty() {
-            return self.slide_chunks.len();
-        }
-        if let Some(ref d) = self.deck
-            && !d.slides.is_empty()
-        {
-            return d.slides.len();
-        }
-        1
+        let deck_count = self.deck.as_ref().map_or(0, |d| d.slides.len());
+        let chunk_count = self.slide_chunks.len();
+        deck_count.max(chunk_count).max(1)
     }
 
     /// Check whether the document contains editable Typst source code

@@ -270,6 +270,10 @@ impl EncryptedSlideContainer {
                 tags: vec!["encrypted".to_string()],
                 checksum: None,
                 uncompressed_size: Some(deck_json.len() as u64),
+                default_theme: deck
+                    .default_theme
+                    .clone()
+                    .or_else(|| deck.extract_default_theme()),
             };
             serde_json::to_vec_pretty(&meta).unwrap_or_default()
         };

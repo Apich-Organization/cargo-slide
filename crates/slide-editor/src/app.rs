@@ -196,6 +196,7 @@ pub struct SlideEditorApp {
     pub doc: EditorDocument,
     pub engine: TypstDocumentEngine,
     pub theme: AppTheme,
+    pub theme_explicit: bool,
     pub mode: EditorMode,
     pub active_slide: usize,
     pub in_place_editing_slide: Option<usize>,
@@ -682,14 +683,33 @@ impl SlideEditorApp {
         initial_file: Option<PathBuf>,
         dark_mode: bool,
     ) -> Self {
-        let theme = if dark_mode {
+        let theme_explicit = dark_mode;
+        let mut theme = if dark_mode {
             AppTheme::Dark
         } else {
             AppTheme::Light
         };
         let mut doc = if let Some(ref path) = initial_file {
-            EditorDocument::open(path)
-                .unwrap_or_else(|_| EditorDocument::new_presentation("New Presentation"))
+            let abs_path = if path.is_absolute() {
+                path.clone()
+            } else if let Ok(can) = path.canonicalize() {
+                can
+            } else if let Ok(cwd) = std::env::current_dir() {
+                cwd.join(path)
+            } else {
+                path.clone()
+            };
+
+            EditorDocument::open(&abs_path).unwrap_or_else(|_| {
+                let mut d = EditorDocument::new_presentation("New Presentation");
+                d.file_path = Some(abs_path.clone());
+                d.assets_dir = abs_path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(Path::to_path_buf)
+                    .or_else(|| std::env::current_dir().ok());
+                d
+            })
         } else {
             EditorDocument::new_presentation("New Presentation")
         };
@@ -709,6 +729,22 @@ impl SlideEditorApp {
 
         if doc.deck.is_none() {
             doc.deck = deck;
+        }
+
+        if !theme_explicit {
+            let declared = doc
+                .deck
+                .as_ref()
+                .and_then(|d| d.default_theme.clone())
+                .or_else(|| slide_core::compiler::extract_deck_theme_from_source(&doc.source_text));
+
+            if let Some(t) = declared.as_deref() {
+                if t.eq_ignore_ascii_case("light") {
+                    theme = AppTheme::Light;
+                } else if t.eq_ignore_ascii_case("dark") {
+                    theme = AppTheme::Dark;
+                }
+            }
         }
 
         let mut slide_view_vector = std::collections::HashSet::new();
@@ -737,6 +773,7 @@ impl SlideEditorApp {
             doc,
             engine,
             theme,
+            theme_explicit,
             mode: EditorMode::LivePreview,
             active_slide: 0,
             in_place_editing_slide: None,
@@ -1171,34 +1208,79 @@ impl SlideEditorApp {
         }
     }
 
+    /// Sync app UI theme based on deck default theme or Typst source comments
+    pub fn sync_theme_from_deck_if_implicit(&mut self) {
+        if self.theme_explicit {
+            return;
+        }
+        let declared = self
+            .doc
+            .deck
+            .as_ref()
+            .and_then(|d| d.default_theme.clone())
+            .or_else(|| {
+                slide_core::compiler::extract_deck_theme_from_source(&self.doc.source_text)
+            });
+
+        if let Some(t) = declared.as_deref() {
+            if t.eq_ignore_ascii_case("light") {
+                self.theme = AppTheme::Light;
+            } else if t.eq_ignore_ascii_case("dark") {
+                self.theme = AppTheme::Dark;
+            }
+        }
+    }
+
     /// Update pre-rendered slide images and titles cache using SIMD tiny-skia rasters
     pub fn update_slide_cache(&mut self) {
         let mut new_images = Vec::new();
         let mut new_titles = Vec::new();
         let mut new_hashes = Vec::new();
 
-        // 1. Extract titles from official AST engine slides
-        if !self.engine.slides.is_empty() {
-            for slide in &self.engine.slides {
-                new_titles.push(slide.title.clone());
+        // 1. Extract titles for all slides (supporting 100+ slides)
+        let total = self.doc.total_slides().max(self.engine.slides.len());
+        for idx in 0..total {
+            let mut resolved_title = None;
+            // Check AST engine slide title if present and not default "Slide N"
+            if let Some(ast_slide) = self.engine.slides.get(idx) {
+                let t = ast_slide.title.trim();
+                if !t.is_empty() && t != format!("Slide {}", idx + 1) {
+                    resolved_title = Some(t.to_string());
+                }
             }
-        } else if let Some(ref deck) = self.doc.deck {
-            for slide in &deck.slides {
-                new_titles.push(slide.extract_title());
+            // Check compiled deck slide title
+            if resolved_title.is_none()
+                && let Some(ref deck) = self.doc.deck
+                && let Some(slide) = deck.slides.get(idx)
+            {
+                let t = slide.extract_title();
+                if !t.is_empty() && t != format!("Slide {}", idx + 1) {
+                    resolved_title = Some(t);
+                }
             }
-        } else {
-            let chunks = self.doc.get_slide_chunks();
-            for (idx, c) in chunks.iter().enumerate() {
-                let mut title = None;
-                for line in c.lines() {
-                    let trimmed = line.trim();
-                    if let Some(h) = trimmed.strip_prefix("= ") {
-                        title = Some(h.trim().to_string());
-                        break;
+            // Check chunk header in source text
+            if resolved_title.is_none() {
+                let chunks = self.doc.get_slide_chunks();
+                if let Some(c) = chunks.get(idx) {
+                    for line in c.lines() {
+                        let trimmed = line.trim();
+                        if let Some(h) = trimmed.strip_prefix("= ") {
+                            resolved_title = Some(h.trim().to_string());
+                            break;
+                        }
                     }
                 }
-                new_titles.push(title.unwrap_or_else(|| format!("Slide {}", idx + 1)));
             }
+            // Fallback to AST title or generic Slide N
+            if resolved_title.is_none()
+                && let Some(ast_slide) = self.engine.slides.get(idx)
+            {
+                let t = ast_slide.title.trim();
+                if !t.is_empty() {
+                    resolved_title = Some(t.to_string());
+                }
+            }
+            new_titles.push(resolved_title.unwrap_or_else(|| format!("Slide {}", idx + 1)));
         }
 
         // 2. Render and cache slide preview rasters
@@ -1395,6 +1477,7 @@ impl SlideEditorApp {
                 }
             },
             | Message::ToggleTheme => {
+                self.theme_explicit = true;
                 self.theme = self.theme.toggle();
                 self.equation_images.clear();
                 self.code_images.clear();
@@ -2310,16 +2393,20 @@ impl SlideEditorApp {
                 let p = PathBuf::from(&path_str);
                 let resolved = if p.is_absolute() {
                     p.clone()
+                } else if let Ok(can) = p.canonicalize() {
+                    can
+                } else if let Ok(cwd) = std::env::current_dir() {
+                    cwd.join(&p)
                 } else {
-                    std::env::current_dir().unwrap_or_default().join(&p)
+                    p
                 };
                 self.commit_active_block();
                 match EditorDocument::open(&resolved) {
                     | Ok(new_doc) => {
-                        self.push_undo_snapshot();
                         save_recent_editor_file(&resolved);
                         self.recent_files = load_recent_editor_files();
                         self.doc = new_doc;
+                        self.sync_theme_from_deck_if_implicit();
                         self.engine =
                             TypstDocumentEngine::from_source(self.doc.source_text.clone());
                         self.ensure_engine_slides_match_deck();
@@ -2329,8 +2416,12 @@ impl SlideEditorApp {
                         self.in_place_editing_slide = None;
                         self.active_modal = None;
                         self.slide_images.clear();
+                        self.slide_titles.clear();
+                        self.cached_svg_hashes.clear();
                         self.equation_images.clear();
                         self.code_images.clear();
+                        self.undo_stack.clear();
+                        self.redo_stack.clear();
                         self.sync_editors_from_doc();
                         if self.doc.format == DocumentFormat::SlidePackage
                             && !self.doc.has_editable_source()
@@ -3011,6 +3102,7 @@ impl SlideEditorApp {
                 match res {
                     | Ok(deck) => {
                         self.doc.deck = Some(deck);
+                        self.sync_theme_from_deck_if_implicit();
                         self.compilation_status = CompilationStatus::Ready;
                         self.update_slide_cache();
                     },
@@ -3112,7 +3204,16 @@ impl SlideEditorApp {
                 self.open_error = None;
             },
             | Message::ExecuteOpen => {
-                let path = PathBuf::from(self.open_path.trim());
+                let raw_path = PathBuf::from(self.open_path.trim());
+                let path = if raw_path.is_absolute() {
+                    raw_path
+                } else if let Ok(can) = raw_path.canonicalize() {
+                    can
+                } else if let Ok(cwd) = std::env::current_dir() {
+                    cwd.join(&raw_path)
+                } else {
+                    raw_path
+                };
                 if path.exists() {
                     match EditorDocument::open(&path) {
                         | Ok(new_doc) => {
@@ -3120,12 +3221,22 @@ impl SlideEditorApp {
                             save_recent_editor_file(&path);
                             self.recent_files = load_recent_editor_files();
                             self.doc = new_doc;
+                            self.sync_theme_from_deck_if_implicit();
                             self.engine =
                                 TypstDocumentEngine::from_source(self.doc.source_text.clone());
                             self.ensure_engine_slides_match_deck();
                             self.active_slide = 0;
+                            self.active_block_id = None;
+                            self.active_block_range = None;
                             self.in_place_editing_slide = None;
                             self.active_modal = None;
+                            self.slide_images.clear();
+                            self.slide_titles.clear();
+                            self.cached_svg_hashes.clear();
+                            self.equation_images.clear();
+                            self.code_images.clear();
+                            self.undo_stack.clear();
+                            self.redo_stack.clear();
                             self.sync_editors_from_doc();
                             if self.doc.format == DocumentFormat::SlidePackage
                                 && !self.doc.has_editable_source()

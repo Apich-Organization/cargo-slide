@@ -800,6 +800,7 @@ mod tests {
         let deck = SlideDeck {
             title: "Pacing Demo".to_string(),
             default_animation: "fade".to_string(),
+            default_theme: None,
             slides: vec![
                 Slide {
                     page_number: 1,

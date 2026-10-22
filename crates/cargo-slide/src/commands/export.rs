@@ -544,6 +544,7 @@ mod tests {
         let deck = slide_core::model::SlideDeck {
             title: "Test Deck".to_string(),
             default_animation: "fade".to_string(),
+            default_theme: None,
             slides: vec![
                 slide_core::model::Slide {
                     page_number: 1,

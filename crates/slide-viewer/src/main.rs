@@ -87,9 +87,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let hud_theme = if args.light {
-        HudTheme::Light
+        Some(HudTheme::Light)
     } else {
-        HudTheme::Dark
+        None
     };
 
     if args.demo {
@@ -153,7 +153,7 @@ pub fn play_presentation_file(
     path: &Path,
     animation: &str,
     fullscreen: bool,
-    hud_theme: HudTheme,
+    hud_theme: Option<HudTheme>,
     kiosk: Option<u64>,
     pin: Option<&str>,
     passphrase: Option<&str>,
@@ -350,8 +350,11 @@ pub fn play_presentation_file(
 
     let mut app = SlideApp::from_deck(deck)
         .default_animation(animation)
-        .fullscreen(fullscreen)
-        .hud_theme(hud_theme);
+        .fullscreen(fullscreen);
+
+    if let Some(theme) = hud_theme {
+        app = app.hud_theme(theme);
+    }
 
     if let Some(store) = in_memory_asset_store {
         app = app.asset_store(store);
@@ -373,7 +376,7 @@ pub fn play_presentation_file(
 pub fn launch_builtin_demo(
     animation: &str,
     fullscreen: bool,
-    hud_theme: HudTheme,
+    hud_theme: Option<HudTheme>,
     kiosk: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (deck, cache_dir) =
@@ -381,8 +384,11 @@ pub fn launch_builtin_demo(
     let mut app = SlideApp::from_deck(deck)
         .source_file(&cache_dir)
         .default_animation(animation)
-        .fullscreen(fullscreen)
-        .hud_theme(hud_theme);
+        .fullscreen(fullscreen);
+
+    if let Some(theme) = hud_theme {
+        app = app.hud_theme(theme);
+    }
 
     if let Some(kiosk_secs) = kiosk {
         app = app.kiosk_interval(kiosk_secs);

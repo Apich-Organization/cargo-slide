@@ -926,7 +926,11 @@ html, body {
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px;
     padding: 24px;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: calc(88vh - 70px);
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .slide-card {
@@ -938,6 +942,8 @@ html, body {
     transition: all 0.2s ease;
     display: flex;
     flex-direction: column;
+    content-visibility: auto;
+    contain-intrinsic-size: 260px 180px;
 }
 
 .slide-card:hover {
@@ -962,6 +968,8 @@ html, body {
 .card-thumbnail svg {
     width: 100%;
     height: 100%;
+    display: block;
+    object-fit: contain;
 }
 
 .card-label {

@@ -2160,7 +2160,11 @@ pub fn draw_slide_jump_dialog(
     draw_text(buffer, width, height, x + 16, y + 70, hint, sub_col);
 }
 
-/// Draw interactive slide navigator grid overlay
+/// Type alias for rendered raster slide thumbnail cache `(width, height, ARGB pixels)`
+pub type GridThumbnailCache = std::collections::HashMap<usize, (usize, usize, Vec<u32>)>;
+
+/// Draw interactive slide navigator grid overlay with scrolling, true thumbnails, and title display
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn draw_slide_grid_overlay(
     buffer: &mut [u32],
     width: usize,
@@ -2169,8 +2173,11 @@ pub fn draw_slide_grid_overlay(
     current_idx: usize,
     hovered_idx: Option<usize>,
     theme: HudTheme,
-) -> Vec<(usize, Rect)> {
-    let backdrop_alpha = 0.85f32;
+    scroll_row: usize,
+    renderer: Option<&crate::renderer::SvgRenderer>,
+    mut thumbnail_cache: Option<&mut GridThumbnailCache>,
+) -> (Vec<(usize, Rect)>, usize) {
+    let backdrop_alpha = 0.88f32;
     let (bg_r, bg_g, bg_b) = if theme.is_light() {
         (245u32, 247u32, 250u32)
     } else {
@@ -2193,11 +2200,15 @@ pub fn draw_slide_grid_overlay(
     let mut click_rects = Vec::new();
     let total = deck.total_slides();
     if total == 0 {
-        return click_rects;
+        return (click_rects, 0);
     }
 
     let title = "SLIDE NAVIGATOR (Jump to Slide)";
-    let subtitle = "Click a slide tile or press 1-9 to jump directly • Press Esc to close";
+    let subtitle = format!(
+        "{}/{} Slides • Mouse wheel / Up / Down / PageUp / PageDown to scroll • Click tile to jump • Esc to close",
+        current_idx.saturating_add(1),
+        total
+    );
     let title_color = if theme.is_light() {
         0xFF0969da
     } else {
@@ -2209,33 +2220,54 @@ pub fn draw_slide_grid_overlay(
         0xFF8b949e
     };
 
-    draw_text_at_center(buffer, width, height, width / 2, 35, title, title_color);
-    draw_text_at_center(buffer, width, height, width / 2, 53, subtitle, sub_color);
+    draw_text_at_center(buffer, width, height, width / 2, 28, title, title_color);
+    draw_text_at_center(buffer, width, height, width / 2, 46, &subtitle, sub_color);
 
-    let max_cols = if width >= 1400 {
-        6
-    } else if width >= 1000 {
-        5
-    } else {
-        4
-    };
-    let cols = max_cols.min(total).max(1);
-    let card_w = 160.0f32;
-    let card_h = 90.0f32;
+    let card_w = 180.0f32;
+    let card_h = 132.0f32;
     let gap_x = 16.0f32;
     let gap_y = 16.0f32;
+    let thumb_w = 176usize;
+    let thumb_h = 99usize;
+
+    // Available width considering scrollbar margin on the right and padding on the left
+    let available_w = (width.saturating_sub(60)) as f32;
+    let calc_cols = ((available_w + gap_x) / (card_w + gap_x)).floor() as usize;
+    let cols = calc_cols.clamp(2, 6).min(total);
 
     let total_grid_w = (cols as f32) * card_w + ((cols.saturating_sub(1)) as f32) * gap_x;
-    let start_x = ((width as f32 - total_grid_w) / 2.0).max(20.0);
-    let start_y = 85.0f32;
+    let start_x = ((width.saturating_sub(30) as f32 - total_grid_w) / 2.0).max(20.0);
+    let start_y = 70.0f32;
 
-    for (idx, slide) in deck.slides.iter().enumerate() {
+    let available_h = (height.saturating_sub(90)) as f32;
+    let visible_rows = ((available_h + gap_y) / (card_h + gap_y)).floor() as usize;
+    let visible_rows = visible_rows.max(1);
+
+    let total_rows = (total.saturating_add(cols).saturating_sub(1)) / cols;
+    let max_scroll_row = total_rows.saturating_sub(visible_rows);
+    let eff_scroll_row = scroll_row.min(max_scroll_row);
+
+    let start_slide_idx = eff_scroll_row.saturating_mul(cols);
+    let end_slide_idx = (eff_scroll_row
+        .saturating_add(visible_rows)
+        .saturating_add(1)
+        .saturating_mul(cols))
+    .min(total);
+
+    for idx in start_slide_idx..end_slide_idx {
+        let slide = match deck.slides.get(idx) {
+            | Some(s) => s,
+            | None => continue,
+        };
+
+        let row_abs = idx / cols;
+        let row_rel = row_abs.saturating_sub(eff_scroll_row);
         let col = idx % cols;
-        let row = idx / cols;
-        let x = start_x + (col as f32) * (card_w + gap_x);
-        let y = start_y + (row as f32) * (card_h + gap_y);
 
-        if (y + card_h) as usize >= height.saturating_sub(30) {
+        let x = start_x + (col as f32) * (card_w + gap_x);
+        let y = start_y + (row_rel as f32) * (card_h + gap_y);
+
+        if (y + card_h) as usize >= height.saturating_sub(15) {
             break;
         }
 
@@ -2279,31 +2311,208 @@ pub fn draw_slide_grid_overlay(
             }
         }
 
-        // Card border
-        for cx in xi..(xi.saturating_add(wi)).min(width) {
-            let top_i = yi.saturating_mul(width).saturating_add(cx);
-            if let Some(px) = buffer.get_mut(top_i) {
-                *px = border_color;
+        // Card border (2px for current / hovered, 1px otherwise)
+        let border_thickness = if is_current || is_hovered {
+            2
+        } else {
+            1
+        };
+        for bt in 0..border_thickness {
+            let top_y = yi.saturating_add(bt);
+            if top_y < height {
+                let row = top_y.saturating_mul(width);
+                for cx in xi..(xi.saturating_add(wi)).min(width) {
+                    if let Some(px) = buffer.get_mut(row.saturating_add(cx)) {
+                        *px = border_color;
+                    }
+                }
             }
-            let bot_y = (yi.saturating_add(hi).saturating_sub(1)).min(height.saturating_sub(1));
-            let bot_i = bot_y.saturating_mul(width).saturating_add(cx);
-            if let Some(px) = buffer.get_mut(bot_i) {
-                *px = border_color;
+            let bot_y = (yi.saturating_add(hi).saturating_sub(1).saturating_sub(bt))
+                .min(height.saturating_sub(1));
+            let bot_row = bot_y.saturating_mul(width);
+            for cx in xi..(xi.saturating_add(wi)).min(width) {
+                if let Some(px) = buffer.get_mut(bot_row.saturating_add(cx)) {
+                    *px = border_color;
+                }
             }
-        }
-        for cy in yi..(yi.saturating_add(hi)).min(height) {
-            let left_i = cy.saturating_mul(width).saturating_add(xi);
-            if let Some(px) = buffer.get_mut(left_i) {
-                *px = border_color;
-            }
-            let right_x = (xi.saturating_add(wi).saturating_sub(1)).min(width.saturating_sub(1));
-            let right_i = cy.saturating_mul(width).saturating_add(right_x);
-            if let Some(px) = buffer.get_mut(right_i) {
-                *px = border_color;
+            for cy in yi..(yi.saturating_add(hi)).min(height) {
+                let row = cy.saturating_mul(width);
+                let left_x = xi.saturating_add(bt);
+                if left_x < width
+                    && let Some(px) = buffer.get_mut(row.saturating_add(left_x))
+                {
+                    *px = border_color;
+                }
+                let right_x = (xi.saturating_add(wi).saturating_sub(1).saturating_sub(bt))
+                    .min(width.saturating_sub(1));
+                if let Some(px) = buffer.get_mut(row.saturating_add(right_x)) {
+                    *px = border_color;
+                }
             }
         }
 
-        let p_badge = format!("SLIDE {}", idx.saturating_add(1));
+        // Thumbnail rendering in top area: [xi + 2 .. xi + 2 + thumb_w, yi + 2 .. yi + 2 + thumb_h]
+        let thumb_x = xi.saturating_add(2);
+        let thumb_y = yi.saturating_add(2);
+
+        let mut has_thumb = false;
+        if let Some(ref cache) = thumbnail_cache
+            && let Some((tw, th, pixels)) = cache.get(&idx)
+            && *tw == thumb_w
+            && *th == thumb_h
+        {
+            for ty in 0..thumb_h {
+                let by = thumb_y.saturating_add(ty);
+                if by >= height {
+                    break;
+                }
+                let brow = by.saturating_mul(width);
+                let prow = ty.saturating_mul(thumb_w);
+                for tx in 0..thumb_w {
+                    let bx = thumb_x.saturating_add(tx);
+                    if bx >= width {
+                        break;
+                    }
+                    if let Some(&px) = pixels.get(prow.saturating_add(tx))
+                        && let Some(dest_px) = buffer.get_mut(brow.saturating_add(bx))
+                    {
+                        *dest_px = px;
+                    }
+                }
+            }
+            has_thumb = true;
+        }
+
+        if !has_thumb
+            && let Some(r) = renderer
+            && let Ok((surface, _)) = r.render_svg(&slide.svg_data, thumb_w, thumb_h)
+        {
+            for ty in 0..thumb_h {
+                let by = thumb_y.saturating_add(ty);
+                if by >= height {
+                    break;
+                }
+                let brow = by.saturating_mul(width);
+                let prow = ty.saturating_mul(thumb_w);
+                for tx in 0..thumb_w {
+                    let bx = thumb_x.saturating_add(tx);
+                    if bx >= width {
+                        break;
+                    }
+                    if let Some(&px) = surface.pixels.get(prow.saturating_add(tx))
+                        && let Some(dest_px) = buffer.get_mut(brow.saturating_add(bx))
+                    {
+                        *dest_px = px;
+                    }
+                }
+            }
+            if let Some(ref mut cache) = thumbnail_cache {
+                cache.insert(idx, (thumb_w, thumb_h, surface.pixels));
+            }
+            has_thumb = true;
+        }
+
+        if !has_thumb {
+            let preview_bg = if theme.is_light() {
+                0xFFf6f8fa
+            } else {
+                0xFF161b22
+            };
+            let preview_bar1 = if is_current {
+                if theme.is_light() {
+                    0xFF0969da
+                } else {
+                    0xFF58a6ff
+                }
+            } else if theme.is_light() {
+                0xFFafb8c1
+            } else {
+                0xFF484f58
+            };
+            let preview_bar2 = if theme.is_light() {
+                0xFFd0d7de
+            } else {
+                0xFF30363d
+            };
+
+            fill_rect(
+                buffer, width, height, thumb_x, thumb_y, thumb_w, thumb_h, preview_bg,
+            );
+            fill_rect(
+                buffer,
+                width,
+                height,
+                thumb_x.saturating_add(10),
+                thumb_y.saturating_add(14),
+                thumb_w.saturating_sub(36),
+                6,
+                preview_bar1,
+            );
+            fill_rect(
+                buffer,
+                width,
+                height,
+                thumb_x.saturating_add(10),
+                thumb_y.saturating_add(28),
+                thumb_w.saturating_sub(56),
+                4,
+                preview_bar2,
+            );
+            fill_rect(
+                buffer,
+                width,
+                height,
+                thumb_x.saturating_add(10),
+                thumb_y.saturating_add(38),
+                thumb_w.saturating_sub(42),
+                4,
+                preview_bar2,
+            );
+            fill_rect(
+                buffer,
+                width,
+                height,
+                thumb_x.saturating_add(10),
+                thumb_y.saturating_add(48),
+                thumb_w.saturating_sub(68),
+                4,
+                preview_bar2,
+            );
+        }
+
+        // Footer label bar
+        let footer_y = yi.saturating_add(102);
+        let footer_h = 28usize;
+        let footer_bg = if is_current {
+            if theme.is_light() {
+                0xFFe0f2fe
+            } else {
+                0xFF1e293b
+            }
+        } else if is_hovered {
+            if theme.is_light() {
+                0xFFf1f5f9
+            } else {
+                0xFF21262d
+            }
+        } else if theme.is_light() {
+            0xFFffffff
+        } else {
+            0xFF161b22
+        };
+        fill_rect(
+            buffer,
+            width,
+            height,
+            xi.saturating_add(2),
+            footer_y,
+            wi.saturating_sub(4),
+            footer_h,
+            footer_bg,
+        );
+
+        // Slide number badge: #1
+        let p_badge = format!("#{}", idx.saturating_add(1));
         let badge_color = if is_current {
             if theme.is_light() {
                 0xFF0969da
@@ -2319,34 +2528,39 @@ pub fn draw_slide_grid_overlay(
             buffer,
             width,
             height,
-            xi.saturating_add(10),
-            yi.saturating_add(10),
+            xi.saturating_add(6),
+            footer_y.saturating_add(7),
             &p_badge,
             badge_color,
         );
 
-        let title_hint = extract_slide_title_preview(&slide.svg_data)
-            .unwrap_or_else(|| format!("Page {}", idx.saturating_add(1)));
-        let title_clipped =
-            truncate_text_to_width(&title_hint, (card_w as usize).saturating_sub(20));
-        let title_text_color = if theme.is_light() {
+        // Slide Title from slide.extract_title()
+        let title_str = slide.extract_title();
+        let max_text_w = wi.saturating_sub(if slide.has_notes() { 66 } else { 44 });
+        let title_clipped = truncate_text_to_width(&title_str, max_text_w);
+        let title_color = if is_current {
+            if theme.is_light() {
+                0xFF0969da
+            } else {
+                0xFF58a6ff
+            }
+        } else if theme.is_light() {
             0xFF1f2328
         } else {
             0xFFf0f6fc
         };
-        draw_text_clipped(
+        draw_text(
             buffer,
             width,
             height,
-            xi.saturating_add(10),
-            yi.saturating_add(32),
+            xi.saturating_add(36),
+            footer_y.saturating_add(7),
             &title_clipped,
-            title_text_color,
-            xi.saturating_add(wi).saturating_sub(10),
+            title_color,
         );
 
+        // Speaker notes indicator
         if slide.has_notes() {
-            let note_indicator = "[NOTES]";
             let note_color = if theme.is_light() {
                 0xFF1a7f37
             } else {
@@ -2356,15 +2570,50 @@ pub fn draw_slide_grid_overlay(
                 buffer,
                 width,
                 height,
-                xi.saturating_add(10),
-                yi.saturating_add(hi).saturating_sub(20),
-                note_indicator,
+                xi.saturating_add(wi).saturating_sub(26),
+                footer_y.saturating_add(7),
+                "[N]",
                 note_color,
             );
         }
     }
 
-    click_rects
+    // Vertical scrollbar indicator when slides overflow window height
+    if total_rows > visible_rows {
+        let track_x = width.saturating_sub(18);
+        let track_y = start_y as usize;
+        let track_w = 6usize;
+        let track_h = ((visible_rows as f32 * (card_h + gap_y) - gap_y) as usize)
+            .min(height.saturating_sub(track_y + 15));
+        let track_bg = if theme.is_light() {
+            0xFFe2e8f0
+        } else {
+            0xFF21262d
+        };
+        fill_rect(
+            buffer, width, height, track_x, track_y, track_w, track_h, track_bg,
+        );
+
+        let thumb_h = ((track_h as f32 * (visible_rows as f32 / total_rows as f32)) as usize)
+            .clamp(24, track_h);
+        let thumb_offset = if max_scroll_row > 0 {
+            ((track_h.saturating_sub(thumb_h)) as f32
+                * (eff_scroll_row as f32 / max_scroll_row as f32)) as usize
+        } else {
+            0
+        };
+        let thumb_y = track_y.saturating_add(thumb_offset);
+        let thumb_col = if theme.is_light() {
+            0xFF0969da
+        } else {
+            0xFF58a6ff
+        };
+        fill_rect(
+            buffer, width, height, track_x, thumb_y, track_w, thumb_h, thumb_col,
+        );
+    }
+
+    (click_rects, max_scroll_row)
 }
 
 /// Draw speaker notes card in presentation mode
@@ -6831,6 +7080,72 @@ mod tests {
         assert!(
             drawn_count > 100,
             "Jump dialog must render border, background, and text"
+        );
+    }
+
+    #[test]
+    fn test_draw_slide_grid_overlay_hundreds_of_slides() {
+        let mut deck = slide_core::model::SlideDeck::new("Massive Deck");
+        for i in 1..=200 {
+            deck.slides.push(slide_core::model::Slide {
+                page_number: i,
+                svg_data: format!(
+                    r#"<svg><g><a xlink:href="slide-meta:Slide Title Number {i}"><text>Slide Title Number {i}</text></a></g></svg>"#
+                ),
+                view_box: slide_core::model::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                hotspots: vec![],
+                animation: None,
+                steps: vec![],
+                notes: if i % 2 == 0 {
+                    Some("A note".to_string())
+                } else {
+                    None
+                },
+            });
+        }
+        let width = 1280;
+        let height = 720;
+        let mut buffer = vec![0u32; width * height];
+
+        // 1. Initial screen: scroll_row = 0
+        let (rects_0, max_row) = draw_slide_grid_overlay(
+            &mut buffer,
+            width,
+            height,
+            &deck,
+            0,
+            None,
+            HudTheme::Dark,
+            0,
+            None,
+            None,
+        );
+        assert!(!rects_0.is_empty(), "Visible cards must be populated");
+        assert!(
+            max_row > 10,
+            "With 200 slides and ~4-5 cols, max_row must be > 10, got {max_row}"
+        );
+        assert_eq!(rects_0[0].0, 0);
+
+        // 2. Scrolled down screen: scroll_row = 15
+        let (rects_15, max_row_15) = draw_slide_grid_overlay(
+            &mut buffer,
+            width,
+            height,
+            &deck,
+            0,
+            None,
+            HudTheme::Light,
+            15,
+            None,
+            None,
+        );
+        assert_eq!(max_row_15, max_row);
+        assert!(!rects_15.is_empty());
+        assert!(
+            rects_15[0].0 >= 60,
+            "Slide index on row 15 must be >= 60, got {}",
+            rects_15[0].0
         );
     }
 }

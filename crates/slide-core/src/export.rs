@@ -144,6 +144,7 @@ mod tests {
         let deck = SlideDeck {
             title: "HTML Presentation".to_string(),
             default_animation: "fade".to_string(),
+            default_theme: None,
             slides: vec![Slide {
                 page_number: 1,
                 svg_data: "<svg><text>Title</text></svg>".to_string(),

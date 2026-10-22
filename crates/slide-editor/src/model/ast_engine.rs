@@ -439,8 +439,8 @@ impl TypstDocumentEngine {
 
         if slides.is_empty() {
             if !self.slides.is_empty()
-                && (self.source_text.contains("#slide(")
-                    || self.source_text.contains("#title-slide(")
+                && (self.source_text.contains("#slide")
+                    || self.source_text.contains("#title-slide")
                     || self.source_text.contains("#pagebreak"))
             {
                 // Prevent temporary syntax errors during typing from collapsing the presentation to slide 1
