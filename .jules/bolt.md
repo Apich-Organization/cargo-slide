@@ -1,0 +1,3 @@
+## 2024-10-21 - Leptos 0.8 Reactivity Optimizations
+**Learning:** In Leptos 0.8, `Signal::derive` re-evaluates its closure on every read, which is devastating for performance when dealing with large reactive structures like `SlideDeck`. Calling `.get()` on a signal holding large structures clones the entire structure.
+**Action:** Always use `Memo::new(move |_| { ... })` instead of `Signal::derive` for computationally expensive derivations or when cloning large structures. Use `.with(|d| ...)` instead of `.get()` to read large structures by reference inside reactive contexts. Ensure cached types implement `PartialEq`.
