@@ -888,7 +888,10 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let current_slide = Signal::derive(move || {
+    // ⚡ Bolt: Cache current_slide using Memo to prevent expensive redundant
+    // evaluations and cloning of the Slide struct (which contains large svg_data)
+    // on every read, a known behavior of Signal::derive in Leptos 0.8.
+    let current_slide = Memo::new(move |_| {
         let d = deck.get();
         let idx = current_index.get();
         d.slides.get(idx).cloned()
