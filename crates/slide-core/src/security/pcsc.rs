@@ -23,7 +23,14 @@ pub type LONG = i32;
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
 pub type LONG = std::ffi::c_long;
 
+#[cfg(target_os = "windows")]
+pub type SCARDCONTEXT = usize;
+#[cfg(not(target_os = "windows"))]
 pub type SCARDCONTEXT = LONG;
+
+#[cfg(target_os = "windows")]
+pub type SCARDHANDLE = usize;
+#[cfg(not(target_os = "windows"))]
 pub type SCARDHANDLE = LONG;
 
 pub const SCARD_SCOPE_USER: DWORD = 0;
@@ -47,23 +54,23 @@ pub const SCARD_E_NO_READERS_AVAILABLE: u32 = 0x8010002E;
 pub const SCARD_E_NO_SMARTCARD: u32 = 0x8010000C;
 pub const SCARD_E_SHARING_VIOLATION: u32 = 0x8010000B;
 
-type SCardEstablishContextFn = unsafe extern "C" fn(
+type SCardEstablishContextFn = unsafe extern "system" fn(
     dwScope: DWORD,
     pvReserved1: *const c_void,
     pvReserved2: *const c_void,
     phContext: *mut SCARDCONTEXT,
 ) -> LONG;
 
-type SCardReleaseContextFn = unsafe extern "C" fn(hContext: SCARDCONTEXT) -> LONG;
+type SCardReleaseContextFn = unsafe extern "system" fn(hContext: SCARDCONTEXT) -> LONG;
 
-type SCardListReadersFn = unsafe extern "C" fn(
+type SCardListReadersFn = unsafe extern "system" fn(
     hContext: SCARDCONTEXT,
     mszGroups: *const c_char,
     mszReaders: *mut c_char,
     pcchReaders: *mut DWORD,
 ) -> LONG;
 
-type SCardConnectFn = unsafe extern "C" fn(
+type SCardConnectFn = unsafe extern "system" fn(
     hContext: SCARDCONTEXT,
     szReader: *const c_char,
     dwShareMode: DWORD,
@@ -72,12 +79,14 @@ type SCardConnectFn = unsafe extern "C" fn(
     pdwActiveProtocol: *mut DWORD,
 ) -> LONG;
 
-type SCardDisconnectFn = unsafe extern "C" fn(hCard: SCARDHANDLE, dwDisposition: DWORD) -> LONG;
+type SCardDisconnectFn =
+    unsafe extern "system" fn(hCard: SCARDHANDLE, dwDisposition: DWORD) -> LONG;
 
-type SCardBeginTransactionFn = unsafe extern "C" fn(hCard: SCARDHANDLE) -> LONG;
-type SCardEndTransactionFn = unsafe extern "C" fn(hCard: SCARDHANDLE, dwDisposition: DWORD) -> LONG;
+type SCardBeginTransactionFn = unsafe extern "system" fn(hCard: SCARDHANDLE) -> LONG;
+type SCardEndTransactionFn =
+    unsafe extern "system" fn(hCard: SCARDHANDLE, dwDisposition: DWORD) -> LONG;
 
-type SCardTransmitFn = unsafe extern "C" fn(
+type SCardTransmitFn = unsafe extern "system" fn(
     hCard: SCARDHANDLE,
     pioSendPci: *const c_void,
     pbSendBuffer: *const u8,
@@ -100,7 +109,7 @@ pub struct PcscLibrary {
     fn_transmit: SCardTransmitFn,
     pci_t0: *const c_void,
     pci_t1: *const c_void,
-    fn_stringify_error: Option<unsafe extern "C" fn(rv: LONG) -> *const c_char>,
+    fn_stringify_error: Option<unsafe extern "system" fn(rv: LONG) -> *const c_char>,
 }
 
 unsafe impl Send for PcscLibrary {}
@@ -530,7 +539,12 @@ impl PcscCard {
         &self,
         apdu: &[u8],
     ) -> Result<Vec<u8>> {
-        let pci = if self.active_protocol == (SCARD_PROTOCOL_T0 as u32) {
+        #[cfg(target_os = "windows")]
+        let is_t0 = self.active_protocol == SCARD_PROTOCOL_T0;
+        #[cfg(not(target_os = "windows"))]
+        let is_t0 = self.active_protocol == (SCARD_PROTOCOL_T0 as u32);
+
+        let pci = if is_t0 {
             if !self.context.lib.pci_t0.is_null() {
                 self.context.lib.pci_t0
             } else {
@@ -752,6 +766,35 @@ impl Drop for PcscCard {
         if self.h_card != 0 {
             let _ = unsafe { (self.context.lib.fn_disconnect)(self.h_card, SCARD_LEAVE_CARD) };
             self.h_card = 0;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pcsc_context_types() {
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                std::mem::size_of::<SCARDCONTEXT>(),
+                std::mem::size_of::<usize>(),
+                "SCARDCONTEXT must be pointer-sized (ULONG_PTR) on Windows"
+            );
+            assert_eq!(
+                std::mem::size_of::<SCARDHANDLE>(),
+                std::mem::size_of::<usize>(),
+                "SCARDHANDLE must be pointer-sized (ULONG_PTR) on Windows"
+            );
+        }
+    }
+
+    #[test]
+    fn test_pcsc_establish_and_list_readers() {
+        if let Ok(ctx) = PcscContext::establish() {
+            let _ = ctx.list_readers();
         }
     }
 }

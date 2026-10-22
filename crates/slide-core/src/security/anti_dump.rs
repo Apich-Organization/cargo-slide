@@ -62,29 +62,27 @@ fn apply_anti_dump_os_primitives() -> Result<()> {
 
 /// Lock a memory buffer into RAM to prevent it from being paged to disk swap space.
 pub fn mlock_slice(data: &[u8]) -> Result<()> {
-    if data.is_empty() {
-        return Ok(());
-    }
     #[cfg(unix)]
-    {
+    if !data.is_empty() {
         let res = unsafe { libc::mlock(data.as_ptr().cast(), data.len()) };
         if res != 0 {
             // Note: mlock may require elevated RLIMIT_MEMLOCK; do not fail hard if unprivileged
             return Ok(());
         }
     }
+    #[cfg(not(unix))]
+    let _ = data;
     Ok(())
 }
 
 /// Unlock a previously locked memory buffer.
 pub fn munlock_slice(data: &[u8]) {
-    if data.is_empty() {
-        return;
-    }
     #[cfg(unix)]
-    {
+    if !data.is_empty() {
         let _ = unsafe { libc::munlock(data.as_ptr().cast(), data.len()) };
     }
+    #[cfg(not(unix))]
+    let _ = data;
 }
 
 /// Install a panic hook that suppresses traceback information revealing memory layouts or crypto parameters.

@@ -66,6 +66,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -746,7 +747,7 @@ fn set_windows_fullscreen(
     const WS_POPUP: i32 = 0x8000_0000u32 as i32;
     const WS_OVERLAPPEDWINDOW: i32 = 0x00CF_0000;
     const WS_VISIBLE: i32 = 0x1000_0000;
-    const HWND_TOP: *mut std::ffi::c_void = 0isize as *mut std::ffi::c_void;
+    const HWND_TOP: *mut std::ffi::c_void = std::ptr::null_mut();
     const HWND_NOTOPMOST: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
     const SWP_FRAMECHANGED: u32 = 0x0020;
     const SWP_SHOWWINDOW: u32 = 0x0040;

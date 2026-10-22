@@ -162,14 +162,14 @@ impl SlideCompiler {
         #[cfg(windows)]
         {
             // Try `where.exe typst` on Windows
-            if let Ok(output) = Command::new("where").arg("typst").output() {
-                if output.status.success() {
-                    let path_str = String::from_utf8_lossy(&output.stdout);
-                    if let Some(first_line) = path_str.lines().next() {
-                        let trimmed = first_line.trim();
-                        if !trimmed.is_empty() {
-                            return Some(PathBuf::from(trimmed));
-                        }
+            if let Ok(output) = Command::new("where").arg("typst").output()
+                && output.status.success()
+            {
+                let path_str = String::from_utf8_lossy(&output.stdout);
+                if let Some(first_line) = path_str.lines().next() {
+                    let trimmed = first_line.trim();
+                    if !trimmed.is_empty() {
+                        return Some(PathBuf::from(trimmed));
                     }
                 }
             }

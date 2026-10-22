@@ -41,14 +41,13 @@ fn try_native_os_dialog(
         if let Ok(out) = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps_script])
             .output()
+            && out.status.success()
         {
-            if out.status.success() {
-                let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    let res = Zeroizing::new(s.clone());
-                    s.zeroize();
-                    return Some(res);
-                }
+            let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                let res = Zeroizing::new(s.clone());
+                s.zeroize();
+                return Some(res);
             }
         }
     }

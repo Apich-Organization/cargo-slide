@@ -108,7 +108,7 @@ pub fn read_masked_secret(prompt: &str) -> Result<Zeroizing<String>> {
             ) -> i32;
         }
 
-        let handle = std::io::stdin().as_raw_handle() as *mut std::ffi::c_void;
+        let handle = std::io::stdin().as_raw_handle();
         let mut orig_mode: u32 = 0;
         let ok = unsafe { GetConsoleMode(handle, &mut orig_mode) };
         if ok == 0 {

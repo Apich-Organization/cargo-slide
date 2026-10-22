@@ -312,14 +312,13 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         if let Ok(output) = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", script])
             .output()
+            && output.status.success()
         {
-            if output.status.success() {
-                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path_str.is_empty() {
-                    let p = PathBuf::from(path_str);
-                    if p.exists() {
-                        return Some(p);
-                    }
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let p = PathBuf::from(path_str);
+                if p.exists() {
+                    return Some(p);
                 }
             }
         }
