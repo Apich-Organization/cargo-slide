@@ -45,4 +45,5 @@ fn test_serve_absolute_path_traversal() {
 
     // Cleanup
     let _ = child.kill();
+    let _ = child.wait();
 }
