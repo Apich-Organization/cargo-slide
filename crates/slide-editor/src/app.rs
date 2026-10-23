@@ -210,6 +210,8 @@ pub struct SlideEditorApp {
     pub raw_code_blocks: std::collections::HashSet<String>,
     pub sidebar_visible: bool,
     pub sidebar_view_mode: SidebarViewMode,
+    pub sidebar_search_query: String,
+    pub sidebar_card_size: u8,
     pub zoom_percent: u32,
     pub speaking_wpm: u32,
     pub compiler: CompilerBridge,
@@ -430,6 +432,8 @@ pub enum Message {
     },
     DeleteSlide(usize),
     ToggleSidebarViewMode,
+    SidebarSearchChanged(String),
+    SetSidebarCardSize(u8),
     OpenSlideContextMenu(usize),
     OpenBlockContextMenu {
         slide_idx: usize,
@@ -468,6 +472,7 @@ pub enum Message {
     BrowseOpenPath,
     OpenPathChanged(String),
     ExecuteOpen,
+    ExecuteOpenFile(PathBuf),
     SaveDocument,
     OpenExportDialog,
     SelectExportFormat(ExportFormat),
@@ -786,6 +791,8 @@ impl SlideEditorApp {
             raw_code_blocks: std::collections::HashSet::new(),
             sidebar_visible: true,
             sidebar_view_mode: SidebarViewMode::default(),
+            sidebar_search_query: String::new(),
+            sidebar_card_size: 1,
             zoom_percent: 100,
             speaking_wpm: 130,
             compiler,
@@ -856,25 +863,40 @@ impl SlideEditorApp {
         self
     }
 
-    /// Ensure AST engine slide list has an entry for each slide in the deck when viewing precompiled packages without source
+    /// Ensure AST engine slide list has an entry for each slide in the deck
     pub fn ensure_engine_slides_match_deck(&mut self) {
-        if !self.doc.has_editable_source()
-            && let Some(ref deck) = self.doc.deck
-            && self.engine.slides.len() < deck.slides.len()
-        {
-            self.engine.slides.clear();
-            for (idx, slide) in deck.slides.iter().enumerate() {
-                let title = slide.extract_title();
-                self.engine
-                    .slides
-                    .push(crate::model::ast_engine::WysiwygSlide {
-                        page_number: idx + 1,
-                        title,
-                        blocks: Vec::new(),
-                        range: 0..0,
-                        transition: None,
-                        element_transitions: std::collections::HashMap::new(),
-                    });
+        if let Some(ref deck) = self.doc.deck {
+            if !self.doc.has_editable_source() && self.engine.slides.len() < deck.slides.len() {
+                self.engine.slides.clear();
+                for (idx, slide) in deck.slides.iter().enumerate() {
+                    let title = slide.extract_title();
+                    self.engine
+                        .slides
+                        .push(crate::model::ast_engine::WysiwygSlide {
+                            page_number: idx + 1,
+                            title,
+                            blocks: Vec::new(),
+                            range: 0..0,
+                            transition: None,
+                            element_transitions: std::collections::HashMap::new(),
+                        });
+                }
+            } else if self.engine.slides.len() < deck.slides.len() {
+                let start_idx = self.engine.slides.len();
+                for idx in start_idx..deck.slides.len() {
+                    let slide = &deck.slides[idx];
+                    let title = slide.extract_title();
+                    self.engine
+                        .slides
+                        .push(crate::model::ast_engine::WysiwygSlide {
+                            page_number: idx + 1,
+                            title,
+                            blocks: Vec::new(),
+                            range: 0..0,
+                            transition: None,
+                            element_transitions: std::collections::HashMap::new(),
+                        });
+                }
             }
         }
     }
@@ -1061,7 +1083,11 @@ impl SlideEditorApp {
         slide_idx: usize,
     ) -> f32 {
         let item_height = if self.sidebar_view_mode == SidebarViewMode::Thumbnails {
-            190.0
+            match self.sidebar_card_size {
+                | 0 => 140.0,
+                | 2 => 230.0,
+                | _ => 190.0,
+            }
         } else {
             48.0
         };
@@ -1359,6 +1385,10 @@ impl SlideEditorApp {
         {
             | Ok(deck) => {
                 self.doc.deck = Some(deck);
+                self.sync_theme_from_deck_if_implicit();
+                self.ensure_engine_slides_match_deck();
+                self.doc.sync_chunks_from_source();
+                self.sync_editors_from_doc();
                 self.compilation_status = CompilationStatus::Ready;
                 self.update_slide_cache();
             },
@@ -2447,6 +2477,12 @@ impl SlideEditorApp {
                     | SidebarViewMode::Thumbnails => SidebarViewMode::Outline,
                 };
             },
+            | Message::SidebarSearchChanged(query) => {
+                self.sidebar_search_query = query;
+            },
+            | Message::SetSidebarCardSize(size) => {
+                self.sidebar_card_size = size.clamp(0, 2);
+            },
             | Message::OpenSlideContextMenu(slide_idx) => {
                 self.active_modal = Some(ActiveModal::SlideContextMenu {
                     slide_idx,
@@ -3103,6 +3139,9 @@ impl SlideEditorApp {
                     | Ok(deck) => {
                         self.doc.deck = Some(deck);
                         self.sync_theme_from_deck_if_implicit();
+                        self.ensure_engine_slides_match_deck();
+                        self.doc.sync_chunks_from_source();
+                        self.sync_editors_from_doc();
                         self.compilation_status = CompilationStatus::Ready;
                         self.update_slide_cache();
                     },
@@ -3256,6 +3295,10 @@ impl SlideEditorApp {
                 } else {
                     self.open_error = Some("Specified file does not exist.".to_string());
                 }
+            },
+            | Message::ExecuteOpenFile(path) => {
+                self.open_path = path.to_string_lossy().to_string();
+                return self.update(Message::ExecuteOpen);
             },
             | Message::SaveDocument => {
                 self.commit_all_editor_states();
@@ -4868,6 +4911,8 @@ impl SlideEditorApp {
                 &self.slide_images,
                 self.active_slide,
                 self.sidebar_view_mode,
+                &self.sidebar_search_query,
+                self.sidebar_card_size,
                 win_w,
             );
             row![sidebar, main_view]
@@ -5116,6 +5161,9 @@ pub fn handle_global_drag_event(
         | iced::Event::Window(
             iced::window::Event::Opened { size, .. } | iced::window::Event::Resized(size),
         ) => Some(Message::WindowResized(size)),
+        | iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+            Some(Message::ExecuteOpenFile(path))
+        },
         | iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             Some(Message::GlobalCursorMoved(position))
         },

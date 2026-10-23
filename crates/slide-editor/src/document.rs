@@ -1003,6 +1003,16 @@ impl EditorDocument {
             self.preamble.clear();
             self.slide_chunks = vec![self.source_text.clone()];
         }
+
+        if let Some(ref d) = self.deck
+            && self.slide_chunks.len() < d.slides.len()
+        {
+            let start = self.slide_chunks.len();
+            for idx in start..d.slides.len() {
+                let title = d.slides[idx].extract_title();
+                self.slide_chunks.push(format!("= {title}\n\n"));
+            }
+        }
     }
 
     /// Rebuild full source_text from preamble and slide_chunks

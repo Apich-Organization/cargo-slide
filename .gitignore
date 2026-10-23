@@ -34,3 +34,4 @@ crates/slide-theme/target/
 **/.slide_cache/
 **/*.slide
 examples/geek-presentation/dist/
+**/.slide_macros.typ

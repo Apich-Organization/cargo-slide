@@ -317,6 +317,42 @@ fn test_open_various_typ_files() {
     assert_eq!(app7.doc.total_slides(), 1);
     assert_eq!(app7.slide_images.len(), 1);
     let _ = app7.view();
+
+    // Kind 8: file named slide.typ with #slide macros
+    let p8 = temp_dir.path().join("slide.typ");
+    std::fs::write(
+        &p8,
+        "#slide[\n= Slide 1\nContent 1\n]\n\n#slide[\n= Slide 2\nContent 2\n]\n\n#slide[\n= Slide 3\nContent 3\n]",
+    )
+    .unwrap();
+    let mut app8 = SlideEditorApp::new(Some(p8.clone()), false);
+    assert_eq!(app8.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app8.doc.total_slides(), 3);
+    assert_eq!(app8.engine.slides.len(), 3);
+    assert_eq!(app8.slide_images.len(), 3);
+    // Verify navigation across pages works
+    let _ = app8.update(Message::SelectSlide(1));
+    assert_eq!(app8.active_slide, 1);
+    let _ = app8.update(Message::SelectSlide(2));
+    assert_eq!(app8.active_slide, 2);
+    let _ = app8.view();
+
+    // Kind 9: file named slide.typ with explicit #import "slide.typ": *
+    let dir9 = tempfile::tempdir().unwrap();
+    let p9 = dir9.path().join("slide.typ");
+    std::fs::write(
+        &p9,
+        "#import \"slide.typ\": *\n#slide[\n= Page A\n]\n#slide[\n= Page B\n]",
+    )
+    .unwrap();
+    let mut app9 = SlideEditorApp::new(Some(p9), false);
+    assert_eq!(app9.compilation_status, CompilationStatus::Ready);
+    assert_eq!(app9.doc.total_slides(), 2);
+    assert_eq!(app9.engine.slides.len(), 2);
+    assert_eq!(app9.slide_images.len(), 2);
+    let _ = app9.update(Message::SelectSlide(1));
+    assert_eq!(app9.active_slide, 1);
+    let _ = app9.view();
 }
 
 #[test]
@@ -6119,4 +6155,90 @@ fn test_responsive_toolbar_proportional_scaling_views() {
             true,
         );
     }
+}
+
+#[test]
+fn test_debug_open_slide_typ_and_slides_typ() {
+    let p1 = std::path::PathBuf::from("../../examples/geek-presentation/slide.typ");
+    let p2 = std::path::PathBuf::from("../../examples/geek-presentation/slides.typ");
+    println!("p1 exists: {}, p2 exists: {}", p1.exists(), p2.exists());
+    if p1.exists() {
+        let app1 = SlideEditorApp::new(Some(p1), false);
+        println!(
+            "app1 total_slides: {}, engine slides: {}, deck slides: {:?}",
+            app1.doc.total_slides(),
+            app1.engine.slides.len(),
+            app1.doc.deck.as_ref().map(|d| d.slides.len())
+        );
+        println!("app1 status: {:?}", app1.compilation_status);
+        println!("app1 slide_chunks: {}", app1.doc.slide_chunks.len());
+        for (i, s) in app1.engine.slides.iter().enumerate() {
+            println!(
+                "app1 slide {}: title='{}', range={:?}, blocks={}",
+                i,
+                s.title,
+                s.range,
+                s.blocks.len()
+            );
+        }
+    }
+    if p2.exists() {
+        let app2 = SlideEditorApp::new(Some(p2), false);
+        println!(
+            "app2 total_slides: {}, engine slides: {}, deck slides: {:?}",
+            app2.doc.total_slides(),
+            app2.engine.slides.len(),
+            app2.doc.deck.as_ref().map(|d| d.slides.len())
+        );
+        println!("app2 status: {:?}", app2.compilation_status);
+        println!("app2 slide_chunks: {}", app2.doc.slide_chunks.len());
+        for (i, s) in app2.engine.slides.iter().take(5).enumerate() {
+            println!(
+                "app2 slide {}: title='{}', range={:?}, blocks={}",
+                i,
+                s.title,
+                s.range,
+                s.blocks.len()
+            );
+        }
+    }
+}
+
+#[test]
+fn test_sidebar_search_and_zoom_card_sizes() {
+    let mut app = SlideEditorApp::new(None, false);
+
+    // Initial state
+    assert_eq!(app.sidebar_search_query, "");
+    assert_eq!(app.sidebar_card_size, 1);
+
+    // Update search query
+    let _ = app.update(Message::SidebarSearchChanged("Introduction".to_string()));
+    assert_eq!(app.sidebar_search_query, "Introduction");
+
+    // Update card sizes (S = 0, M = 1, L = 2)
+    let _ = app.update(Message::SetSidebarCardSize(0));
+    assert_eq!(app.sidebar_card_size, 0);
+    app.sidebar_view_mode = slide_editor::app::SidebarViewMode::Thumbnails;
+    assert_eq!(app.get_sidebar_scroll_offset(3), 3.0 * 140.0);
+
+    let _ = app.update(Message::SetSidebarCardSize(2));
+    assert_eq!(app.sidebar_card_size, 2);
+    assert_eq!(app.get_sidebar_scroll_offset(3), 3.0 * 230.0);
+
+    let _ = app.update(Message::SetSidebarCardSize(1));
+    assert_eq!(app.sidebar_card_size, 1);
+    assert_eq!(app.get_sidebar_scroll_offset(3), 3.0 * 190.0);
+
+    // Clamping on invalid input
+    let _ = app.update(Message::SetSidebarCardSize(10));
+    assert_eq!(app.sidebar_card_size, 2);
+
+    // View rendering verification with search query and compact thumbnails
+    let _ = app.view();
+
+    // Clear search
+    let _ = app.update(Message::SidebarSearchChanged(String::new()));
+    assert_eq!(app.sidebar_search_query, "");
+    let _ = app.view();
 }

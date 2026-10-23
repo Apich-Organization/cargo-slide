@@ -309,6 +309,8 @@ pub fn App() -> impl IntoView {
 
     // Modals
     let overview_open = RwSignal::new(false);
+    let overview_search = RwSignal::new(String::new());
+    let overview_zoom = RwSignal::new("md".to_string());
     let help_open = RwSignal::new(false);
     let notes_open = RwSignal::new(false);
     let touch_start_x = RwSignal::new(None::<f64>);
@@ -1697,30 +1699,142 @@ pub fn App() -> impl IntoView {
                 if overview_open.get() {
                     let d = deck.get();
                     let cur_idx = current_index.get();
+                    let query = overview_search.get().trim().to_lowercase();
+                    let zoom = overview_zoom.get();
+                    let all_slides: Vec<_> = d.slides.into_iter().enumerate().collect();
+                    let total_count = all_slides.len();
+                    let filtered_slides: Vec<_> = all_slides
+                        .into_iter()
+                        .filter(|(idx, slide)| {
+                            if query.is_empty() {
+                                return true;
+                            }
+                            let page_str = (idx + 1).to_string();
+                            let hash_page = format!("#{}", idx + 1);
+                            let title = slide.extract_title().to_lowercase();
+                            let notes = slide.notes.as_deref().unwrap_or("").to_lowercase();
+                            query == page_str
+                                || query == hash_page
+                                || page_str.contains(&query)
+                                || title.contains(&query)
+                                || notes.contains(&query)
+                        })
+                        .collect();
+                    let match_count = filtered_slides.len();
+
                     view! {
                         <div class="modal-overlay" on:click=move |_| overview_open.set(false)>
                             <div class="overview-modal" on:click=move |ev| ev.stop_propagation()>
-                                <div class="modal-header">
-                                    <h2>"Slide Overview"</h2>
-                                    <button class="close-btn" aria-label="Close" title="Close overview" on:click=move |_| overview_open.set(false)>"✕"</button>
+                                <div class="modal-header overview-header">
+                                    <div class="overview-header-left">
+                                        <h2>"Slide Overview"</h2>
+                                        <span class="overview-count">
+                                            {if query.is_empty() {
+                                                format!("{total_count} slides")
+                                            } else {
+                                                format!("{match_count} of {total_count} slides")
+                                            }}
+                                        </span>
+                                    </div>
+                                    <div class="overview-controls">
+                                        <div class="overview-search-box">
+                                            <input
+                                                type="text"
+                                                class="overview-search-input"
+                                                placeholder="Search slides (title or #)..."
+                                                prop:value=move || overview_search.get()
+                                                on:input=move |ev| overview_search.set(event_target_value(&ev))
+                                                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                                    if ev.key() == "Escape" {
+                                                        if !overview_search.get().is_empty() {
+                                                            overview_search.set(String::new());
+                                                        } else {
+                                                            overview_open.set(false);
+                                                        }
+                                                    } else if ev.key() == "Enter" {
+                                                        let q = overview_search.get().trim().to_lowercase();
+                                                        if !q.is_empty() {
+                                                            let d = deck.get();
+                                                            for (idx, slide) in d.slides.iter().enumerate() {
+                                                                let page_str = (idx + 1).to_string();
+                                                                let hash_page = format!("#{}", idx + 1);
+                                                                let title = slide.extract_title().to_lowercase();
+                                                                let notes = slide.notes.as_deref().unwrap_or("").to_lowercase();
+                                                                if q == page_str
+                                                                    || q == hash_page
+                                                                    || page_str.contains(&q)
+                                                                    || title.contains(&q)
+                                                                    || notes.contains(&q)
+                                                                {
+                                                                    jump_to_slide(idx);
+                                                                    overview_open.set(false);
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            />
+                                            {if !overview_search.get().is_empty() {
+                                                view! {
+                                                    <button
+                                                        class="overview-search-clear"
+                                                        title="Clear search"
+                                                        on:click=move |_| overview_search.set(String::new())
+                                                    >"✕"</button>
+                                                }.into_any()
+                                            } else {
+                                                view! { <span/> }.into_any()
+                                            }}
+                                        </div>
+                                        <div class="overview-zoom-group">
+                                            <button
+                                                class=if overview_zoom.get() == "sm" { "zoom-btn active" } else { "zoom-btn" }
+                                                on:click=move |_| overview_zoom.set("sm".to_string())
+                                                title="Small thumbnails (Dense)"
+                                            >"S"</button>
+                                            <button
+                                                class=if overview_zoom.get() == "md" { "zoom-btn active" } else { "zoom-btn" }
+                                                on:click=move |_| overview_zoom.set("md".to_string())
+                                                title="Medium thumbnails (Default)"
+                                            >"M"</button>
+                                            <button
+                                                class=if overview_zoom.get() == "lg" { "zoom-btn active" } else { "zoom-btn" }
+                                                on:click=move |_| overview_zoom.set("lg".to_string())
+                                                title="Large thumbnails (Expanded)"
+                                            >"L"</button>
+                                        </div>
+                                        <button class="close-btn" aria-label="Close" title="Close overview" on:click=move |_| overview_open.set(false)>"✕"</button>
+                                    </div>
                                 </div>
-                                <div class="grid-container">
-                                    {d.slides.into_iter().enumerate().map(|(idx, slide)| {
-                                        let is_active = idx == cur_idx;
-                                        let slide_title = slide.extract_title();
+                                <div class=format!("grid-container zoom-{zoom}")>
+                                    {if filtered_slides.is_empty() {
                                         view! {
-                                            <div
-                                                class=if is_active { "slide-card active" } else { "slide-card" }
-                                                on:click=move |_| jump_to_slide(idx)
-                                            >
-                                                <div class="card-thumbnail" inner_html=slide.svg_data/>
-                                                <div class="card-label">
-                                                    <span class="card-page">{format!("#{}", idx + 1)}</span>
-                                                    <span class="card-title">{slide_title}</span>
-                                                </div>
+                                            <div class="overview-empty">
+                                                <p>{format!("No slides match \"{}\"", query)}</p>
                                             </div>
-                                        }
-                                    }).collect::<Vec<_>>()}
+                                        }.into_any()
+                                    } else {
+                                        filtered_slides.into_iter().map(|(idx, slide)| {
+                                            let is_active = idx == cur_idx;
+                                            let slide_title = slide.extract_title();
+                                            view! {
+                                                <div
+                                                    class=if is_active { "slide-card active" } else { "slide-card" }
+                                                    on:click=move |_| {
+                                                        jump_to_slide(idx);
+                                                        overview_open.set(false);
+                                                    }
+                                                >
+                                                    <div class="card-thumbnail" inner_html=slide.svg_data/>
+                                                    <div class="card-label">
+                                                        <span class="card-page">{format!("#{}", idx + 1)}</span>
+                                                        <span class="card-title">{slide_title}</span>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>().into_any()
+                                    }}
                                 </div>
                             </div>
                         </div>

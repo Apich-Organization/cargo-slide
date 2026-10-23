@@ -85,7 +85,15 @@ pub fn resolve_presentation_target(requested: &Path) -> Result<PathBuf> {
             if p.is_file() {
                 let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 // Exclude macro / support typst files
-                if name == "theme.typ" || name == "slide.typ" {
+                if name == "theme.typ" {
+                    continue;
+                }
+                if name == "slide.typ"
+                    && let Ok(content) = std::fs::read_to_string(&p)
+                    && (content.contains("#let slide-meta")
+                        || (content.contains("#let slide(")
+                            && content.contains("#let title-slide")))
+                {
                     continue;
                 }
                 if let Some(ext) = p.extension().and_then(|e| e.to_str())
@@ -277,10 +285,16 @@ impl SlideCompiler {
                 std::path::Path::to_path_buf,
             );
 
-        // Ensure slide.typ and theme.typ exist in root_dir so `#import "slide.typ": *` and `#import "theme.typ": *` always resolve
+        // Ensure slide.typ, .slide_macros.typ, and theme.typ exist in root_dir so macros always resolve
+        let is_slide_typ_target =
+            typ_file.file_name().and_then(|n| n.to_str()) == Some("slide.typ");
         let macro_path = root_dir.join("slide.typ");
-        if !macro_path.exists() {
+        if !macro_path.exists() && !is_slide_typ_target {
             let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
+        }
+        let dot_macro = root_dir.join(".slide_macros.typ");
+        if !dot_macro.exists() {
+            let _ = std::fs::write(&dot_macro, slide_theme::SLIDE_MACROS);
         }
         let theme_path = root_dir.join("theme.typ");
         if !theme_path.exists() {
@@ -567,9 +581,6 @@ impl SlideCompiler {
         typ_file: &Path,
         output_pdf: &Path,
     ) -> Result<()> {
-        let mut cmd = Command::new(&self.typst_path);
-        cmd.arg("compile").arg(typ_file).arg(output_pdf);
-
         let root_dir = typ_file
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -578,14 +589,63 @@ impl SlideCompiler {
                 std::path::Path::to_path_buf,
             );
 
+        let is_slide_typ_target =
+            typ_file.file_name().and_then(|n| n.to_str()) == Some("slide.typ");
+        let dot_macro = root_dir.join(".slide_macros.typ");
+        if !dot_macro.exists() {
+            let _ = std::fs::write(&dot_macro, slide_theme::SLIDE_MACROS);
+        }
         let macro_path = root_dir.join("slide.typ");
-        if !macro_path.exists() {
+        if !macro_path.exists() && !is_slide_typ_target {
             let _ = std::fs::write(&macro_path, slide_theme::SLIDE_MACROS);
         }
         let theme_path = root_dir.join("theme.typ");
         if !theme_path.exists() {
             let _ = std::fs::write(&theme_path, slide_theme::DEFAULT_THEME);
         }
+
+        struct TempFileGuard(Option<PathBuf>);
+        impl Drop for TempFileGuard {
+            fn drop(&mut self) {
+                if let Some(ref p) = self.0 {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
+        }
+
+        let (target_file_to_compile, _temp_guard) = if is_slide_typ_target {
+            if let Ok(content) = std::fs::read_to_string(typ_file) {
+                let has_self_import = content.contains("#import \"slide.typ\"")
+                    || content.contains("#import 'slide.typ'");
+                let has_macro_ref = content.contains("#slide") || content.contains("#title-slide");
+                if has_self_import || (has_macro_ref && !content.contains(".slide_macros.typ")) {
+                    let mut modified = content
+                        .replace("#import \"slide.typ\"", "#import \".slide_macros.typ\"")
+                        .replace("#import 'slide.typ'", "#import \".slide_macros.typ\"");
+                    if has_macro_ref && !modified.contains(".slide_macros.typ") {
+                        modified = format!("#import \".slide_macros.typ\": *\n{modified}");
+                    }
+                    let pid = std::process::id();
+                    let tmp = root_dir.join(format!(".slide_target_tmp_{pid}.typ"));
+                    if std::fs::write(&tmp, modified).is_ok() {
+                        (tmp.clone(), TempFileGuard(Some(tmp)))
+                    } else {
+                        (typ_file.to_path_buf(), TempFileGuard(None))
+                    }
+                } else {
+                    (typ_file.to_path_buf(), TempFileGuard(None))
+                }
+            } else {
+                (typ_file.to_path_buf(), TempFileGuard(None))
+            }
+        } else {
+            (typ_file.to_path_buf(), TempFileGuard(None))
+        };
+
+        let mut cmd = Command::new(&self.typst_path);
+        cmd.arg("compile")
+            .arg(&target_file_to_compile)
+            .arg(output_pdf);
 
         let fonts_dir = root_dir.join("fonts");
         if fonts_dir.is_dir() {

@@ -2163,7 +2163,7 @@ pub fn draw_slide_jump_dialog(
 /// Type alias for rendered raster slide thumbnail cache `(width, height, ARGB pixels)`
 pub type GridThumbnailCache = std::collections::HashMap<usize, (usize, usize, Vec<u32>)>;
 
-/// Draw interactive slide navigator grid overlay with scrolling, true thumbnails, and title display
+/// Draw interactive slide navigator grid overlay with scrolling, true thumbnails, search filter, and zoom scaling
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn draw_slide_grid_overlay(
     buffer: &mut [u32],
@@ -2176,6 +2176,8 @@ pub fn draw_slide_grid_overlay(
     scroll_row: usize,
     renderer: Option<&crate::renderer::SvgRenderer>,
     mut thumbnail_cache: Option<&mut GridThumbnailCache>,
+    search_query: &str,
+    scale: f32,
 ) -> (Vec<(usize, Rect)>, usize) {
     let backdrop_alpha = 0.88f32;
     let (bg_r, bg_g, bg_b) = if theme.is_light() {
@@ -2203,12 +2205,50 @@ pub fn draw_slide_grid_overlay(
         return (click_rects, 0);
     }
 
+    let query = search_query.trim().to_lowercase();
+    let matching_indices: Vec<usize> = if query.is_empty() {
+        (0..total).collect()
+    } else {
+        (0..total)
+            .filter(|&idx| {
+                let slide_num = idx + 1;
+                let num_str = format!("{slide_num}");
+                let badge = format!("#{slide_num}");
+                if badge.contains(&query) || num_str.contains(&query) {
+                    return true;
+                }
+                if let Some(slide) = deck.slides.get(idx) {
+                    let title = slide.extract_title().to_lowercase();
+                    if title.contains(&query) {
+                        return true;
+                    }
+                    if let Some(notes) = slide.notes.as_ref()
+                        && notes.to_lowercase().contains(&query)
+                    {
+                        return true;
+                    }
+                }
+                false
+            })
+            .collect()
+    };
+    let filtered_total = matching_indices.len();
+
     let title = "SLIDE NAVIGATOR (Jump to Slide)";
-    let subtitle = format!(
-        "{}/{} Slides • Mouse wheel / Up / Down / PageUp / PageDown to scroll • Click tile to jump • Esc to close",
-        current_idx.saturating_add(1),
-        total
-    );
+    let eff_scale = scale.clamp(0.6, 1.8);
+    let subtitle = if query.is_empty() {
+        format!(
+            "{}/{} Slides • Scale: {:.1}x • Type to filter • +/-: Zoom • Click to jump • Esc: Close",
+            current_idx.saturating_add(1),
+            total,
+            eff_scale,
+        )
+    } else {
+        format!(
+            "Filtered: {}/{} Matches • Scale: {:.1}x • Backspace: Edit • Esc: Clear filter",
+            filtered_total, total, eff_scale,
+        )
+    };
     let title_color = if theme.is_light() {
         0xFF0969da
     } else {
@@ -2220,49 +2260,115 @@ pub fn draw_slide_grid_overlay(
         0xFF8b949e
     };
 
-    draw_text_at_center(buffer, width, height, width / 2, 28, title, title_color);
-    draw_text_at_center(buffer, width, height, width / 2, 46, &subtitle, sub_color);
+    draw_text_at_center(buffer, width, height, width / 2, 20, title, title_color);
 
-    let card_w = 180.0f32;
-    let card_h = 132.0f32;
-    let gap_x = 16.0f32;
-    let gap_y = 16.0f32;
-    let thumb_w = 176usize;
-    let thumb_h = 99usize;
+    // Search bar input pill
+    let pill_w = 460usize.min(width.saturating_sub(40));
+    let pill_h = 24usize;
+    let pill_x = (width.saturating_sub(pill_w)) / 2;
+    let pill_y = 38usize;
+    let pill_bg = if theme.is_light() {
+        0xFFf1f5f9
+    } else {
+        0xFF21262d
+    };
+    let pill_border = if theme.is_light() {
+        0xFFcbd5e1
+    } else {
+        0xFF30363d
+    };
+    fill_rect(
+        buffer, width, height, pill_x, pill_y, pill_w, pill_h, pill_bg,
+    );
+    draw_rect_outline(
+        buffer,
+        width,
+        height,
+        pill_x,
+        pill_y,
+        pill_w,
+        pill_h,
+        pill_border,
+    );
+    let search_display = if query.is_empty() {
+        "Search: (type keyword or slide #)...".to_string()
+    } else {
+        format!("Search: \"{search_query}\"|")
+    };
+    let search_text_color = if query.is_empty() {
+        sub_color
+    } else if theme.is_light() {
+        0xFF0969da
+    } else {
+        0xFF58a6ff
+    };
+    draw_text(
+        buffer,
+        width,
+        height,
+        pill_x + 10,
+        pill_y + 5,
+        &search_display,
+        search_text_color,
+    );
+
+    draw_text_at_center(buffer, width, height, width / 2, 70, &subtitle, sub_color);
+
+    if filtered_total == 0 {
+        draw_text_at_center(
+            buffer,
+            width,
+            height,
+            width / 2,
+            height / 2,
+            &format!("No slides match \"{query}\". Press Esc or Backspace to clear filter."),
+            sub_color,
+        );
+        return (click_rects, 0);
+    }
+
+    let card_w = (180.0 * eff_scale).round();
+    let card_h = (135.0 * eff_scale).round();
+    let gap_x = (16.0 * eff_scale).round().max(8.0);
+    let gap_y = (16.0 * eff_scale).round().max(8.0);
+    let thumb_w = (card_w - 4.0).max(40.0) as usize;
+    let thumb_h = (card_h - 32.0).max(30.0) as usize;
 
     // Available width considering scrollbar margin on the right and padding on the left
     let available_w = (width.saturating_sub(60)) as f32;
     let calc_cols = ((available_w + gap_x) / (card_w + gap_x)).floor() as usize;
-    let cols = calc_cols.clamp(2, 6).min(total);
+    let cols = calc_cols.clamp(1, 10).min(filtered_total);
 
     let total_grid_w = (cols as f32) * card_w + ((cols.saturating_sub(1)) as f32) * gap_x;
     let start_x = ((width.saturating_sub(30) as f32 - total_grid_w) / 2.0).max(20.0);
-    let start_y = 70.0f32;
+    let start_y = 92.0f32;
 
-    let available_h = (height.saturating_sub(90)) as f32;
+    let available_h = (height.saturating_sub(115)) as f32;
     let visible_rows = ((available_h + gap_y) / (card_h + gap_y)).floor() as usize;
     let visible_rows = visible_rows.max(1);
 
-    let total_rows = (total.saturating_add(cols).saturating_sub(1)) / cols;
+    let total_rows = (filtered_total.saturating_add(cols).saturating_sub(1)) / cols;
     let max_scroll_row = total_rows.saturating_sub(visible_rows);
     let eff_scroll_row = scroll_row.min(max_scroll_row);
 
-    let start_slide_idx = eff_scroll_row.saturating_mul(cols);
-    let end_slide_idx = (eff_scroll_row
+    let start_pos = eff_scroll_row.saturating_mul(cols).min(filtered_total);
+    let end_pos = (eff_scroll_row
         .saturating_add(visible_rows)
         .saturating_add(1)
         .saturating_mul(cols))
-    .min(total);
+    .min(filtered_total)
+    .max(start_pos);
 
-    for idx in start_slide_idx..end_slide_idx {
+    for (rel_i, &idx) in matching_indices[start_pos..end_pos].iter().enumerate() {
+        let match_pos = start_pos + rel_i;
         let slide = match deck.slides.get(idx) {
             | Some(s) => s,
             | None => continue,
         };
 
-        let row_abs = idx / cols;
+        let row_abs = match_pos / cols;
         let row_rel = row_abs.saturating_sub(eff_scroll_row);
-        let col = idx % cols;
+        let col = match_pos % cols;
 
         let x = start_x + (col as f32) * (card_w + gap_x);
         let y = start_y + (row_rel as f32) * (card_h + gap_y);
@@ -2481,8 +2587,8 @@ pub fn draw_slide_grid_overlay(
         }
 
         // Footer label bar
-        let footer_y = yi.saturating_add(102);
-        let footer_h = 28usize;
+        let footer_y = yi.saturating_add(thumb_h).saturating_add(2);
+        let footer_h = (hi.saturating_sub(thumb_h).saturating_sub(4)).max(20);
         let footer_bg = if is_current {
             if theme.is_light() {
                 0xFFe0f2fe
@@ -7119,6 +7225,8 @@ mod tests {
             0,
             None,
             None,
+            "",
+            1.0,
         );
         assert!(!rects_0.is_empty(), "Visible cards must be populated");
         assert!(
@@ -7139,6 +7247,8 @@ mod tests {
             15,
             None,
             None,
+            "",
+            1.0,
         );
         assert_eq!(max_row_15, max_row);
         assert!(!rects_15.is_empty());
@@ -7147,5 +7257,47 @@ mod tests {
             "Slide index on row 15 must be >= 60, got {}",
             rects_15[0].0
         );
+
+        // 3. Search filtering
+        let (filtered_rects, _) = draw_slide_grid_overlay(
+            &mut buffer,
+            width,
+            height,
+            &deck,
+            0,
+            None,
+            HudTheme::Dark,
+            0,
+            None,
+            None,
+            "42",
+            1.0,
+        );
+        assert!(!filtered_rects.is_empty());
+        // Verify matching slide index
+        assert!(
+            filtered_rects
+                .iter()
+                .any(|(idx, _)| *idx == 41 || *idx == 141),
+            "Search for 42 must match slide 42 (index 41) or 142 (index 141)"
+        );
+
+        // 4. Zoom scaling
+        let (large_rects, _) = draw_slide_grid_overlay(
+            &mut buffer,
+            width,
+            height,
+            &deck,
+            0,
+            None,
+            HudTheme::Dark,
+            0,
+            None,
+            None,
+            "",
+            1.5,
+        );
+        assert!(!large_rects.is_empty());
+        assert!(large_rects[0].1.width > rects_0[0].1.width);
     }
 }

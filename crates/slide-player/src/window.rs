@@ -1231,6 +1231,8 @@ impl SlidePlayer {
         let mut speaker_notes_scroll_offset = 0usize;
         let mut grid_scroll_row = 0usize;
         let mut grid_max_scroll_row = 0usize;
+        let mut grid_search_query = String::new();
+        let mut grid_scale = 1.0f32;
         let mut grid_thumbnail_cache: crate::hud::GridThumbnailCache = HashMap::new();
         let mut grid_click_rects: Vec<(usize, slide_core::model::Rect)> = Vec::new();
         let mut hovered_grid_idx: Option<usize>;
@@ -1338,7 +1340,14 @@ impl SlidePlayer {
                         inspector.table_scroll = inspector.table_scroll.saturating_sub(1);
                     }
                 } else if show_grid {
-                    if scroll_y < 0.0 {
+                    if window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl) {
+                        if scroll_y > 0.0 {
+                            grid_scale = (grid_scale + 0.1).min(1.8);
+                        } else {
+                            grid_scale = (grid_scale - 0.1).max(0.6);
+                        }
+                        grid_thumbnail_cache.clear();
+                    } else if scroll_y < 0.0 {
                         grid_scroll_row = (grid_scroll_row + 1).min(grid_max_scroll_row);
                     } else {
                         grid_scroll_row = grid_scroll_row.saturating_sub(1);
@@ -1904,6 +1913,7 @@ impl SlidePlayer {
                         | DockAction::ToggleGrid => {
                             show_grid = !show_grid;
                             if show_grid {
+                                grid_search_query.clear();
                                 grid_scroll_row =
                                     (current_idx / 4).saturating_sub(1).min(grid_max_scroll_row);
                             }
@@ -2481,6 +2491,85 @@ impl SlidePlayer {
                                 }
                             },
                         }
+                    } else if show_grid {
+                        match key {
+                            | Key::Escape => {
+                                if !grid_search_query.is_empty() {
+                                    grid_search_query.clear();
+                                    grid_scroll_row = 0;
+                                } else {
+                                    show_grid = false;
+                                }
+                            },
+                            | Key::G => {
+                                if grid_search_query.is_empty() {
+                                    show_grid = false;
+                                } else {
+                                    let is_shift = window.is_key_down(Key::LeftShift)
+                                        || window.is_key_down(Key::RightShift);
+                                    grid_search_query.push(if is_shift { 'G' } else { 'g' });
+                                    grid_scroll_row = 0;
+                                }
+                            },
+                            | Key::Enter => {
+                                if let Some(idx) = hovered_grid_idx {
+                                    jump_target = Some(idx);
+                                    show_grid = false;
+                                } else if let Some((first_idx, _)) = grid_click_rects.first() {
+                                    jump_target = Some(*first_idx);
+                                    show_grid = false;
+                                }
+                            },
+                            | Key::Backspace => {
+                                grid_search_query.pop();
+                                grid_scroll_row = 0;
+                            },
+                            | Key::Up => {
+                                grid_scroll_row = grid_scroll_row.saturating_sub(1);
+                            },
+                            | Key::Down => {
+                                grid_scroll_row = (grid_scroll_row + 1).min(grid_max_scroll_row);
+                            },
+                            | Key::PageUp => {
+                                grid_scroll_row = grid_scroll_row.saturating_sub(3);
+                            },
+                            | Key::PageDown => {
+                                grid_scroll_row = (grid_scroll_row + 3).min(grid_max_scroll_row);
+                            },
+                            | Key::Home => {
+                                grid_scroll_row = 0;
+                            },
+                            | Key::End => {
+                                grid_scroll_row = grid_max_scroll_row;
+                            },
+                            | Key::Minus => {
+                                grid_scale = (grid_scale - 0.15).max(0.6);
+                                grid_thumbnail_cache.clear();
+                            },
+                            | Key::Equal => {
+                                grid_scale = (grid_scale + 0.15).min(1.8);
+                                grid_thumbnail_cache.clear();
+                            },
+                            | Key::Key0 | Key::NumPad0
+                                if window.is_key_down(Key::LeftCtrl)
+                                    || window.is_key_down(Key::RightCtrl) =>
+                            {
+                                grid_scale = 1.0;
+                                grid_thumbnail_cache.clear();
+                            },
+                            | other_key => {
+                                if let Some(c) = key_to_char(*other_key) {
+                                    let is_shift = window.is_key_down(Key::LeftShift)
+                                        || window.is_key_down(Key::RightShift);
+                                    grid_search_query.push(if is_shift {
+                                        c.to_ascii_uppercase()
+                                    } else {
+                                        c
+                                    });
+                                    grid_scroll_row = 0;
+                                }
+                            },
+                        }
                     } else {
                         match key {
                             | Key::J => {
@@ -2755,6 +2844,7 @@ impl SlidePlayer {
                             | Key::G | Key::Tab => {
                                 show_grid = !show_grid;
                                 if show_grid {
+                                    grid_search_query.clear();
                                     grid_scroll_row = (current_idx / 4)
                                         .saturating_sub(1)
                                         .min(grid_max_scroll_row);
@@ -3329,6 +3419,8 @@ impl SlidePlayer {
                     grid_scroll_row,
                     Some(&renderer),
                     Some(&mut grid_thumbnail_cache),
+                    &grid_search_query,
+                    grid_scale,
                 );
                 grid_click_rects = rects;
                 grid_max_scroll_row = max_row;

@@ -356,47 +356,61 @@ pub fn view_slide_canvas<'a>(
                 .on_press(Message::ToggleSlideViewMode(idx));
             vector_view.into()
         } else if content_blocks.is_empty() {
-            let empty_prompt = button(
-                container(
-                    column![
-                        text("+ Click here to add slide content")
-                            .size(14)
-                            .color(theme.accent()),
-                        text("Direct in-place visual presentation editing")
-                            .size(11)
-                            .color(theme.text_muted()),
-                    ]
-                    .spacing(6)
-                    .align_x(Alignment::Center),
+            if slide_images.get(idx).is_some() {
+                let vector_view = button(img_widget)
+                    .style(move |_t, _s| {
+                        button::Style {
+                            background: None,
+                            border: iced::border::Border::default(),
+                            ..button::Style::default()
+                        }
+                    })
+                    .padding(0)
+                    .on_press(Message::SelectSlide(idx));
+                vector_view.into()
+            } else {
+                let empty_prompt = button(
+                    container(
+                        column![
+                            text("+ Click here to add slide content")
+                                .size(14)
+                                .color(theme.accent()),
+                            text("Direct in-place visual presentation editing")
+                                .size(11)
+                                .color(theme.text_muted()),
+                        ]
+                        .spacing(6)
+                        .align_x(Alignment::Center),
+                    )
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
                 )
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
                 .width(Length::Fill)
-                .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_t, _s| {
-                button::Style {
-                    background: Some(iced::Background::Color(iced::Color {
-                        a: 0.04,
-                        ..theme.accent()
-                    })),
-                    border: iced::border::Border {
-                        color: theme.accent().scale_alpha(0.25),
-                        width: 1.0,
-                        radius: iced::border::Radius::from(6.0),
-                    },
-                    ..button::Style::default()
-                }
-            })
-            .on_press(Message::InsertBlockAfter {
-                offset: engine.get_slide_content_insert_offset(idx),
-                kind: InsertBlockKind::Heading1,
-            });
+                .height(Length::Fill)
+                .style(move |_t, _s| {
+                    button::Style {
+                        background: Some(iced::Background::Color(iced::Color {
+                            a: 0.04,
+                            ..theme.accent()
+                        })),
+                        border: iced::border::Border {
+                            color: theme.accent().scale_alpha(0.25),
+                            width: 1.0,
+                            radius: iced::border::Radius::from(6.0),
+                        },
+                        ..button::Style::default()
+                    }
+                })
+                .on_press(Message::InsertBlockAfter {
+                    offset: engine.get_slide_content_insert_offset(idx),
+                    kind: InsertBlockKind::Heading1,
+                });
 
-            let ins_bar = view_insert_bar(theme, engine.get_slide_content_insert_offset(idx));
-            column![empty_prompt, ins_bar].spacing(6).into()
+                let ins_bar = view_insert_bar(theme, engine.get_slide_content_insert_offset(idx));
+                column![empty_prompt, ins_bar].spacing(6).into()
+            }
         } else {
             let pad_v = (12.0 * scale).max(6.0);
             let pad_h = (24.0 * scale).max(12.0);

@@ -205,8 +205,29 @@ impl CompilerBridge {
             }
         }
 
-        let (processed_source, prepended_import) =
+        let is_user_slide_typ = if let Some(root) = project_root {
+            let p = root.join("slide.typ");
+            if p.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    !content.contains("#let slide-meta")
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let (mut processed_source, prepended_import) =
             Self::prepare_typst_source_with_macros(source_text);
+
+        if is_user_slide_typ {
+            processed_source = processed_source
+                .replace("#import \"slide.typ\"", "#import \".slide_macros.typ\"")
+                .replace("#import 'slide.typ'", "#import \".slide_macros.typ\"");
+        }
 
         static TMP_FILE_COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
@@ -216,10 +237,15 @@ impl CompilerBridge {
             let tmp = root.join(format!(".slide_preview_tmp_{pid}_{counter}.typ"));
             if prepended_import
                 || processed_source.contains("slide.typ")
+                || processed_source.contains(".slide_macros.typ")
                 || processed_source.contains("theme.typ")
             {
+                let dot_macro = root.join(".slide_macros.typ");
+                if !dot_macro.exists() {
+                    let _ = std::fs::write(&dot_macro, slide_theme::SLIDE_MACROS);
+                }
                 let slide_typ = root.join("slide.typ");
-                if !slide_typ.exists() {
+                if !slide_typ.exists() && !is_user_slide_typ {
                     let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
                 }
                 let theme_typ = root.join("theme.typ");
@@ -250,10 +276,15 @@ impl CompilerBridge {
                 let fallback_tmp = temp_dir.path().join("document.typ");
                 if prepended_import
                     || processed_source.contains("slide.typ")
+                    || processed_source.contains(".slide_macros.typ")
                     || processed_source.contains("theme.typ")
                 {
                     let _ = std::fs::write(
                         temp_dir.path().join("slide.typ"),
+                        slide_theme::SLIDE_MACROS,
+                    );
+                    let _ = std::fs::write(
+                        temp_dir.path().join(".slide_macros.typ"),
                         slide_theme::SLIDE_MACROS,
                     );
                     let _ = std::fs::write(
@@ -426,17 +457,43 @@ impl CompilerBridge {
             .as_deref()
             .or_else(|| doc.file_path.as_deref().and_then(|p| p.parent()));
 
-        let (processed_source, prepended_import) =
+        let is_user_slide_typ = if let Some(root) = project_root {
+            let p = root.join("slide.typ");
+            if p.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    !content.contains("#let slide-meta")
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let (mut processed_source, prepended_import) =
             Self::prepare_typst_source_with_macros(&doc.source_text);
+
+        if is_user_slide_typ {
+            processed_source = processed_source
+                .replace("#import \"slide.typ\"", "#import \".slide_macros.typ\"")
+                .replace("#import 'slide.typ'", "#import \".slide_macros.typ\"");
+        }
 
         let (temp_file, _cleanup) = if let Some(root) = project_root.filter(|p| p.is_dir()) {
             let tmp = root.join(".slide_export_tmp.typ");
             if prepended_import
                 || processed_source.contains("slide.typ")
+                || processed_source.contains(".slide_macros.typ")
                 || processed_source.contains("theme.typ")
             {
+                let dot_macro = root.join(".slide_macros.typ");
+                if !dot_macro.exists() {
+                    let _ = std::fs::write(&dot_macro, slide_theme::SLIDE_MACROS);
+                }
                 let slide_typ = root.join("slide.typ");
-                if !slide_typ.exists() {
+                if !slide_typ.exists() && !is_user_slide_typ {
                     let _ = std::fs::write(&slide_typ, slide_theme::SLIDE_MACROS);
                 }
                 let theme_typ = root.join("theme.typ");
