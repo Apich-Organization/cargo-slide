@@ -510,12 +510,11 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let total_slides = Signal::derive(move || deck.get().slides.len());
+    let total_slides = Signal::derive(move || deck.with(|d| d.slides.len()));
 
     // Audio Engine updater
     let trigger_audio_for_slide = move |slide_idx: usize| {
-        let d = deck.get();
-        if let Some(slide) = d.slides.get(slide_idx) {
+        if let Some(slide) = deck.with(|d| d.slides.get(slide_idx).cloned()) {
             let mut found_autoplay = false;
             for hs in &slide.hotspots {
                 if let Hotspot::Audio {
@@ -553,10 +552,9 @@ pub fn App() -> impl IntoView {
 
     // Navigation logic with Steps Support
     let next_step_or_slide = move || {
-        let d = deck.get();
         let cur_idx = current_index.get();
         let cur_st = current_step.get();
-        if let Some(slide) = d.slides.get(cur_idx) {
+        if let Some(slide) = deck.with(|d| d.slides.get(cur_idx).cloned()) {
             let max_st = slide.max_step();
             if cur_st < max_st {
                 current_step.set(cur_st + 1);
@@ -567,15 +565,18 @@ pub fn App() -> impl IntoView {
         let total = total_slides.get();
         if cur_idx + 1 < total {
             let next_idx = cur_idx + 1;
-            let anim = d
-                .slides
-                .get(next_idx)
-                .and_then(|s| s.animation.clone())
-                .unwrap_or_else(|| d.default_animation.clone());
+            let (anim, next_max) = deck.with(|d| {
+                let anim = d
+                    .slides
+                    .get(next_idx)
+                    .and_then(|s| s.animation.clone())
+                    .unwrap_or_else(|| d.default_animation.clone());
+                let next_max = d.slides.get(next_idx).map(|s| s.max_step()).unwrap_or(0);
+                (anim, next_max)
+            });
             active_transition.set(anim);
             current_index.set(next_idx);
             transition_counter.update(|c| *c += 1);
-            let next_max = d.slides.get(next_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(if next_max > 0 { 1 } else { 0 });
             trigger_audio_for_slide(next_idx);
         }
@@ -591,16 +592,18 @@ pub fn App() -> impl IntoView {
         let cur_idx = current_index.get();
         if cur_idx > 0 {
             let prev_idx = cur_idx - 1;
-            let d = deck.get();
-            let anim = d
-                .slides
-                .get(prev_idx)
-                .and_then(|s| s.animation.clone())
-                .unwrap_or_else(|| d.default_animation.clone());
+            let (anim, prev_max) = deck.with(|d| {
+                let anim = d
+                    .slides
+                    .get(prev_idx)
+                    .and_then(|s| s.animation.clone())
+                    .unwrap_or_else(|| d.default_animation.clone());
+                let prev_max = d.slides.get(prev_idx).map(|s| s.max_step()).unwrap_or(0);
+                (anim, prev_max)
+            });
             active_transition.set(anim);
             current_index.set(prev_idx);
             transition_counter.update(|c| *c += 1);
-            let prev_max = d.slides.get(prev_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(prev_max);
             trigger_audio_for_slide(prev_idx);
         }
@@ -609,16 +612,18 @@ pub fn App() -> impl IntoView {
     let jump_to_slide = move |target_idx: usize| {
         let total = total_slides.get();
         if target_idx < total {
-            let d = deck.get();
-            let anim = d
-                .slides
-                .get(target_idx)
-                .and_then(|s| s.animation.clone())
-                .unwrap_or_else(|| d.default_animation.clone());
+            let (anim, max_st) = deck.with(|d| {
+                let anim = d
+                    .slides
+                    .get(target_idx)
+                    .and_then(|s| s.animation.clone())
+                    .unwrap_or_else(|| d.default_animation.clone());
+                let max_st = d.slides.get(target_idx).map(|s| s.max_step()).unwrap_or(0);
+                (anim, max_st)
+            });
             active_transition.set(anim);
             current_index.set(target_idx);
             transition_counter.update(|c| *c += 1);
-            let max_st = d.slides.get(target_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(if max_st > 0 { 1 } else { 0 });
             overview_open.set(false);
             if let Some(w) = web_sys::window() {
@@ -892,9 +897,8 @@ pub fn App() -> impl IntoView {
     });
 
     let current_slide = Signal::derive(move || {
-        let d = deck.get();
         let idx = current_index.get();
-        d.slides.get(idx).cloned()
+        deck.with(|d| d.slides.get(idx).cloned())
     });
 
     let current_view_box = Signal::derive(move || {
@@ -1695,7 +1699,6 @@ pub fn App() -> impl IntoView {
             // Overview Modal
             {move || {
                 if overview_open.get() {
-                    let d = deck.get();
                     let cur_idx = current_index.get();
                     view! {
                         <div class="modal-overlay" on:click=move |_| overview_open.set(false)>
@@ -1705,7 +1708,7 @@ pub fn App() -> impl IntoView {
                                     <button class="close-btn" aria-label="Close" title="Close overview" on:click=move |_| overview_open.set(false)>"✕"</button>
                                 </div>
                                 <div class="grid-container">
-                                    {d.slides.into_iter().enumerate().map(|(idx, slide)| {
+                                    {deck.with(|d| d.slides.clone()).into_iter().enumerate().map(|(idx, slide)| {
                                         let is_active = idx == cur_idx;
                                         let slide_title = slide.extract_title();
                                         view! {
@@ -1915,7 +1918,6 @@ fn ChartInspectorModal(
 
         indices
     });
-
 
     let stats = Memo::new(move |_| {
         let d = transformed_data.get();
