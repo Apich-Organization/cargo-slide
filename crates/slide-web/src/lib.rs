@@ -1426,6 +1426,7 @@ pub fn App() -> impl IntoView {
                                         view! {
                                             <button
                                                 class=move || if is_sel() { "pen-tool-btn active" } else { "pen-tool-btn" }
+                                                aria-pressed=is_sel
                                                 aria-label=format!("Switch to {} Brush", b.name())
                                                 title=format!("Switch to {} Brush (T)", b.name())
                                                 on:click=move |_| {
@@ -1448,6 +1449,7 @@ pub fn App() -> impl IntoView {
                                         view! {
                                             <button
                                                 class=move || if is_sel() { "pen-size-btn active" } else { "pen-size-btn" }
+                                                aria-pressed=is_sel
                                                 aria-label=format!("Stroke Width {w:.0}px")
                                                 title=format!("Stroke Width {w:.0}px ([ / ])")
                                                 on:click=move |_| {
@@ -1471,6 +1473,7 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=move || if is_sel() { "pen-swatch active" } else { "pen-swatch" }
                                                 style=format!("background-color: {c};")
+                                                aria-pressed=is_sel
                                                 aria-label=format!("Palette Color {} {}", idx + 1, c)
                                                 title=format!("Palette Color {} ({c})", idx + 1)
                                                 on:click=move |_| {
@@ -2030,7 +2033,6 @@ fn ChartInspectorModal(
         indices
     });
 
-
     let stats = Memo::new(move |_| {
         let d = transformed_data.get();
         let vs = visible_series.get();
@@ -2190,6 +2192,8 @@ fn ChartInspectorModal(
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
+                                    aria-label=format!("Toggle visibility of {} series", s.name)
+                                    aria-pressed=is_visible
                                     on:click=move |_| {
                                         let n = name.clone();
                                         visible_series.update(|list| {
@@ -2204,7 +2208,7 @@ fn ChartInspectorModal(
                                     }
                                 >
                                     <span class="series-dot" style=format!("background: {color};") />
-                                    {s.name}
+                                    {s.name.clone()}
                                 </button>
                             }
                         }).collect::<Vec<_>>()
