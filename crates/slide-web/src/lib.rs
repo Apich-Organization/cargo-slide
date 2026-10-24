@@ -512,7 +512,8 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let total_slides = Signal::derive(move || deck.get().slides.len());
+    // ⚡ Bolt: Cache total slide count using Memo and avoid cloning the whole deck via `.with()`
+    let total_slides = Memo::new(move |_| deck.with(|d| d.slides.len()));
 
     // Audio Engine updater
     let trigger_audio_for_slide = move |slide_idx: usize| {
@@ -893,32 +894,32 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let current_slide = Signal::derive(move || {
-        let d = deck.get();
+    // ⚡ Bolt: Use Memo instead of Signal::derive to cache reactive computations and avoid cloning the whole deck via `.with()`
+    let current_slide = Memo::new(move |_| {
         let idx = current_index.get();
-        d.slides.get(idx).cloned()
+        deck.with(|d| d.slides.get(idx).cloned())
     });
 
-    let current_view_box = Signal::derive(move || {
+    let current_view_box = Memo::new(move |_| {
         current_slide
             .get()
             .map(|s| s.view_box)
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 793.7008, 446.4567))
     });
 
-    let current_view_box_str = Signal::derive(move || {
+    let current_view_box_str = Memo::new(move |_| {
         let vb = current_view_box.get();
         format!("{} {} {} {}", vb.x, vb.y, vb.width, vb.height)
     });
 
     let current_svg =
-        Signal::derive(move || current_slide.get().map(|s| s.svg_data).unwrap_or_default());
+        Memo::new(move |_| current_slide.get().map(|s| s.svg_data).unwrap_or_default());
 
     let current_hotspots =
-        Signal::derive(move || current_slide.get().map(|s| s.hotspots).unwrap_or_default());
+        Memo::new(move |_| current_slide.get().map(|s| s.hotspots).unwrap_or_default());
 
     let current_steps =
-        Signal::derive(move || current_slide.get().map(|s| s.steps).unwrap_or_default());
+        Memo::new(move |_| current_slide.get().map(|s| s.steps).unwrap_or_default());
 
     let get_slide_coords = move |ev: &web_sys::MouseEvent| -> Option<(f64, f64)> {
         let doc = web_sys::window()?.document()?;
@@ -994,7 +995,8 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let progress_percent = Signal::derive(move || {
+    // ⚡ Bolt: Cache progress calculation with Memo to prevent re-evaluation on every read
+    let progress_percent = Memo::new(move |_| {
         let total = total_slides.get();
         if total <= 1 {
             100.0
