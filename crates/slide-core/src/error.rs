@@ -28,6 +28,8 @@ pub enum SlideError {
     Piv(String),
     #[error("Integrity check failed: {0}")]
     IntegrityCheckFailed(String),
+    #[error("Security violation: {0}")]
+    SecurityViolation(String),
 }
 
 impl From<notify::Error> for SlideError {

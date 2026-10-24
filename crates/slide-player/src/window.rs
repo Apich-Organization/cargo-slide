@@ -61,6 +61,7 @@ use slide_core::error::Result;
 use slide_core::error::SlideError;
 use slide_core::model::Hotspot;
 use slide_core::model::SlideDeck;
+use slide_core::security::Zeroize;
 use slide_core::watcher::SlideWatcher;
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -277,8 +278,8 @@ impl SlideApp {
     }
 
     /// Run the presentation player
-    pub fn run(self) -> Result<()> {
-        let deck = match self.deck {
+    pub fn run(mut self) -> Result<()> {
+        let deck = match self.deck.take() {
             | Some(d) => d,
             | None => {
                 let file = self.source_file.as_ref().ok_or_else(|| {
@@ -289,7 +290,7 @@ impl SlideApp {
             },
         };
 
-        let mut config = self.config;
+        let mut config = std::mem::take(&mut self.config);
         if !config.hud_theme_explicit {
             config.hud_theme = if deck.is_light() {
                 HudTheme::Light
@@ -300,10 +301,21 @@ impl SlideApp {
 
         SlidePlayer::new(deck)
             .with_config(config)
-            .with_source_file(self.source_file)
-            .with_registry(self.registry)
-            .with_asset_store(self.asset_store)
+            .with_source_file(self.source_file.take())
+            .with_registry(std::mem::take(&mut self.registry))
+            .with_asset_store(self.asset_store.take())
             .run()
+    }
+}
+
+impl Drop for SlideApp {
+    fn drop(&mut self) {
+        if let Some(ref store) = self.asset_store {
+            store.clear();
+        }
+        if let Some(ref mut d) = self.deck {
+            d.zeroize();
+        }
     }
 }
 
@@ -313,6 +325,15 @@ pub struct SlidePlayer {
     registry: AnimationRegistry,
     source_file: Option<PathBuf>,
     asset_store: Option<Arc<slide_core::security::MemoryAssetStore>>,
+}
+
+impl Drop for SlidePlayer {
+    fn drop(&mut self) {
+        if let Some(ref store) = self.asset_store {
+            store.clear();
+        }
+        self.deck.zeroize();
+    }
 }
 
 /// URL percent-decode a UTF-8 string (e.g. `%20` -> `' '`, `%2F` -> `'/'`)
@@ -1101,6 +1122,10 @@ impl SlidePlayer {
     pub fn run(mut self) -> Result<()> {
         prefer_xwayland_for_fullscreen();
         init_dpi_awareness();
+        if self.asset_store.is_some() {
+            let _ = slide_core::security::enable_anti_dump_protection();
+            slide_core::security::verify_environment_integrity()?;
+        }
         if self.deck.slides.is_empty() {
             return Err(SlideError::Format(
                 "Slide deck has no slides to display".to_string(),
@@ -1118,7 +1143,7 @@ impl SlidePlayer {
         let mut window = create_window(&self.config.title, width, height, is_fullscreen)?;
 
         let renderer = SvgRenderer::new();
-        let mut transition_mgr = TransitionManager::new(self.registry);
+        let mut transition_mgr = TransitionManager::new(std::mem::take(&mut self.registry));
 
         let mut current_idx = 0;
         let mut total_slides = self.deck.total_slides();
@@ -1290,8 +1315,14 @@ impl SlidePlayer {
         );
 
         let mut first_frame = true;
+        let mut integrity_frame_counter: u32 = 0;
 
         while window.is_open() && !exit_requested && !window.is_key_down(Key::Q) {
+            integrity_frame_counter = integrity_frame_counter.wrapping_add(1);
+            if self.asset_store.is_some() && integrity_frame_counter.is_multiple_of(120) {
+                slide_core::security::verify_environment_integrity()?;
+            }
+
             let is_window_active = window.is_active();
             if !is_window_active {
                 was_window_active = false;

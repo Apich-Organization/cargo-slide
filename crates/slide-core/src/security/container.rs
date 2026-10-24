@@ -62,7 +62,8 @@ impl EncryptedSlideContainer {
     /// Check if a byte slice starts with the encrypted container magic bytes.
     #[must_use]
     pub fn is_encrypted_package(data: &[u8]) -> bool {
-        data.starts_with(ENCRYPTED_CONTAINER_MAGIC)
+        let magic = crate::obf_bytes!(b"SLIDECRYPT\x01");
+        data.starts_with(&magic)
     }
 
     /// Pack and encrypt a presentation deck and its assets into an encrypted `.slide` byte buffer using hardware PIV.
@@ -485,10 +486,11 @@ impl EncryptedSlideContainer {
                 SlideError::Crypto("Corrupted encrypted package: truncated magic".to_string())
             })?;
 
-        // Locate PAYLOAD_DELIMITER
+        // Locate PAYLOAD_DELIMITER with zeroized stream matching
+        let delim = crate::obf_bytes!(b"\n---ENCRYPTED-PAYLOAD---\n");
         let delim_pos = after_magic
-            .windows(PAYLOAD_DELIMITER.len())
-            .position(|w| w == PAYLOAD_DELIMITER)
+            .windows(delim.len())
+            .position(|w| w == &delim[..])
             .ok_or_else(|| {
                 SlideError::Crypto(
                     "Corrupted encrypted package: payload delimiter not found".to_string(),
@@ -499,7 +501,7 @@ impl EncryptedSlideContainer {
             .get(..delim_pos)
             .ok_or_else(|| SlideError::Crypto("Truncated package header".to_string()))?;
         let ciphertext = after_magic
-            .get(delim_pos.saturating_add(PAYLOAD_DELIMITER.len())..)
+            .get(delim_pos.saturating_add(delim.len())..)
             .ok_or_else(|| SlideError::Crypto("Truncated package ciphertext".to_string()))?
             .to_vec();
 
@@ -578,6 +580,7 @@ impl EncryptedSlideContainer {
 
         // Step 0: Activate OS anti-dump protection, core dump suppression, and attach denial
         let _ = super::anti_dump::enable_anti_dump_protection();
+        super::anti_dump::verify_environment_integrity()?;
 
         // Step 1: Enforce strict SHA3-512 integrity verification first
         self.verify_integrity(signer_pub_key_override)?;
@@ -623,7 +626,7 @@ impl EncryptedSlideContainer {
         aes_key.copy_from_slice(&decrypted_key_bytes);
 
         // Step 4: Decrypt payload using AES-256-GCM into zeroized memory
-        let decrypted_compressed_tar =
+        let mut decrypted_compressed_tar =
             aes_256_gcm_decrypt(&aes_key, &nonce, &tag, &self.ciphertext)?;
         aes_key.zeroize();
 
@@ -635,6 +638,7 @@ impl EncryptedSlideContainer {
                 .read_to_end(&mut uncompressed_tar)
                 .map_err(|e| SlideError::Crypto(format!("Failed to decompress archive: {e}")))?;
         }
+        decrypted_compressed_tar.zeroize();
 
         // Lock decrypted memory pages into RAM to prevent swapping to disk
         let _ = super::anti_dump::mlock_slice(&uncompressed_tar);
@@ -661,7 +665,7 @@ impl EncryptedSlideContainer {
         super::anti_dump::munlock_slice(&uncompressed_tar);
         uncompressed_tar.zeroize();
 
-        let Some(deck_bytes) = deck_json else {
+        let Some(mut deck_bytes) = deck_json else {
             return Err(SlideError::Crypto(
                 "No deck.json found inside encrypted presentation archive".to_string(),
             ));
@@ -669,6 +673,7 @@ impl EncryptedSlideContainer {
 
         let mut deck: SlideDeck = serde_json::from_slice(&deck_bytes)
             .map_err(|e| SlideError::Crypto(format!("Failed to parse decrypted SlideDeck: {e}")))?;
+        deck_bytes.zeroize();
 
         // Inline images directly into slide SVGs so resvg can render them purely in RAM
         for slide in &mut deck.slides {

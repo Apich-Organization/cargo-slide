@@ -60,10 +60,14 @@
   - 原生 GUI 界面（`slide-editor`、`slide-viewer`）与 CLI 终端日志统一采用标准通用 Unicode / ASCII 字符标识（如 `[OK]`、`[WARN]`、`[ERR]`、`[INFO]`、`+ Note` 等），避免在未安装彩色 Emoji 字体的 Linux 环境或极简容器中出现方块乱码（Tofu）；
   - Typst 排版将文稿内容（西文、中日韩汉字、数学公式与特殊符号）编译解析为高精度贝塞尔 `<path>` 矢量轮廓，保障跨平台渲染一致。
 - **13 种内置转场与页内分步显现**：支持 `fade`、`cut`、`slide-left`、`slide-right`、`slide-up`、`slide-down`、`zoom`、`wipe-left`、`wipe-right`、`iris`、`glitch`、`cube` 与 `particles`。支持 `#step(order, effect: "...")` 页内元素逐步呈现。
-- **文稿加密与完整性保护 (Presentation Encryption)**：
+- **文稿加密与多层安全纵深防御体系 (Presentation Security Framework)**：
+  - **全链路安全防护架构**：为应对在不可信或公开环境下的演示放映需求，构建了从静态加密存储到运行时动态防御的全链路纵深保护体系，涵盖密文字节混淆、零磁盘落地解密、跨平台防转储 (Anti-Dump)、防挂钩注入 (Anti-Hook)、防调试 (Anti-Debug) 与全生命周期内存即时擦除 (Ephemeral Zeroization)。
   - **硬件 PIV 令牌模式 (YubiKey / 智能卡)**：将文稿解密绑定至硬件私钥（`9d` 密钥管理槽位），并通过硬件签名私钥（`9c` 数字签名槽位）对 SHA3-512 完整性摘要进行签名验证。演播需插入物理令牌并验证 PIN 码。
   - **软件双钥密钥库模式 (密码口令 / BIP-39 助记词)**：面向无物理硬件令牌场景，将非对称 P-256 接收密钥与签名密钥封装于受 AES-256-GCM 保护的密钥库中。基于高强度密码或可选 12/24 词 BIP-39 助记词（`--mnemonic-words 12|24`），经由 PBKDF2-HMAC-SHA512 (600,000 次迭代) 与 HKDF-SHA256 安全派生保护密钥。
-  - **内存解密防落盘与运行时加固**：文稿与多媒体素材在 RAM 中直接解包并由 `MemoryAssetStore` 调度，全程不写入物理磁盘。解密数据段调用 `mlock` 锁定内存以防止写入交换分区，并在销毁时通过 `zeroize` 覆写清零。运行时限制核心转储（`RLIMIT_CORE = 0`），在 Linux 上设置 `PR_SET_DUMPABLE = 0` 阻止内存转储与未授权附加，在 macOS 上启用 `PT_DENY_ATTACH` 阻止调试器附加。
+  - **源码混淆与特征常数隐藏**：内置 64 位 LCG 伪随机密钥流混淆宏（`obf_str!` / `obf_bytes!`），包头魔数与敏感协议常量在二进制 `.rodata` 段中无明文残留，解密使用临时 `Zeroizing` 缓冲区并在用毕后即刻自毁。
+  - **内存解密防落盘与跨平台运行时加固**：文稿与多媒体素材在 RAM 中直接解包并由 `MemoryAssetStore` 调度，全程不写入物理磁盘。敏感内存调用 `mlock` (POSIX) 与 `VirtualLock` (Windows) 锁定在物理 RAM 中防止写入磁盘交换文件；跨平台抑制崩溃转储（Windows `SetErrorMode` 禁用 crash minidump，Linux `RLIMIT_CORE = 0`），全面拦截未授权内存转储（Linux `PR_SET_DUMPABLE = 0` / `PR_SET_PTRACER` 拒绝 ptrace 附加与 `/proc/$PID/mem` 抓取）；启用 Windows 进程缓解策略阻断全局挂钩注入（`ProcessExtensionPointDisablePolicy`）与动态代码注入（`ProcessDynamicCodePolicy`）；在 macOS 上启用 `PT_DENY_ATTACH`。
+  - **环境完整性验证与主动防调试**：播放器集成跨平台 Anti-Debug 机制（Windows `IsDebuggerPresent` + `CheckRemoteDebuggerPresent`，Linux `TracerPid` 检测），放映过程中以 120 帧周期轻量轮询环境完整性，检测到调试附加或抓取时立即中断退出。
+  - **全生命周期内存即时擦除 (Ephemeral Zeroization)**：数据模型（`SlideDeck`、`Slide`、`Hotspot`、`StepFragment`）、解压中间缓冲、私钥与资产字典全面实现 `Zeroize`；播放器实现 `Drop` 自动清理守卫，放映退出或异常终止时立即彻底抹除所有解密明文，杜绝敏感残留。
   - **掩码输入与重试反馈机制**：终端命令行与 GUI 弹窗输入密码、PIN 及助记词时均进行掩码显示。密码或 PIN 验证失败时提供最多 3 次重试机会并实时提示剩余尝试次数，避免误输入直接中断。RSA/ECDSA 比对采用严格恒定时间比对杜绝时序泄漏。
   - **可视化编辑器集成 (`slide-editor`)**：原生编辑器完整支持加密 `.slide` 幻灯片的读取、编辑与保存，打开加密文稿时自动唤起图形凭据验证弹窗。导出对话框支持直接打包为加密文稿（口令、12/24 词助记词或 YubiKey PIV）。
   - **Web 模式受保护部署与会话令牌**：在 WebAssembly 导出与托管时（`cargo slide build/serve/export --format wasm --encrypt`），文稿编译为加密信封，访问者在浏览器内输入口令或助记词后在纯 Rust WASM 客户端完成解密，并生成带有可配置存活时长（`--token-ttl <秒>`，默认 24 小时）的会话令牌保存在 `sessionStorage` 中，避免明文文稿泄露在静态服务器或 CDN 上。

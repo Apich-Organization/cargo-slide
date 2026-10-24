@@ -385,3 +385,121 @@ fn test_piv_retry_counter_decrement() {
     // Blocked card rejects further attempts
     assert!(card.verify_pin("123456").is_err());
 }
+
+#[test]
+fn test_environment_integrity_and_anti_debug() {
+    use slide_core::security::is_debugger_present;
+    use slide_core::security::verify_environment_integrity;
+
+    // Under standard unit test runners without an active ptrace/debugger,
+    // verify_environment_integrity should return Ok(()).
+    let integrity_result = verify_environment_integrity();
+    assert!(
+        integrity_result.is_ok(),
+        "Environment integrity check should pass in standard test harness: {:?}",
+        integrity_result.err()
+    );
+
+    let dbg = is_debugger_present();
+    assert!(!dbg, "Expected no debugger attached during test run");
+}
+
+#[test]
+fn test_memory_locking_and_protection() {
+    use slide_core::security::enable_anti_dump_protection;
+    use slide_core::security::mlock_slice;
+    use slide_core::security::munlock_slice;
+
+    // Verify mlock and munlock operations work on arbitrary heap or stack buffers
+    let mut sensitive_data = vec![0x42u8; 4096];
+    let lock_res = mlock_slice(&sensitive_data);
+    assert!(
+        lock_res.is_ok(),
+        "mlock_slice should succeed or degrade gracefully"
+    );
+
+    sensitive_data.fill(0);
+    munlock_slice(&sensitive_data);
+
+    // Verify anti-dump initialization
+    let anti_dump_res = enable_anti_dump_protection();
+    assert!(
+        anti_dump_res.is_ok(),
+        "enable_anti_dump_protection should execute without error"
+    );
+}
+
+#[test]
+fn test_slide_deck_zeroize_confidentiality() {
+    use slide_core::model::Hotspot;
+    use slide_core::model::Slide;
+    use slide_core::model::SlideDeck;
+    use slide_core::model::StepFragment;
+    use zeroize::Zeroize;
+
+    let mut deck = SlideDeck {
+        title: "Top Secret Presentation".to_string(),
+        default_animation: "fade".to_string(),
+        default_theme: Some("dark".to_string()),
+        slides: vec![Slide {
+            page_number: 1,
+            svg_data: "<svg><text>Sensitive Vector Content</text></svg>".to_string(),
+            view_box: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            animation: Some("zoom".to_string()),
+            notes: Some("Confidential internal notes".to_string()),
+            steps: vec![StepFragment {
+                order: 1,
+                effect: "fade-in".to_string(),
+                rect: Rect {
+                    x: 10.0,
+                    y: 10.0,
+                    width: 100.0,
+                    height: 50.0,
+                },
+            }],
+            hotspots: vec![Hotspot::Link {
+                target: "https://secret.corp/doc".to_string(),
+                rect: Rect {
+                    x: 0.1,
+                    y: 0.1,
+                    width: 0.2,
+                    height: 0.2,
+                },
+            }],
+        }],
+    };
+
+    assert!(!deck.title.is_empty());
+    assert!(!deck.slides[0].svg_data.is_empty());
+
+    // Perform zeroize
+    deck.zeroize();
+
+    assert!(deck.title.is_empty(), "Deck title should be wiped");
+    assert!(
+        deck.default_animation.is_empty(),
+        "Deck default_animation should be wiped"
+    );
+    assert!(
+        deck.default_theme.is_none(),
+        "Deck default_theme should be wiped"
+    );
+    assert!(deck.slides.is_empty(), "Deck slides should be cleared");
+}
+
+#[test]
+fn test_obfuscation_stream_macros() {
+    use slide_core::obf_bytes;
+    use slide_core::obf_str;
+
+    let s = obf_str!("CARGO_SLIDE_PROTECTED_RUNTIME");
+    assert_eq!(s.as_str(), "CARGO_SLIDE_PROTECTED_RUNTIME");
+
+    let b = obf_bytes!(b"\x89SLIDEPKG\r\n\x1a\n");
+    assert_eq!(b.as_slice(), b"\x89SLIDEPKG\r\n\x1a\n");
+}

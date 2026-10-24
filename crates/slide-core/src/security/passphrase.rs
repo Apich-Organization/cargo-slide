@@ -466,20 +466,23 @@ impl SoftwareKeystore {
             },
         };
 
-        let decrypted_plaintext = aes_256_gcm_decrypt(&aes_key, &nonce, &tag, &ciphertext)
+        let mut decrypted_plaintext = aes_256_gcm_decrypt(&aes_key, &nonce, &tag, &ciphertext)
             .map_err(|_| {
                 SlideError::IntegrityCheckFailed(
                     "Incorrect passphrase or recovery mnemonic. Decryption failed.".to_string(),
                 )
             })?;
 
-        let payload: PlaintextKeystorePayload = serde_json::from_slice(&decrypted_plaintext)
+        let mut payload: PlaintextKeystorePayload = serde_json::from_slice(&decrypted_plaintext)
             .map_err(|e| SlideError::Crypto(format!("Failed to parse decrypted keystore: {e}")))?;
+        decrypted_plaintext.zeroize();
 
         let recipient_key = SecretKey::from_slice(&payload.recipient_priv_bytes)
             .map_err(|e| SlideError::Crypto(format!("Invalid recipient private key bytes: {e}")))?;
         let signer_key = SecretKey::from_slice(&payload.signer_priv_bytes)
             .map_err(|e| SlideError::Crypto(format!("Invalid signer private key bytes: {e}")))?;
+        payload.recipient_priv_bytes.zeroize();
+        payload.signer_priv_bytes.zeroize();
 
         Ok(Self {
             recipient_key,

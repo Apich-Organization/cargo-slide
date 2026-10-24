@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
+use zeroize::Zeroize;
 
 /// 2D Rectangle in slide / SVG coordinates
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -339,5 +340,69 @@ impl SlideDeck {
         chunks: &[String],
     ) -> crate::pacing::DeckPacingReport {
         crate::pacing::calculate_deck_pacing(self, chunks)
+    }
+}
+
+impl Zeroize for StepFragment {
+    fn zeroize(&mut self) {
+        self.effect.zeroize();
+    }
+}
+
+impl Zeroize for Hotspot {
+    fn zeroize(&mut self) {
+        match self {
+            | Self::Link { target, .. } => target.zeroize(),
+            | Self::Video { source, caption, .. } => {
+                source.zeroize();
+                if let Some(c) = caption {
+                    c.zeroize();
+                }
+            },
+            | Self::Audio { source, title, .. } => {
+                source.zeroize();
+                if let Some(t) = title {
+                    t.zeroize();
+                }
+            },
+            | Self::Chart { .. } => {},
+        }
+    }
+}
+
+impl Zeroize for Slide {
+    fn zeroize(&mut self) {
+        self.svg_data.zeroize();
+        if let Some(ref mut anim) = self.animation {
+            anim.zeroize();
+        }
+        self.animation = None;
+        if let Some(ref mut n) = self.notes {
+            n.zeroize();
+        }
+        self.notes = None;
+        for hs in &mut self.hotspots {
+            hs.zeroize();
+        }
+        self.hotspots.clear();
+        for step in &mut self.steps {
+            step.zeroize();
+        }
+        self.steps.clear();
+    }
+}
+
+impl Zeroize for SlideDeck {
+    fn zeroize(&mut self) {
+        self.title.zeroize();
+        self.default_animation.zeroize();
+        if let Some(ref mut theme) = self.default_theme {
+            theme.zeroize();
+        }
+        self.default_theme = None;
+        for slide in &mut self.slides {
+            slide.zeroize();
+        }
+        self.slides.clear();
     }
 }

@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 //! Process memory protection, anti-dump, debugger attachment denial,
-//! memory locking (mlock), and panic zeroization hooks.
+//! memory locking (mlock/VirtualLock), and panic zeroization hooks.
 
 use crate::error::Result;
 use std::sync::OnceLock;
@@ -37,6 +37,9 @@ fn apply_anti_dump_os_primitives() -> Result<()> {
         // When PR_SET_DUMPABLE is 0, core dumps are suppressed and ptrace PTRACE_ATTACH is denied by kernel
         unsafe {
             libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0);
+            // PR_SET_PTRACER = 0x59616d61: restrict ptrace attach to init only (effectively deny all)
+            const PR_SET_PTRACER: i32 = 0x59616d61;
+            libc::prctl(PR_SET_PTRACER, 0, 0, 0, 0);
         }
     }
 
@@ -58,32 +61,153 @@ fn apply_anti_dump_os_primitives() -> Result<()> {
         }
     }
 
+    #[cfg(windows)]
+    {
+        // Windows process hardening:
+        // 1. Suppress crash dump generation and error reporting dialogs
+        const SEM_FAILCRITICALERRORS: u32 = 0x0001;
+        const SEM_NOGPFAULTERRORBOX: u32 = 0x0002;
+        unsafe extern "system" {
+            fn SetErrorMode(umode: u32) -> u32;
+            fn SetProcessMitigationPolicy(
+                policy: i32,
+                lpbuffer: *const std::ffi::c_void,
+                dwlength: usize,
+            ) -> i32;
+        }
+        unsafe {
+            SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+
+            // 2. Disable legacy extension points / SetWindowsHookEx injection into our process
+            // ProcessExtensionPointDisablePolicy = 3
+            #[repr(C)]
+            struct ExtensionPointPolicy {
+                flags: u32,
+            }
+            let ext_policy = ExtensionPointPolicy { flags: 1 };
+            let _ = SetProcessMitigationPolicy(
+                3,
+                std::ptr::addr_of!(ext_policy).cast(),
+                std::mem::size_of::<ExtensionPointPolicy>(),
+            );
+
+            // 3. Prohibit dynamic code generation / injection if possible
+            // ProcessDynamicCodePolicy = 2
+            #[repr(C)]
+            struct DynamicCodePolicy {
+                flags: u32,
+            }
+            let dyn_policy = DynamicCodePolicy { flags: 1 };
+            let _ = SetProcessMitigationPolicy(
+                2,
+                std::ptr::addr_of!(dyn_policy).cast(),
+                std::mem::size_of::<DynamicCodePolicy>(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if an active debugger or tracing tool is currently attached.
+#[must_use]
+pub fn is_debugger_present() -> bool {
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn IsDebuggerPresent() -> i32;
+            fn GetCurrentProcess() -> isize;
+            fn CheckRemoteDebuggerPresent(
+                hprocess: isize,
+                pbdebuggerpresent: *mut i32,
+            ) -> i32;
+        }
+        unsafe {
+            if IsDebuggerPresent() != 0 {
+                return true;
+            }
+            let mut remote = 0i32;
+            let _ = CheckRemoteDebuggerPresent(GetCurrentProcess(), &mut remote);
+            if remote != 0 {
+                return true;
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+            for line in status.lines() {
+                if let Some(rest) = line.strip_prefix("TracerPid:")
+                    && rest.trim().parse::<u32>().unwrap_or(0) > 0
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Verify that the execution environment is untampered and free of attached debuggers.
+/// Returns `Err(SlideError::SecurityViolation)` if an attached debugger is detected.
+pub fn verify_environment_integrity() -> Result<()> {
+    if is_debugger_present() {
+        return Err(crate::error::SlideError::SecurityViolation(
+            "Debugger or memory inspection tool detected during presentation playback".to_string(),
+        ));
+    }
     Ok(())
 }
 
 /// Lock a memory buffer into RAM to prevent it from being paged to disk swap space.
 pub fn mlock_slice(data: &[u8]) -> Result<()> {
+    if data.is_empty() {
+        return Ok(());
+    }
     #[cfg(unix)]
-    if !data.is_empty() {
+    {
         let res = unsafe { libc::mlock(data.as_ptr().cast(), data.len()) };
         if res != 0 {
             // Note: mlock may require elevated RLIMIT_MEMLOCK; do not fail hard if unprivileged
             return Ok(());
         }
     }
-    #[cfg(not(unix))]
-    let _ = data;
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn VirtualLock(
+                lpaddress: *const std::ffi::c_void,
+                dwsize: usize,
+            ) -> i32;
+        }
+        unsafe {
+            let _ = VirtualLock(data.as_ptr().cast(), data.len());
+        }
+    }
     Ok(())
 }
 
 /// Unlock a previously locked memory buffer.
 pub fn munlock_slice(data: &[u8]) {
+    if data.is_empty() {
+        return;
+    }
     #[cfg(unix)]
-    if !data.is_empty() {
+    {
         let _ = unsafe { libc::munlock(data.as_ptr().cast(), data.len()) };
     }
-    #[cfg(not(unix))]
-    let _ = data;
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn VirtualUnlock(
+                lpaddress: *const std::ffi::c_void,
+                dwsize: usize,
+            ) -> i32;
+        }
+        unsafe {
+            let _ = VirtualUnlock(data.as_ptr().cast(), data.len());
+        }
+    }
 }
 
 /// Install a panic hook that suppresses traceback information revealing memory layouts or crypto parameters.

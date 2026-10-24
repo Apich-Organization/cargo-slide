@@ -15,8 +15,10 @@ pub mod piv;
 
 pub use crate::package::is_encrypted_package_file;
 pub use anti_dump::enable_anti_dump_protection;
+pub use anti_dump::is_debugger_present;
 pub use anti_dump::mlock_slice;
 pub use anti_dump::munlock_slice;
+pub use anti_dump::verify_environment_integrity;
 pub use asset_store::MemoryAssetStore;
 pub use cert::PivCertInfo;
 pub use cert::PivKeyAlgorithm;
