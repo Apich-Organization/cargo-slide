@@ -1427,6 +1427,7 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=move || if is_sel() { "pen-tool-btn active" } else { "pen-tool-btn" }
                                                 aria-label=format!("Switch to {} Brush", b.name())
+                                                attr:aria-pressed=move || is_sel().to_string()
                                                 title=format!("Switch to {} Brush (T)", b.name())
                                                 on:click=move |_| {
                                                     pen_brush_type.set(b);
@@ -1449,6 +1450,7 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=move || if is_sel() { "pen-size-btn active" } else { "pen-size-btn" }
                                                 aria-label=format!("Stroke Width {w:.0}px")
+                                                attr:aria-pressed=move || is_sel().to_string()
                                                 title=format!("Stroke Width {w:.0}px ([ / ])")
                                                 on:click=move |_| {
                                                     pen_width.set(w);
@@ -1472,6 +1474,7 @@ pub fn App() -> impl IntoView {
                                                 class=move || if is_sel() { "pen-swatch active" } else { "pen-swatch" }
                                                 style=format!("background-color: {c};")
                                                 aria-label=format!("Palette Color {} {}", idx + 1, c)
+                                                attr:aria-pressed=move || is_sel().to_string()
                                                 title=format!("Palette Color {} ({c})", idx + 1)
                                                 on:click=move |_| {
                                                     pen_color_idx.set(idx);
@@ -2112,26 +2115,32 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_type.get() == ChartType::Bar { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Bar).to_string()
                             on:click=move |_| active_type.set(ChartType::Bar)
                         >"📊 Bar"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Line { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Line).to_string()
                             on:click=move |_| active_type.set(ChartType::Line)
                         >"📈 Line"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Area { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Area).to_string()
                             on:click=move |_| active_type.set(ChartType::Area)
                         >"📉 Area"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Pie { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Pie).to_string()
                             on:click=move |_| active_type.set(ChartType::Pie)
                         >"🥧 Pie"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Donut { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Donut).to_string()
                             on:click=move |_| active_type.set(ChartType::Donut)
                         >"🍩 Donut"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Scatter { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Scatter).to_string()
                             on:click=move |_| active_type.set(ChartType::Scatter)
                         >"⁖ Scatter"</button>
                     </div>
@@ -2140,30 +2149,37 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_transform.get() == TransformPreset::None { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::None).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::None)
                         >"ORIG"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Top5 { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::Top5).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Top5)
                         >"TOP 5"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortDesc { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::SortDesc).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::SortDesc)
                         >"SORT ▼"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortAsc { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::SortAsc).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::SortAsc)
                         >"SORT ▲"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Cumulative { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::Cumulative).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Cumulative)
                         >"CUM"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Percent100 { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::Percent100).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Percent100)
                         >"% SHARE"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::MovingAvg3 { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::MovingAvg3).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::MovingAvg3)
                         >"MA3"</button>
                     </div>
@@ -2190,6 +2206,8 @@ fn ChartInspectorModal(
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
+                                    attr:aria-pressed=is_visible.to_string()
+                                    aria-label=format!("Toggle series {}", name)
                                     on:click=move |_| {
                                         let n = name.clone();
                                         visible_series.update(|list| {
