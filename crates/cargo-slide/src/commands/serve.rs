@@ -452,6 +452,14 @@ fn handle_http_request(
         trimmed_path
     };
 
+    // Prevent absolute path traversal (e.g. `C:/` or `\` on Windows bypassing root_dir during join)
+    let safe_relative = Path::new(relative_path);
+    if safe_relative.has_root() || safe_relative.is_absolute() {
+        let response = Response::from_string("403 Forbidden").with_status_code(StatusCode(403));
+        let _ = request.respond(response);
+        return;
+    }
+
     let target_path = root_dir.join(relative_path);
 
     // Prevent directory traversal

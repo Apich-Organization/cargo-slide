@@ -1,0 +1,8 @@
+--- crates/cargo-slide/tests/security_serve_tests.rs
++++ crates/cargo-slide/tests/security_serve_tests.rs
+@@ -40,4 +40,5 @@
+
+     // Cleanup
+     let _ = child.kill();
++    let _ = child.wait();
+ }
