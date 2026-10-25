@@ -686,7 +686,11 @@ impl ViewerLauncherApp {
             .size(13)
             .color(theme.text_secondary());
 
-        let brand_badge = container(text("v0.2.0").size(11).color(theme.accent()))
+        let brand_badge = container(
+            text(concat!("v", env!("CARGO_PKG_VERSION")))
+                .size(11)
+                .color(theme.accent()),
+        )
             .padding([2, 8])
             .style(move |_| {
                 badge_container(
