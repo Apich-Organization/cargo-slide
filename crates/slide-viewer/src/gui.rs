@@ -691,17 +691,17 @@ impl ViewerLauncherApp {
                 .size(11)
                 .color(theme.accent()),
         )
-            .padding([2, 8])
-            .style(move |_| {
-                badge_container(
-                    if theme.is_dark() {
-                        Color::from_rgba(0.22, 0.74, 0.97, 0.15)
-                    } else {
-                        Color::from_rgba(0.01, 0.52, 0.78, 0.12)
-                    },
-                    theme.border_active(),
-                )
-            });
+        .padding([2, 8])
+        .style(move |_| {
+            badge_container(
+                if theme.is_dark() {
+                    Color::from_rgba(0.22, 0.74, 0.97, 0.15)
+                } else {
+                    Color::from_rgba(0.01, 0.52, 0.78, 0.12)
+                },
+                theme.border_active(),
+            )
+        });
 
         let header_left = row![brand_title, brand_sub, brand_badge]
             .spacing(12)
