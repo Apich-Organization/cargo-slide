@@ -1559,6 +1559,7 @@ pub fn App() -> impl IntoView {
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Laser Pointer (L)"
                         aria-label="Toggle Laser Pointer"
+                        aria-pressed=move || laser_active.get()
                         on:click=move |_| {
                             laser_active.update(|v| *v = !*v);
                             if laser_active.get() { pen_active.set(false); }
@@ -1568,6 +1569,7 @@ pub fn App() -> impl IntoView {
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Whiteboard Drawing Pen (P)"
                         aria-label="Toggle Whiteboard Drawing Pen"
+                        aria-pressed=move || pen_active.get()
                         on:click=move |_| {
                             pen_active.update(|v| *v = !*v);
                             if pen_active.get() { laser_active.set(false); }
@@ -1587,6 +1589,7 @@ pub fn App() -> impl IntoView {
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
                         title="Mute / Unmute Audio (M)"
                         aria-label="Toggle Audio Mute"
+                        aria-pressed=move || is_muted.get()
                         on:click=move |_| toggle_mute()
                     >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
                     <div class="hud-divider"/>
@@ -1594,16 +1597,17 @@ pub fn App() -> impl IntoView {
                         class="hud-btn"
                         title="Toggle Light / Dark HUD Theme (T)"
                         aria-label="Toggle Light / Dark HUD Theme"
+                        aria-pressed=move || is_dark_theme.get()
                         on:click=move |_| {
                             is_dark_theme.update(|v| *v = !*v);
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
                     >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
+                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=move || notes_open.get() on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
+                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=move || overview_open.get() on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
                     <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" aria-expanded=move || help_open.get() on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
                 </div>
             </div>
 
@@ -1790,16 +1794,19 @@ pub fn App() -> impl IntoView {
                                         <div class="overview-zoom-group">
                                             <button
                                                 class=if overview_zoom.get() == "sm" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-pressed=move || overview_zoom.get() == "sm"
                                                 on:click=move |_| overview_zoom.set("sm".to_string())
                                                 title="Small thumbnails (Dense)"
                                             >"S"</button>
                                             <button
                                                 class=if overview_zoom.get() == "md" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-pressed=move || overview_zoom.get() == "md"
                                                 on:click=move |_| overview_zoom.set("md".to_string())
                                                 title="Medium thumbnails (Default)"
                                             >"M"</button>
                                             <button
                                                 class=if overview_zoom.get() == "lg" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-pressed=move || overview_zoom.get() == "lg"
                                                 on:click=move |_| overview_zoom.set("lg".to_string())
                                                 title="Large thumbnails (Expanded)"
                                             >"L"</button>
@@ -2112,26 +2119,32 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_type.get() == ChartType::Bar { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_type.get() == ChartType::Bar
                             on:click=move |_| active_type.set(ChartType::Bar)
                         >"📊 Bar"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Line { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_type.get() == ChartType::Line
                             on:click=move |_| active_type.set(ChartType::Line)
                         >"📈 Line"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Area { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_type.get() == ChartType::Area
                             on:click=move |_| active_type.set(ChartType::Area)
                         >"📉 Area"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Pie { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_type.get() == ChartType::Pie
                             on:click=move |_| active_type.set(ChartType::Pie)
                         >"🥧 Pie"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Donut { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_type.get() == ChartType::Donut
                             on:click=move |_| active_type.set(ChartType::Donut)
                         >"🍩 Donut"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Scatter { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_type.get() == ChartType::Scatter
                             on:click=move |_| active_type.set(ChartType::Scatter)
                         >"⁖ Scatter"</button>
                     </div>
@@ -2140,30 +2153,37 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_transform.get() == TransformPreset::None { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::None
                             on:click=move |_| active_transform.set(TransformPreset::None)
                         >"ORIG"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Top5 { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::Top5
                             on:click=move |_| active_transform.set(TransformPreset::Top5)
                         >"TOP 5"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortDesc { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::SortDesc
                             on:click=move |_| active_transform.set(TransformPreset::SortDesc)
                         >"SORT ▼"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortAsc { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::SortAsc
                             on:click=move |_| active_transform.set(TransformPreset::SortAsc)
                         >"SORT ▲"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Cumulative { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::Cumulative
                             on:click=move |_| active_transform.set(TransformPreset::Cumulative)
                         >"CUM"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Percent100 { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::Percent100
                             on:click=move |_| active_transform.set(TransformPreset::Percent100)
                         >"% SHARE"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::MovingAvg3 { "btn-chip active" } else { "btn-chip" }
+                            aria-pressed=move || active_transform.get() == TransformPreset::MovingAvg3
                             on:click=move |_| active_transform.set(TransformPreset::MovingAvg3)
                         >"MA3"</button>
                     </div>
@@ -2190,6 +2210,7 @@ fn ChartInspectorModal(
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
+                                    aria-pressed=move || is_visible
                                     on:click=move |_| {
                                         let n = name.clone();
                                         visible_series.update(|list| {
