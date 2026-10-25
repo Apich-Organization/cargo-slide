@@ -512,7 +512,7 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let total_slides = Signal::derive(move || deck.get().slides.len());
+    let total_slides = Memo::new(move |_| deck.with(|d| d.slides.len()));
 
     // Audio Engine updater
     let trigger_audio_for_slide = move |slide_idx: usize| {
@@ -893,10 +893,10 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let current_slide = Signal::derive(move || {
-        let d = deck.get();
+    // ⚡ Bolt: Cache slide lookup and avoid cloning entire deck in reactive context
+    let current_slide = Memo::new(move |_| {
         let idx = current_index.get();
-        d.slides.get(idx).cloned()
+        deck.with(|d| d.slides.get(idx).cloned())
     });
 
     let current_view_box = Signal::derive(move || {

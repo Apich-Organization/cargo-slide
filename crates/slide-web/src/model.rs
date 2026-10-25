@@ -284,7 +284,7 @@ pub struct StepFragment {
     pub rect: Rect,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Slide {
     pub page_number: usize,
     pub svg_data: String,
