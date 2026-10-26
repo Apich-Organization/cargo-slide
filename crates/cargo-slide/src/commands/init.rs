@@ -105,6 +105,7 @@ pub fn execute(
 
         let cargo_toml_path = project_dir.join("Cargo.toml");
         if !cargo_toml_path.exists() {
+            let pkg_ver = env!("CARGO_PKG_VERSION");
             let cargo_toml = format!(
                 r#"[package]
 name = "{dir_name}"
@@ -112,8 +113,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-slide-core = {{ version = "0.3.0" }}
-slide-player = {{ version = "0.3.0" }}
+slide-core = {{ version = "{pkg_ver}" }}
+slide-player = {{ version = "{pkg_ver}" }}
 serde_json = "1.0"
 "#
             );

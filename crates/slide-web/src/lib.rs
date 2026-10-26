@@ -512,12 +512,12 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let total_slides = Signal::derive(move || deck.get().slides.len());
+    let total_slides = Memo::new(move |_| deck.with(|d| d.slides.len()));
 
     // Audio Engine updater
     let trigger_audio_for_slide = move |slide_idx: usize| {
-        let d = deck.get();
-        if let Some(slide) = d.slides.get(slide_idx) {
+        let slide_opt = deck.with(|d| d.slides.get(slide_idx).cloned());
+        if let Some(slide) = slide_opt {
             let mut found_autoplay = false;
             for hs in &slide.hotspots {
                 if let Hotspot::Audio {
@@ -555,10 +555,9 @@ pub fn App() -> impl IntoView {
 
     // Navigation logic with Steps Support
     let next_step_or_slide = move || {
-        let d = deck.get();
         let cur_idx = current_index.get();
         let cur_st = current_step.get();
-        if let Some(slide) = d.slides.get(cur_idx) {
+        if let Some(slide) = deck.with(|d| d.slides.get(cur_idx).cloned()) {
             let max_st = slide.max_step();
             if cur_st < max_st {
                 current_step.set(cur_st + 1);
@@ -569,15 +568,18 @@ pub fn App() -> impl IntoView {
         let total = total_slides.get();
         if cur_idx + 1 < total {
             let next_idx = cur_idx + 1;
-            let anim = d
-                .slides
-                .get(next_idx)
-                .and_then(|s| s.animation.clone())
-                .unwrap_or_else(|| d.default_animation.clone());
+            let (anim, next_max) = deck.with(|d| {
+                let anim = d
+                    .slides
+                    .get(next_idx)
+                    .and_then(|s| s.animation.clone())
+                    .unwrap_or_else(|| d.default_animation.clone());
+                let next_max = d.slides.get(next_idx).map(|s| s.max_step()).unwrap_or(0);
+                (anim, next_max)
+            });
             active_transition.set(anim);
             current_index.set(next_idx);
             transition_counter.update(|c| *c += 1);
-            let next_max = d.slides.get(next_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(if next_max > 0 { 1 } else { 0 });
             trigger_audio_for_slide(next_idx);
         }
@@ -593,16 +595,18 @@ pub fn App() -> impl IntoView {
         let cur_idx = current_index.get();
         if cur_idx > 0 {
             let prev_idx = cur_idx - 1;
-            let d = deck.get();
-            let anim = d
-                .slides
-                .get(prev_idx)
-                .and_then(|s| s.animation.clone())
-                .unwrap_or_else(|| d.default_animation.clone());
+            let (anim, prev_max) = deck.with(|d| {
+                let anim = d
+                    .slides
+                    .get(prev_idx)
+                    .and_then(|s| s.animation.clone())
+                    .unwrap_or_else(|| d.default_animation.clone());
+                let prev_max = d.slides.get(prev_idx).map(|s| s.max_step()).unwrap_or(0);
+                (anim, prev_max)
+            });
             active_transition.set(anim);
             current_index.set(prev_idx);
             transition_counter.update(|c| *c += 1);
-            let prev_max = d.slides.get(prev_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(prev_max);
             trigger_audio_for_slide(prev_idx);
         }
@@ -611,16 +615,18 @@ pub fn App() -> impl IntoView {
     let jump_to_slide = move |target_idx: usize| {
         let total = total_slides.get();
         if target_idx < total {
-            let d = deck.get();
-            let anim = d
-                .slides
-                .get(target_idx)
-                .and_then(|s| s.animation.clone())
-                .unwrap_or_else(|| d.default_animation.clone());
+            let (anim, max_st) = deck.with(|d| {
+                let anim = d
+                    .slides
+                    .get(target_idx)
+                    .and_then(|s| s.animation.clone())
+                    .unwrap_or_else(|| d.default_animation.clone());
+                let max_st = d.slides.get(target_idx).map(|s| s.max_step()).unwrap_or(0);
+                (anim, max_st)
+            });
             active_transition.set(anim);
             current_index.set(target_idx);
             transition_counter.update(|c| *c += 1);
-            let max_st = d.slides.get(target_idx).map(|s| s.max_step()).unwrap_or(0);
             current_step.set(if max_st > 0 { 1 } else { 0 });
             overview_open.set(false);
             if let Some(w) = web_sys::window() {
@@ -893,32 +899,31 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let current_slide = Signal::derive(move || {
-        let d = deck.get();
+    let current_slide = Memo::new(move |_| {
         let idx = current_index.get();
-        d.slides.get(idx).cloned()
+        deck.with(|d| d.slides.get(idx).cloned())
     });
 
-    let current_view_box = Signal::derive(move || {
+    let current_view_box = Memo::new(move |_| {
         current_slide
             .get()
             .map(|s| s.view_box)
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 793.7008, 446.4567))
     });
 
-    let current_view_box_str = Signal::derive(move || {
+    let current_view_box_str = Memo::new(move |_| {
         let vb = current_view_box.get();
         format!("{} {} {} {}", vb.x, vb.y, vb.width, vb.height)
     });
 
     let current_svg =
-        Signal::derive(move || current_slide.get().map(|s| s.svg_data).unwrap_or_default());
+        Memo::new(move |_| current_slide.get().map(|s| s.svg_data).unwrap_or_default());
 
     let current_hotspots =
-        Signal::derive(move || current_slide.get().map(|s| s.hotspots).unwrap_or_default());
+        Memo::new(move |_| current_slide.get().map(|s| s.hotspots).unwrap_or_default());
 
     let current_steps =
-        Signal::derive(move || current_slide.get().map(|s| s.steps).unwrap_or_default());
+        Memo::new(move |_| current_slide.get().map(|s| s.steps).unwrap_or_default());
 
     let get_slide_coords = move |ev: &web_sys::MouseEvent| -> Option<(f64, f64)> {
         let doc = web_sys::window()?.document()?;
@@ -994,7 +999,7 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let progress_percent = Signal::derive(move || {
+    let progress_percent = Memo::new(move |_| {
         let total = total_slides.get();
         if total <= 1 {
             100.0
@@ -1427,6 +1432,7 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=move || if is_sel() { "pen-tool-btn active" } else { "pen-tool-btn" }
                                                 aria-label=format!("Switch to {} Brush", b.name())
+                                                attr:aria-pressed=move || is_sel().to_string()
                                                 title=format!("Switch to {} Brush (T)", b.name())
                                                 on:click=move |_| {
                                                     pen_brush_type.set(b);
@@ -1449,6 +1455,7 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=move || if is_sel() { "pen-size-btn active" } else { "pen-size-btn" }
                                                 aria-label=format!("Stroke Width {w:.0}px")
+                                                attr:aria-pressed=move || is_sel().to_string()
                                                 title=format!("Stroke Width {w:.0}px ([ / ])")
                                                 on:click=move |_| {
                                                     pen_width.set(w);
@@ -1472,6 +1479,7 @@ pub fn App() -> impl IntoView {
                                                 class=move || if is_sel() { "pen-swatch active" } else { "pen-swatch" }
                                                 style=format!("background-color: {c};")
                                                 aria-label=format!("Palette Color {} {}", idx + 1, c)
+                                                attr:aria-pressed=move || is_sel().to_string()
                                                 title=format!("Palette Color {} ({c})", idx + 1)
                                                 on:click=move |_| {
                                                     pen_color_idx.set(idx);
@@ -1559,6 +1567,7 @@ pub fn App() -> impl IntoView {
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Laser Pointer (L)"
                         aria-label="Toggle Laser Pointer"
+                        aria-pressed=laser_active
                         on:click=move |_| {
                             laser_active.update(|v| *v = !*v);
                             if laser_active.get() { pen_active.set(false); }
@@ -1568,6 +1577,7 @@ pub fn App() -> impl IntoView {
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Whiteboard Drawing Pen (P)"
                         aria-label="Toggle Whiteboard Drawing Pen"
+                        aria-pressed=pen_active
                         on:click=move |_| {
                             pen_active.update(|v| *v = !*v);
                             if pen_active.get() { laser_active.set(false); }
@@ -1587,6 +1597,7 @@ pub fn App() -> impl IntoView {
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
                         title="Mute / Unmute Audio (M)"
                         aria-label="Toggle Audio Mute"
+                        aria-pressed=is_muted
                         on:click=move |_| toggle_mute()
                     >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
                     <div class="hud-divider"/>
@@ -1594,16 +1605,17 @@ pub fn App() -> impl IntoView {
                         class="hud-btn"
                         title="Toggle Light / Dark HUD Theme (T)"
                         aria-label="Toggle Light / Dark HUD Theme"
+                        aria-pressed=is_dark_theme
                         on:click=move |_| {
                             is_dark_theme.update(|v| *v = !*v);
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
                     >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
+                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=notes_open on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
+                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=overview_open on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
                     <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" aria-expanded=help_open on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
                 </div>
             </div>
 
@@ -1697,12 +1709,14 @@ pub fn App() -> impl IntoView {
             // Overview Modal
             {move || {
                 if overview_open.get() {
-                    let d = deck.get();
+                    let (all_slides, total_count) = deck.with(|d| {
+                        let slides = d.slides.clone();
+                        let total = slides.len();
+                        (slides.into_iter().enumerate().collect::<Vec<_>>(), total)
+                    });
                     let cur_idx = current_index.get();
                     let query = overview_search.get().trim().to_lowercase();
                     let zoom = overview_zoom.get();
-                    let all_slides: Vec<_> = d.slides.into_iter().enumerate().collect();
-                    let total_count = all_slides.len();
                     let filtered_slides: Vec<_> = all_slides
                         .into_iter()
                         .filter(|(idx, slide)| {
@@ -1754,23 +1768,24 @@ pub fn App() -> impl IntoView {
                                                     } else if ev.key() == "Enter" {
                                                         let q = overview_search.get().trim().to_lowercase();
                                                         if !q.is_empty() {
-                                                            let d = deck.get();
-                                                            for (idx, slide) in d.slides.iter().enumerate() {
-                                                                let page_str = (idx + 1).to_string();
-                                                                let hash_page = format!("#{}", idx + 1);
-                                                                let title = slide.extract_title().to_lowercase();
-                                                                let notes = slide.notes.as_deref().unwrap_or("").to_lowercase();
-                                                                if q == page_str
-                                                                    || q == hash_page
-                                                                    || page_str.contains(&q)
-                                                                    || title.contains(&q)
-                                                                    || notes.contains(&q)
-                                                                {
-                                                                    jump_to_slide(idx);
-                                                                    overview_open.set(false);
-                                                                    break;
+                                                            deck.with(|d| {
+                                                                for (idx, slide) in d.slides.iter().enumerate() {
+                                                                    let page_str = (idx + 1).to_string();
+                                                                    let hash_page = format!("#{}", idx + 1);
+                                                                    let title = slide.extract_title().to_lowercase();
+                                                                    let notes = slide.notes.as_deref().unwrap_or("").to_lowercase();
+                                                                    if q == page_str
+                                                                        || q == hash_page
+                                                                        || page_str.contains(&q)
+                                                                        || title.contains(&q)
+                                                                        || notes.contains(&q)
+                                                                    {
+                                                                        jump_to_slide(idx);
+                                                                        overview_open.set(false);
+                                                                        break;
+                                                                    }
                                                                 }
-                                                            }
+                                                            });
                                                         }
                                                     }
                                                 }
@@ -1790,16 +1805,19 @@ pub fn App() -> impl IntoView {
                                         <div class="overview-zoom-group">
                                             <button
                                                 class=if overview_zoom.get() == "sm" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-pressed=move || overview_zoom.get() == "sm"
                                                 on:click=move |_| overview_zoom.set("sm".to_string())
                                                 title="Small thumbnails (Dense)"
                                             >"S"</button>
                                             <button
                                                 class=if overview_zoom.get() == "md" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-pressed=move || overview_zoom.get() == "md"
                                                 on:click=move |_| overview_zoom.set("md".to_string())
                                                 title="Medium thumbnails (Default)"
                                             >"M"</button>
                                             <button
                                                 class=if overview_zoom.get() == "lg" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-pressed=move || overview_zoom.get() == "lg"
                                                 on:click=move |_| overview_zoom.set("lg".to_string())
                                                 title="Large thumbnails (Expanded)"
                                             >"L"</button>
@@ -2112,26 +2130,32 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_type.get() == ChartType::Bar { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Bar).to_string()
                             on:click=move |_| active_type.set(ChartType::Bar)
                         >"📊 Bar"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Line { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Line).to_string()
                             on:click=move |_| active_type.set(ChartType::Line)
                         >"📈 Line"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Area { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Area).to_string()
                             on:click=move |_| active_type.set(ChartType::Area)
                         >"📉 Area"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Pie { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Pie).to_string()
                             on:click=move |_| active_type.set(ChartType::Pie)
                         >"🥧 Pie"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Donut { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Donut).to_string()
                             on:click=move |_| active_type.set(ChartType::Donut)
                         >"🍩 Donut"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Scatter { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_type.get() == ChartType::Scatter).to_string()
                             on:click=move |_| active_type.set(ChartType::Scatter)
                         >"⁖ Scatter"</button>
                     </div>
@@ -2140,30 +2164,37 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_transform.get() == TransformPreset::None { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::None).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::None)
                         >"ORIG"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Top5 { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::Top5).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Top5)
                         >"TOP 5"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortDesc { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::SortDesc).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::SortDesc)
                         >"SORT ▼"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortAsc { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::SortAsc).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::SortAsc)
                         >"SORT ▲"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Cumulative { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::Cumulative).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Cumulative)
                         >"CUM"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Percent100 { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::Percent100).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Percent100)
                         >"% SHARE"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::MovingAvg3 { "btn-chip active" } else { "btn-chip" }
+                            attr:aria-pressed=move || (active_transform.get() == TransformPreset::MovingAvg3).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::MovingAvg3)
                         >"MA3"</button>
                     </div>
@@ -2190,6 +2221,8 @@ fn ChartInspectorModal(
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
+                                    attr:aria-pressed=is_visible.to_string()
+                                    aria-label=format!("Toggle series {}", name)
                                     on:click=move |_| {
                                         let n = name.clone();
                                         visible_series.update(|list| {
