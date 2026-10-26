@@ -1196,7 +1196,7 @@ fn try_native_desktop_dialog(
         let script = format!(
             "text returned of (display dialog \"{safe_prompt}\" default answer \"\" with hidden answer with title \"{safe_title}\")"
         );
-        if let Ok(out) = std::process::Command::new("osascript")
+        if let Ok(mut out) = std::process::Command::new("osascript")
             .args(["-e", &script])
             .output()
         {
@@ -1208,9 +1208,11 @@ fn try_native_desktop_dialog(
                 if !pin.is_empty() {
                     let res = Zeroizing::new(pin.clone());
                     pin.zeroize();
+                    out.stdout.zeroize();
                     return Some(res);
                 }
             }
+            out.stdout.zeroize();
         }
     }
 
@@ -1219,7 +1221,7 @@ fn try_native_desktop_dialog(
         if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
             let zenity_title = format!("--title={title}");
             let zenity_text = format!("--text={prompt}");
-            if let Ok(out) = std::process::Command::new("zenity")
+            if let Ok(mut out) = std::process::Command::new("zenity")
                 .args(["--entry", "--hide-text", &zenity_title, &zenity_text])
                 .output()
             {
@@ -1228,33 +1230,41 @@ fn try_native_desktop_dialog(
                     if !s.is_empty() {
                         let res = Zeroizing::new(s.clone());
                         s.zeroize();
+                        out.stdout.zeroize();
                         return Some(res);
                     }
                 }
-            } else if let Ok(out) = std::process::Command::new("zenity")
+                out.stdout.zeroize();
+            } else if let Ok(mut out) = std::process::Command::new("zenity")
                 .args(["--password", &zenity_title])
                 .output()
-                && out.status.success()
             {
-                let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    let res = Zeroizing::new(s.clone());
-                    s.zeroize();
-                    return Some(res);
+                if out.status.success() {
+                    let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !s.is_empty() {
+                        let res = Zeroizing::new(s.clone());
+                        s.zeroize();
+                        out.stdout.zeroize();
+                        return Some(res);
+                    }
                 }
+                out.stdout.zeroize();
             }
 
-            if let Ok(out) = std::process::Command::new("kdialog")
+            if let Ok(mut out) = std::process::Command::new("kdialog")
                 .args(["--password", prompt, "--title", title])
                 .output()
-                && out.status.success()
             {
-                let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    let res = Zeroizing::new(s.clone());
-                    s.zeroize();
-                    return Some(res);
+                if out.status.success() {
+                    let mut s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !s.is_empty() {
+                        let res = Zeroizing::new(s.clone());
+                        s.zeroize();
+                        out.stdout.zeroize();
+                        return Some(res);
+                    }
                 }
+                out.stdout.zeroize();
             }
         }
     }
