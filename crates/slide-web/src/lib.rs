@@ -1958,117 +1958,114 @@ fn ChartInspectorModal(
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
     let transformed_data = Memo::new(move |_| {
-        let raw = base_data.get();
         let tr = active_transform.get();
-        apply_transform(&raw, tr)
+        base_data.with(|raw| apply_transform(raw, tr))
     });
 
     let filtered_indices = Memo::new(move |_| {
-        let d = transformed_data.get();
-        let vs = visible_series.get();
-        let query = search_query.get();
-        let q_trim = query.trim();
+        transformed_data.with(|d| {
+            let vs = visible_series.get();
+            let query = search_query.get();
+            let q_trim = query.trim();
 
-        let mut indices: Vec<usize> = (0..d.categories.len()).collect();
+            let mut indices: Vec<usize> = (0..d.categories.len()).collect();
 
-        if !q_trim.is_empty() {
-            if let Some((op, num_str)) = parse_filter_condition(q_trim) {
-                if let Ok(target_num) = num_str.parse::<f64>() {
+            if !q_trim.is_empty() {
+                if let Some((op, num_str)) = parse_filter_condition(q_trim) {
+                    if let Ok(target_num) = num_str.parse::<f64>() {
+                        indices.retain(|&cat_i| {
+                            d.series.iter().filter(|s| vs.contains(&s.name)).any(|s| {
+                                if let Some(&val) = s.values.get(cat_i) {
+                                    match op {
+                                        | ">" => val > target_num,
+                                        | ">=" => val >= target_num,
+                                        | "<" => val < target_num,
+                                        | "<=" => val <= target_num,
+                                        | "==" | "=" => (val - target_num).abs() < 1e-6,
+                                        | "!=" => (val - target_num).abs() >= 1e-6,
+                                        | _ => true,
+                                    }
+                                } else {
+                                    false
+                                }
+                            })
+                        });
+                    }
+                } else {
+                    let q_lower = q_trim.to_lowercase();
                     indices.retain(|&cat_i| {
+                        if let Some(cat_name) = d.categories.get(cat_i)
+                            && cat_name.to_lowercase().contains(&q_lower)
+                        {
+                            return true;
+                        }
                         d.series.iter().filter(|s| vs.contains(&s.name)).any(|s| {
                             if let Some(&val) = s.values.get(cat_i) {
-                                match op {
-                                    | ">" => val > target_num,
-                                    | ">=" => val >= target_num,
-                                    | "<" => val < target_num,
-                                    | "<=" => val <= target_num,
-                                    | "==" | "=" => (val - target_num).abs() < 1e-6,
-                                    | "!=" => (val - target_num).abs() >= 1e-6,
-                                    | _ => true,
+                                let formatted = d.format_number(val).to_lowercase();
+                                if formatted.contains(&q_lower) || val.to_string().contains(&q_lower) {
+                                    return true;
                                 }
-                            } else {
-                                false
                             }
+                            false
                         })
                     });
                 }
-            } else {
-                let q_lower = q_trim.to_lowercase();
-                indices.retain(|&cat_i| {
-                    if let Some(cat_name) = d.categories.get(cat_i)
-                        && cat_name.to_lowercase().contains(&q_lower)
-                    {
-                        return true;
-                    }
-                    d.series.iter().filter(|s| vs.contains(&s.name)).any(|s| {
-                        if let Some(&val) = s.values.get(cat_i) {
-                            let formatted = d.format_number(val).to_lowercase();
-                            if formatted.contains(&q_lower) || val.to_string().contains(&q_lower) {
-                                return true;
-                            }
-                        }
-                        false
-                    })
+            }
+
+            if let Some((col, asc)) = sort_col.get() {
+                indices.sort_by(|&a, &b| {
+                    let ord = if col == 0 {
+                        let cat_a = d.categories.get(a).map(String::as_str).unwrap_or("");
+                        let cat_b = d.categories.get(b).map(String::as_str).unwrap_or("");
+                        cat_a.cmp(cat_b)
+                    } else {
+                        let s_idx = col.saturating_sub(1);
+                        let val_a = d
+                            .series
+                            .iter()
+                            .filter(|s| vs.contains(&s.name))
+                            .nth(s_idx)
+                            .and_then(|s| s.values.get(a))
+                            .copied()
+                            .unwrap_or(0.0);
+                        let val_b = d
+                            .series
+                            .iter()
+                            .filter(|s| vs.contains(&s.name))
+                            .nth(s_idx)
+                            .and_then(|s| s.values.get(b))
+                            .copied()
+                            .unwrap_or(0.0);
+                        val_a
+                            .partial_cmp(&val_b)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    };
+                    if asc { ord } else { ord.reverse() }
                 });
             }
-        }
 
-        if let Some((col, asc)) = sort_col.get() {
-            indices.sort_by(|&a, &b| {
-                let ord = if col == 0 {
-                    let cat_a = d.categories.get(a).map(String::as_str).unwrap_or("");
-                    let cat_b = d.categories.get(b).map(String::as_str).unwrap_or("");
-                    cat_a.cmp(cat_b)
-                } else {
-                    let s_idx = col.saturating_sub(1);
-                    let val_a = d
-                        .series
-                        .iter()
-                        .filter(|s| vs.contains(&s.name))
-                        .nth(s_idx)
-                        .and_then(|s| s.values.get(a))
-                        .copied()
-                        .unwrap_or(0.0);
-                    let val_b = d
-                        .series
-                        .iter()
-                        .filter(|s| vs.contains(&s.name))
-                        .nth(s_idx)
-                        .and_then(|s| s.values.get(b))
-                        .copied()
-                        .unwrap_or(0.0);
-                    val_a
-                        .partial_cmp(&val_b)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                };
-                if asc { ord } else { ord.reverse() }
-            });
-        }
-
-        indices
+            indices
+        })
     });
 
 
     let stats = Memo::new(move |_| {
-        let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
-        calculate_stats(&d, &vs, &f_indices)
+        transformed_data.with(|d| calculate_stats(d, &vs, &f_indices))
     });
 
     let rendered_chart_svg = Memo::new(move |_| {
-        let d = transformed_data.get();
         let ct = active_type.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
-        render_svg_chart(&d, ct, &vs, &f_indices, 750.0, 370.0)
+        transformed_data.with(|d| render_svg_chart(d, ct, &vs, &f_indices, 750.0, 370.0))
     });
 
     let on_export_csv = move |_| {
-        let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
-        let csv = export_csv_string(&d, &vs, &f_indices);
+        let csv = transformed_data.with(|d| export_csv_string(d, &vs, &f_indices));
         trigger_file_download("chart_data.csv", &csv, "text/csv");
     };
 
@@ -2084,7 +2081,7 @@ fn ChartInspectorModal(
                 // Modal Header
                 <div class="modal-header">
                     <div class="inspector-title">
-                        <h2>{move || transformed_data.get().title.unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
+                        <h2>{move || transformed_data.with(|d| d.title.clone().unwrap_or_else(|| "HUD Data Inspector".to_string()))}</h2>
                         <span class="inspector-badge">"Interactive SQL & Data Engine"</span>
                     </div>
                     <button class="close-btn" aria-label="Close" title="Close data inspector" on:click=move |_| on_close()>"✕"</button>
@@ -2094,32 +2091,32 @@ fn ChartInspectorModal(
                 <div class="kpi-strip">
                     <div class="kpi-card">
                         <span class="kpi-label">"TOTAL SUM"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().total_sum)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().total_sum))}</span>
                         <span class="kpi-sub">"All visible"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEAN / AVG"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().avg)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().avg))}</span>
                         <span class="kpi-sub">"Per record"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEDIAN"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().median)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().median))}</span>
                         <span class="kpi-sub">"Middle 50%"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"STD DEV"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().std_dev)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().std_dev))}</span>
                         <span class="kpi-sub">"Dispersion"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"PEAK / MAX"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().max_val)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().max_val))}</span>
                         <span class="kpi-sub">{move || stats.get().max_cat}</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MIN / LOW"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().min_val)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().min_val))}</span>
                         <span class="kpi-sub">{move || stats.get().min_cat}</span>
                     </div>
                 </div>
@@ -2201,7 +2198,7 @@ fn ChartInspectorModal(
 
                     // Format Toggle Button
                     <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                        {move || format!("🔣 {}", transformed_data.with(|d| d.format.display_name()))}
                     </button>
 
                     // Export CSV Button
@@ -2212,12 +2209,11 @@ fn ChartInspectorModal(
                 <div class="series-strip">
                     <span class="series-label">"Series:"</span>
                     {move || {
-                        let d = base_data.get();
                         let current_vs = visible_series.get();
-                        d.series.into_iter().enumerate().map(|(idx, s)| {
+                        base_data.with(|d| d.series.iter().enumerate().map(|(idx, s)| {
                             let name = s.name.clone();
                             let is_visible = current_vs.contains(&name);
-                            let color = s.color.unwrap_or_else(|| chart::PALETTE[idx % chart::PALETTE.len()].to_string());
+                            let color = s.color.clone().unwrap_or_else(|| chart::PALETTE[idx % chart::PALETTE.len()].to_string());
                             view! {
                                 <button
                                     class=if is_visible { "series-chip active" } else { "series-chip" }
@@ -2237,10 +2233,10 @@ fn ChartInspectorModal(
                                     }
                                 >
                                     <span class="series-dot" style=format!("background: {color};") />
-                                    {s.name}
+                                    {s.name.clone()}
                                 </button>
                             }
-                        }).collect::<Vec<_>>()
+                        }).collect::<Vec<_>>())
                     }}
                 </div>
 
@@ -2271,7 +2267,7 @@ fn ChartInspectorModal(
                                 }}
                             </div>
                             <div class="row-count-badge">
-                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.get().categories.len())}
+                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.with(|d| d.categories.len()))}
                             </div>
                         </div>
                         <table class="inspector-table">
@@ -2286,9 +2282,8 @@ fn ChartInspectorModal(
                                         });
                                     }>"Category ↕"</th>
                                     {move || {
-                                        let d = transformed_data.get();
                                         let vs = visible_series.get();
-                                        d.series.into_iter().enumerate().filter(|(_, s)| vs.contains(&s.name)).map(|(idx, s)| {
+                                        transformed_data.with(|d| d.series.iter().enumerate().filter(|(_, s)| vs.contains(&s.name)).map(|(idx, s)| {
                                             let col_idx = idx + 1;
                                             view! {
                                                 <th on:click=move |_| {
@@ -2300,17 +2295,16 @@ fn ChartInspectorModal(
                                                     });
                                                 }>{format!("{} ↕", s.name)}</th>
                                             }
-                                        }).collect::<Vec<_>>()
+                                        }).collect::<Vec<_>>())
                                     }}
                                 </tr>
                             </thead>
                             <tbody>
                                 {move || {
-                                    let d = transformed_data.get();
                                     let f_indices = filtered_indices.get();
                                     let vs = visible_series.get();
 
-                                    f_indices.into_iter().map(|cat_i| {
+                                    transformed_data.with(|d| f_indices.into_iter().map(|cat_i| {
                                         let cat = d.categories.get(cat_i).cloned().unwrap_or_default();
                                         let vals: Vec<f64> = d.series.iter().filter(|s| vs.contains(&s.name)).map(|s| {
                                             s.values.get(cat_i).copied().unwrap_or(0.0)
@@ -2326,7 +2320,7 @@ fn ChartInspectorModal(
                                                 }).collect::<Vec<_>>()}
                                             </tr>
                                         }
-                                    }).collect::<Vec<_>>()
+                                    }).collect::<Vec<_>>())
                                 }}
                             </tbody>
                         </table>
