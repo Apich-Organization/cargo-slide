@@ -334,7 +334,7 @@ impl Slide {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlideDeck {
     pub title: String,
     pub slides: Vec<Slide>,

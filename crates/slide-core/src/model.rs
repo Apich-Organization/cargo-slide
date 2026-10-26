@@ -160,7 +160,7 @@ pub struct StepFragment {
 }
 
 /// A single presentation slide
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Slide {
     pub page_number: usize,
     pub svg_data: String,
@@ -227,7 +227,7 @@ impl Slide {
 }
 
 /// Complete presentation deck
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlideDeck {
     pub title: String,
     pub slides: Vec<Slide>,
