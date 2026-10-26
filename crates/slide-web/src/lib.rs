@@ -1069,6 +1069,7 @@ pub fn App() -> impl IntoView {
                                 <div style="display: flex; flex-direction: column; gap: 16px;">
                                     <input
                                         type="password"
+                                        aria-label=if is_mnemonic { "Recovery mnemonic" } else { "Security passphrase" }
                                         disabled=move || auth_retries.get() == 0
                                         placeholder=if is_mnemonic { "e.g. word1 word2 word3..." } else { "Enter secret passphrase" }
                                         prop:value=move || auth_input.get()
@@ -1496,6 +1497,7 @@ pub fn App() -> impl IntoView {
                                     <input
                                         type="color"
                                         class="pen-color-native"
+                                        aria-label="Custom color picker"
                                         prop:value=move || pen_custom_color.get()
                                         on:input=move |ev| {
                                             let val = event_target_value(&ev);
@@ -1755,6 +1757,7 @@ pub fn App() -> impl IntoView {
                                             <input
                                                 type="text"
                                                 class="overview-search-input"
+                                                aria-label="Search slides"
                                                 placeholder="Search slides (title or #)..."
                                                 prop:value=move || overview_search.get()
                                                 on:input=move |ev| overview_search.set(event_target_value(&ev))
@@ -2254,6 +2257,7 @@ fn ChartInspectorModal(
                             <div class="table-search">
                                 <input
                                     type="text"
+                                    aria-label="Filter rows or condition"
                                     placeholder="Filter rows or condition (e.g. >50 or Q3)..."
                                     prop:value=move || search_query.get()
                                     on:input=move |ev| search_query.set(event_target_value(&ev))
