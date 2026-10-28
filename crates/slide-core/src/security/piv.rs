@@ -1113,13 +1113,11 @@ fn try_native_desktop_dialog(
     #[cfg(target_os = "windows")]
     {
         use base64::Engine as _;
-        let safe_title = title.replace('\'', "''");
-        let safe_prompt = prompt.replace('\'', "''");
         let script = format!(
             "Add-Type -AssemblyName System.Windows.Forms; \
              Add-Type -AssemblyName System.Drawing; \
              $form = New-Object System.Windows.Forms.Form; \
-             $form.Text = '{safe_title}'; \
+             $form.Text = [Environment]::GetEnvironmentVariable('DIALOG_TITLE'); \
              $form.Size = New-Object System.Drawing.Size(440, 190); \
              $form.StartPosition = 'CenterScreen'; \
              $form.FormBorderStyle = 'FixedDialog'; \
@@ -1129,7 +1127,7 @@ fn try_native_desktop_dialog(
              $lbl = New-Object System.Windows.Forms.Label; \
              $lbl.Location = New-Object System.Drawing.Point(20, 16); \
              $lbl.Size = New-Object System.Drawing.Size(390, 42); \
-             $lbl.Text = '{safe_prompt}'; \
+             $lbl.Text = [Environment]::GetEnvironmentVariable('DIALOG_PROMPT'); \
              $form.Controls.Add($lbl); \
              $txt = New-Object System.Windows.Forms.TextBox; \
              $txt.Location = New-Object System.Drawing.Point(20, 66); \
@@ -1163,6 +1161,8 @@ fn try_native_desktop_dialog(
         let encoded_cmd = base64::engine::general_purpose::STANDARD.encode(&utf16_bytes);
 
         if let Ok(mut out) = std::process::Command::new("powershell")
+            .env("DIALOG_TITLE", title)
+            .env("DIALOG_PROMPT", prompt)
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -1191,13 +1191,13 @@ fn try_native_desktop_dialog(
         // Use "text returned of (display dialog ...)" directly via Standard Additions.
         // Do NOT wrap in "tell application System Events" — that triggers macOS TCC
         // Automation permission popup (Mojave+) which users may deny, breaking the dialog.
-        let safe_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
-        let safe_title = title.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!(
-            "text returned of (display dialog \"{safe_prompt}\" default answer \"\" with hidden answer with title \"{safe_title}\")"
-        );
+        let script = "set dialog_prompt to system attribute \"DIALOG_PROMPT\"\n\
+                      set dialog_title to system attribute \"DIALOG_TITLE\"\n\
+                      text returned of (display dialog dialog_prompt default answer \"\" with hidden answer with title dialog_title)";
         if let Ok(mut out) = std::process::Command::new("osascript")
-            .args(["-e", &script])
+            .env("DIALOG_TITLE", title)
+            .env("DIALOG_PROMPT", prompt)
+            .args(["-e", script])
             .output()
         {
             if out.status.success() {
