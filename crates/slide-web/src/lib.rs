@@ -1836,12 +1836,24 @@ pub fn App() -> impl IntoView {
                                         filtered_slides.into_iter().map(|(idx, slide)| {
                                             let is_active = idx == cur_idx;
                                             let slide_title = slide.extract_title();
+                                            let slide_title_clone = slide_title.clone();
                                             view! {
                                                 <div
                                                     class=if is_active { "slide-card active" } else { "slide-card" }
+                                                    role="button"
+                                                    tabindex="0"
+                                                    aria-label=format!("Jump to slide {}: {}", idx + 1, slide_title_clone)
+                                                    attr:aria-current=is_active.to_string()
                                                     on:click=move |_| {
                                                         jump_to_slide(idx);
                                                         overview_open.set(false);
+                                                    }
+                                                    on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                                        if ev.key() == "Enter" || ev.key() == " " {
+                                                            ev.prevent_default();
+                                                            jump_to_slide(idx);
+                                                            overview_open.set(false);
+                                                        }
                                                     }
                                                 >
                                                     <div class="card-thumbnail" inner_html=slide.svg_data/>
