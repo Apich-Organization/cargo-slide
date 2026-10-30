@@ -1069,6 +1069,7 @@ pub fn App() -> impl IntoView {
                                 <div style="display: flex; flex-direction: column; gap: 16px;">
                                     <input
                                         type="password"
+                                        aria-label="Unlock passphrase"
                                         disabled=move || auth_retries.get() == 0
                                         placeholder=if is_mnemonic { "e.g. word1 word2 word3..." } else { "Enter secret passphrase" }
                                         prop:value=move || auth_input.get()
@@ -1495,6 +1496,7 @@ pub fn App() -> impl IntoView {
                                 <div class="pen-picker-wrap" title="Custom color picker">
                                     <input
                                         type="color"
+                                        aria-label="Custom pen color"
                                         class="pen-color-native"
                                         prop:value=move || pen_custom_color.get()
                                         on:input=move |ev| {
@@ -1754,6 +1756,7 @@ pub fn App() -> impl IntoView {
                                         <div class="overview-search-box">
                                             <input
                                                 type="text"
+                                                aria-label="Search slides"
                                                 class="overview-search-input"
                                                 placeholder="Search slides (title or #)..."
                                                 prop:value=move || overview_search.get()
@@ -1805,18 +1808,21 @@ pub fn App() -> impl IntoView {
                                         <div class="overview-zoom-group">
                                             <button
                                                 class=if overview_zoom.get() == "sm" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-label="Small thumbnails"
                                                 aria-pressed=move || overview_zoom.get() == "sm"
                                                 on:click=move |_| overview_zoom.set("sm".to_string())
                                                 title="Small thumbnails (Dense)"
                                             >"S"</button>
                                             <button
                                                 class=if overview_zoom.get() == "md" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-label="Medium thumbnails"
                                                 aria-pressed=move || overview_zoom.get() == "md"
                                                 on:click=move |_| overview_zoom.set("md".to_string())
                                                 title="Medium thumbnails (Default)"
                                             >"M"</button>
                                             <button
                                                 class=if overview_zoom.get() == "lg" { "zoom-btn active" } else { "zoom-btn" }
+                                                aria-label="Large thumbnails"
                                                 aria-pressed=move || overview_zoom.get() == "lg"
                                                 on:click=move |_| overview_zoom.set("lg".to_string())
                                                 title="Large thumbnails (Expanded)"
@@ -2254,6 +2260,7 @@ fn ChartInspectorModal(
                             <div class="table-search">
                                 <input
                                     type="text"
+                                    aria-label="Filter data"
                                     placeholder="Filter rows or condition (e.g. >50 or Q3)..."
                                     prop:value=move || search_query.get()
                                     on:input=move |ev| search_query.set(event_target_value(&ev))
