@@ -1,0 +1,4 @@
+## 2025-02-14 - Fix OS Command Injection in Windows and MacOS Native Dialogs
+**Vulnerability:** The `try_native_desktop_dialog` function in `crates/slide-core/src/security/piv.rs` used `format!` to interpolate `title` and `prompt` strings directly into PowerShell and AppleScript execution contexts. This made the application vulnerable to OS command injection if the strings contained specially crafted characters, bypassing the brittle `replace` sanitization logic.
+**Learning:** Native OS graphical dialog invocations using `std::process::Command::new` (e.g., PowerShell, osascript) should never interpolate variables directly into the script.
+**Prevention:** Pass untrusted user strings via environment variables (`.env("VAR_NAME", var_value)`) to the child process and access them securely in the script via `$env:VAR_NAME` or `[Environment]::GetEnvironmentVariable('VAR_NAME')` in PowerShell, and `system attribute "VAR_NAME"` in AppleScript.
