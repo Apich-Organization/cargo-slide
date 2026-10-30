@@ -96,11 +96,18 @@ pub fn analyze_deck_stats(
         0.0
     };
 
-    let total_pace_words = if total_notes_words > 0 {
-        total_notes_words
-    } else {
-        total_words.max(total_slides * 30)
-    };
+    let total_pace_words: usize = deck
+        .slides
+        .iter()
+        .map(|s| {
+            let nw = s.notes_word_count();
+            if nw > 0 {
+                nw
+            } else {
+                s.extract_plain_text().split_whitespace().count().max(25)
+            }
+        })
+        .sum();
 
     let est_duration_slow_mins = (total_pace_words as f32 / 100.0).max(1.0);
     let est_duration_target_mins = (total_pace_words as f32 / calibrated_wpm as f32).max(1.0);

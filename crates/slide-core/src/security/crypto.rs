@@ -127,6 +127,7 @@ pub fn rsa_oaep_decrypt(
 /// Unpad an RSA-OAEP encoded message block (using SHA-256 and MGF1-SHA256) returned by hardware smartcard.
 pub fn rsa_oaep_unpad_sha256(em: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
     use sha2::Digest as _;
+    use subtle::ConstantTimeEq as _;
     let h_len = 32;
     if em.len() < 2 * h_len + 2 {
         return Err(SlideError::Crypto("RSA-OAEP block too short".to_string()));
@@ -155,40 +156,48 @@ pub fn rsa_oaep_unpad_sha256(em: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
     }
 
     let seed_mask = mgf1(masked_db, h_len);
-    let mut seed = [0u8; 32];
+    let mut seed = Zeroizing::new([0u8; 32]);
     for i in 0..h_len {
         seed[i] = masked_seed[i] ^ seed_mask[i];
     }
 
-    let db_mask = mgf1(&seed, masked_db.len());
-    let mut db = vec![0u8; masked_db.len()];
+    let db_mask = mgf1(&seed[..], masked_db.len());
+    let mut db = Zeroizing::new(vec![0u8; masked_db.len()]);
     for i in 0..masked_db.len() {
         db[i] = masked_db[i] ^ db_mask[i];
     }
 
     let p_hash = sha2::Sha256::digest(b"");
-    if &db[..h_len] != p_hash.as_slice() || y != 0 {
+    let hash_match = db[..h_len].ct_eq(p_hash.as_slice());
+    let y_match = y.ct_eq(&0);
+
+    let mut looking_for_one = 1u8;
+    let mut bad_padding = 0u8;
+    let mut start_idx = 0usize;
+
+    for (offset, &b) in db[h_len..].iter().enumerate() {
+        let is_zero = b.ct_eq(&0x00);
+        let is_one = b.ct_eq(&0x01);
+        let in_padding = subtle::Choice::from(looking_for_one);
+
+        // If still looking for 0x01 and b is neither 0x00 nor 0x01, bad_padding
+        let invalid_byte = in_padding & !(is_zero | is_one);
+        bad_padding |= invalid_byte.unwrap_u8();
+
+        let found_one = in_padding & is_one;
+        if bool::from(found_one) {
+            start_idx = h_len.saturating_add(offset).saturating_add(1);
+        }
+        looking_for_one &= (!found_one).unwrap_u8();
+    }
+
+    if !bool::from(hash_match) || !bool::from(y_match) || looking_for_one == 1 || bad_padding == 1 {
         return Err(SlideError::Crypto(
-            "RSA-OAEP decoding failed: hash mismatch or invalid padding".to_string(),
+            "RSA-OAEP decoding failed: invalid padding or hash mismatch".to_string(),
         ));
     }
 
-    let mut start_idx = None;
-    for (offset, &b) in db[h_len..].iter().enumerate() {
-        if b == 0x01 {
-            start_idx = Some(h_len.saturating_add(offset).saturating_add(1));
-            break;
-        } else if b != 0x00 {
-            return Err(SlideError::Crypto(
-                "RSA-OAEP decoding failed: non-zero byte in padding".to_string(),
-            ));
-        }
-    }
-
-    let start = start_idx.ok_or_else(|| {
-        SlideError::Crypto("RSA-OAEP decoding failed: 0x01 separator not found".to_string())
-    })?;
-    Ok(Zeroizing::new(db[start..].to_vec()))
+    Ok(Zeroizing::new(db[start_idx..].to_vec()))
 }
 
 /// Standard NIST SP 800-73-4 / RFC 8017 DigestInfo prefix for SHA3-512 (OID: 2.16.840.1.101.3.4.2.10).
@@ -211,9 +220,10 @@ pub fn pkcs1v15_pad_with_prefix(
     key_len: usize,
 ) -> Result<Vec<u8>> {
     let digest_info_len = prefix.len().saturating_add(digest.len());
-    if key_len < digest_info_len.saturating_add(3) {
+    if key_len < digest_info_len.saturating_add(11) {
         return Err(SlideError::Crypto(format!(
-            "RSA modulus length {key_len} too small for signature digest"
+            "RSA modulus length {key_len} too small for signature digest (requires at least {} bytes)",
+            digest_info_len.saturating_add(11)
         )));
     }
     let pad_len = key_len - digest_info_len - 3;

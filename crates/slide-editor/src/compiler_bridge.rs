@@ -499,6 +499,11 @@ impl CompilerBridge {
                 let theme_typ = root.join("theme.typ");
                 if !theme_typ.exists() {
                     let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
+                } else if let Ok(existing_theme) = std::fs::read_to_string(&theme_typ)
+                    && existing_theme.contains("slide-theme(")
+                    && !existing_theme.contains("header:")
+                {
+                    let _ = std::fs::write(&theme_typ, slide_theme::DEFAULT_THEME);
                 }
             }
             std::fs::write(&tmp, &processed_source).map_err(|e| {

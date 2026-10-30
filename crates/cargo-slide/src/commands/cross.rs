@@ -138,11 +138,16 @@ pub fn which_cmd(cmd: &str) -> bool {
 pub fn is_cross_target(target_triple: &str) -> bool {
     let host_arch = std::env::consts::ARCH;
     let host_os = std::env::consts::OS;
+    let os_pattern = if host_os == "macos" {
+        "darwin"
+    } else {
+        host_os
+    };
 
     if !target_triple.starts_with(host_arch) {
         return true;
     }
-    if !target_triple.contains(host_os) {
+    if !target_triple.contains(os_pattern) {
         return true;
     }
     #[cfg(target_env = "msvc")]
@@ -292,7 +297,11 @@ fn compile_package_for_target(
         return Err(format!("Built artifact not found at: {}", built_file.display()).into());
     }
 
-    let dest_name = format!("{bin_name}-{}{ext}", target.label);
+    let clean_bin_name = Path::new(bin_name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(bin_name);
+    let dest_name = format!("{clean_bin_name}-{}{ext}", target.label);
     let dest_file = output_dir.join(dest_name);
     fs::copy(&built_file, &dest_file)?;
 
@@ -381,12 +390,7 @@ pub fn execute(
     }
 
     let is_presentation = file.map_or_else(
-        || {
-            bin.is_none()
-                && package.is_none()
-                && Path::new("slides.typ").exists()
-                && !Path::new("Cargo.toml").exists()
-        },
+        || bin.is_none() && package.is_none() && Path::new("slides.typ").exists(),
         Path::exists,
     );
 

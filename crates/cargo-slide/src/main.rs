@@ -348,7 +348,7 @@ fn dispatch_command(
                     println!("[OK] slide-viewer installed and registered successfully!");
                 },
                 | _ => {
-                    eprintln!("[ERR] Failed to build/install slide-viewer.");
+                    return Err("Failed to build/install slide-viewer.".into());
                 },
             }
         },

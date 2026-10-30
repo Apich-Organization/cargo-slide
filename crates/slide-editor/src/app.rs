@@ -2920,8 +2920,11 @@ impl SlideEditorApp {
                                 .case_insensitive(!self.search_state.case_sensitive)
                                 .build()
                             {
-                                re.replace_all(&self.doc.source_text, replace.as_str())
-                                    .to_string()
+                                re.replace_all(
+                                    &self.doc.source_text,
+                                    regex::NoExpand(replace.as_str()),
+                                )
+                                .to_string()
                             } else {
                                 self.doc.source_text.clone()
                             }
@@ -2933,8 +2936,11 @@ impl SlideEditorApp {
                                 .case_insensitive(true)
                                 .build()
                             {
-                                re.replace_all(&self.doc.source_text, replace.as_str())
-                                    .to_string()
+                                re.replace_all(
+                                    &self.doc.source_text,
+                                    regex::NoExpand(replace.as_str()),
+                                )
+                                .to_string()
                             } else {
                                 self.doc.source_text.clone()
                             }
@@ -4722,8 +4728,12 @@ impl SlideEditorApp {
                 self.active_modal = None;
                 self.commit_all_editor_states();
                 let save_task = self.update(Message::SaveDocument);
-                if let Some(wid) = target_id.or(self.window_id) {
-                    task = Task::batch(vec![save_task, iced::window::close(wid)]);
+                if !self.doc.is_dirty {
+                    if let Some(wid) = target_id.or(self.window_id) {
+                        task = Task::batch(vec![save_task, iced::window::close(wid)]);
+                    } else {
+                        task = save_task;
+                    }
                 } else {
                     task = save_task;
                 }

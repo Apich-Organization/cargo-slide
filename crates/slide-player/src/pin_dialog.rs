@@ -8,7 +8,6 @@
 use minifb::Key;
 use minifb::Window;
 use minifb::WindowOptions;
-use zeroize::Zeroize;
 use zeroize::Zeroizing;
 
 /// Prompt the user for their YubiKey PIV PIN using a graphical dialog window.
@@ -57,7 +56,7 @@ fn try_minifb_pin_dialog(
 
     window.set_target_fps(60);
 
-    let mut input = String::with_capacity(16);
+    let mut input = Zeroizing::new(String::with_capacity(128));
     let mut confirmed = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
@@ -158,11 +157,8 @@ fn try_minifb_pin_dialog(
     }
 
     if confirmed && !input.is_empty() {
-        let res = Zeroizing::new(input.clone());
-        input.zeroize();
-        Some(res)
+        Some(input)
     } else {
-        input.zeroize();
         None
     }
 }

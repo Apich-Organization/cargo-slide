@@ -242,6 +242,32 @@ pub fn execute_binary(
     cert_path: Option<&Path>,
     pin: Option<&str>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // Validate animation name against injection attacks
+    const VALID_ANIMATIONS: &[&str] = &[
+        "fade",
+        "cut",
+        "slide-left",
+        "slide-right",
+        "particles",
+        "zoom",
+        "glitch",
+        "wipe",
+        "dissolve",
+    ];
+    let safe_animation = if VALID_ANIMATIONS.contains(&animation)
+        || (!animation.is_empty()
+            && animation
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+    {
+        animation
+    } else {
+        return Err(format!(
+            "Invalid animation identifier '{animation}'. Must be alphanumeric with hyphens/underscores."
+        )
+        .into());
+    };
+
     // The target platform decides the binary's extension: check if an explicit Windows target
     // was specified, or if we are building natively on a Windows host without an explicit target.
     let targets_windows =
@@ -640,7 +666,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
 
     SlideApp::from_deck(deck)
         .asset_store(asset_store)
-        .default_animation("{animation}")
+        .default_animation("{safe_animation}")
         .run()?;
 
     Ok(())
@@ -656,7 +682,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {{
     let deck: SlideDeck = serde_json::from_str(deck_json)?;
 
     SlideApp::from_deck(deck)
-        .default_animation("{animation}")
+        .default_animation("{safe_animation}")
         .run()?;
 
     Ok(())

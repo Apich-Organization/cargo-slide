@@ -340,7 +340,8 @@ pub struct SoftwareKeystore {
     pub auth_mode: AuthMode,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Zeroize)]
+#[zeroize(drop)]
 struct PlaintextKeystorePayload {
     recipient_priv_bytes: Vec<u8>,
     signer_priv_bytes: Vec<u8>,
@@ -451,6 +452,13 @@ impl SoftwareKeystore {
         let ciphertext = b64
             .decode(&encrypted.ciphertext)
             .map_err(|e| SlideError::Crypto(format!("Invalid ciphertext base64: {e}")))?;
+
+        if !(10_000..=5_000_000).contains(&encrypted.kdf_iterations) {
+            return Err(SlideError::Crypto(format!(
+                "Invalid KDF iteration count: {} (must be between 10,000 and 5,000,000)",
+                encrypted.kdf_iterations
+            )));
+        }
 
         let aes_key = match encrypted.auth_mode {
             | AuthMode::Passphrase => {

@@ -518,6 +518,9 @@ pub fn get_package_cache_dir(input_path: &Path) -> std::path::PathBuf {
         .join(format!("{stem}_{hash:016x}"))
 }
 
+/// Maximum decompressed size per archive entry to prevent decompression bombs (Zip / LZMA bombs).
+pub const MAX_DECOMPRESSED_FILE_BYTES: u64 = 512 * 1024 * 1024; // 512 MB
+
 /// Validate and sanitize relative archive paths against zip-slip / directory traversal
 pub fn sanitize_archive_path(
     base_dir: &Path,
@@ -588,9 +591,16 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
         for entry in tar_archive.entries()? {
             let mut entry = entry?;
             let path_str = entry.path()?.to_string_lossy().to_string();
+            if entry.header().entry_type().is_dir() {
+                if let Some(dest) = sanitize_archive_path(&cache_dir, &path_str) {
+                    let _ = std::fs::create_dir_all(&dest);
+                }
+                continue;
+            }
             if path_str == "deck.json" || path_str.ends_with("/deck.json") {
                 let mut content = Vec::new();
-                entry.read_to_end(&mut content)?;
+                let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+                limited.read_to_end(&mut content)?;
                 deck_data = Some(content);
             } else if path_str != "manifest.json"
                 && !path_str.ends_with("/manifest.json")
@@ -600,7 +610,8 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
                     let _ = std::fs::create_dir_all(parent);
                 }
                 let mut out = File::create(&dest)?;
-                std::io::copy(&mut entry, &mut out)?;
+                let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+                std::io::copy(&mut limited, &mut out)?;
             }
         }
 
@@ -620,20 +631,23 @@ pub fn unpack_deck_and_assets(input_path: &Path) -> Result<(SlideDeck, std::path
         for i in 0..zip_archive.len() {
             let mut entry = zip_archive.by_index(i)?;
             let name = entry.name()?.to_string();
-            if name == "deck.json" || name.ends_with("/deck.json") {
+            let Some(dest) = sanitize_archive_path(&cache_dir, &name) else {
+                continue;
+            };
+            if entry.is_dir() {
+                let _ = std::fs::create_dir_all(&dest);
+            } else if name == "deck.json" || name.ends_with("/deck.json") {
                 let mut content = Vec::new();
-                entry.read_to_end(&mut content)?;
+                let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+                limited.read_to_end(&mut content)?;
                 deck_data = Some(content);
-            } else if name != "manifest.json"
-                && !name.ends_with("/manifest.json")
-                && !entry.is_dir()
-                && let Some(dest) = sanitize_archive_path(&cache_dir, &name)
-            {
+            } else if name != "manifest.json" && !name.ends_with("/manifest.json") {
                 if let Some(parent) = dest.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 let mut out = File::create(&dest)?;
-                std::io::copy(&mut entry, &mut out)?;
+                let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+                std::io::copy(&mut limited, &mut out)?;
             }
         }
         if let Some(data) = deck_data {
@@ -724,17 +738,27 @@ pub fn unpack_deck_and_assets_from_bytes(
     for entry in tar_archive.entries()? {
         let mut entry = entry?;
         let path_str = entry.path()?.to_string_lossy().to_string();
+        if entry.header().entry_type().is_dir() {
+            if let Some(dest) = sanitize_archive_path(&cache_dir, &path_str) {
+                let _ = std::fs::create_dir_all(&dest);
+            }
+            continue;
+        }
         if path_str == "deck.json" || path_str.ends_with("/deck.json") {
             let mut content = Vec::new();
-            entry.read_to_end(&mut content)?;
+            let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+            limited.read_to_end(&mut content)?;
             deck_data = Some(content);
-        } else if path_str != "manifest.json" && !path_str.ends_with("/manifest.json") {
-            let dest = cache_dir.join(&path_str);
+        } else if path_str != "manifest.json"
+            && !path_str.ends_with("/manifest.json")
+            && let Some(dest) = sanitize_archive_path(&cache_dir, &path_str)
+        {
             if let Some(parent) = dest.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
             let mut out = File::create(&dest)?;
-            std::io::copy(&mut entry, &mut out)?;
+            let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+            std::io::copy(&mut limited, &mut out)?;
         }
     }
 
@@ -996,12 +1020,19 @@ pub fn unpack_package_to_dir(
         for entry in tar_archive.entries()? {
             let mut entry = entry?;
             let path_str = entry.path()?.to_string_lossy().to_string();
-            let dest = output_dir.join(&path_str);
+            let Some(dest) = sanitize_archive_path(output_dir, &path_str) else {
+                continue;
+            };
+            if entry.header().entry_type().is_dir() {
+                let _ = std::fs::create_dir_all(&dest);
+                continue;
+            }
             if let Some(parent) = dest.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
             let mut out = File::create(&dest)?;
-            std::io::copy(&mut entry, &mut out)?;
+            let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+            std::io::copy(&mut limited, &mut out)?;
 
             if (path_str == "manifest.json" || path_str.ends_with("/manifest.json"))
                 && let Ok(manifest_bytes) = std::fs::read(&dest)
@@ -1016,15 +1047,27 @@ pub fn unpack_package_to_dir(
         for i in 0..zip_archive.len() {
             let mut entry = zip_archive.by_index(i)?;
             let name = entry.name()?.to_string();
+            let Some(dest) = sanitize_archive_path(output_dir, &name) else {
+                continue;
+            };
             if entry.is_dir() {
-                let _ = std::fs::create_dir_all(output_dir.join(&name));
+                let _ = std::fs::create_dir_all(&dest);
             } else {
-                let dest = output_dir.join(&name);
                 if let Some(parent) = dest.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 let mut out = File::create(&dest)?;
-                std::io::copy(&mut entry, &mut out)?;
+                let mut limited = std::io::Read::take(&mut entry, MAX_DECOMPRESSED_FILE_BYTES);
+                std::io::copy(&mut limited, &mut out)?;
+
+                if (name == "manifest.json" || name.ends_with("/manifest.json"))
+                    && let Ok(manifest_bytes) = std::fs::read(&dest)
+                    && let Ok(meta) =
+                        serde_json::from_slice::<SlidePackageMetadata>(&manifest_bytes)
+                    && let Some(ep) = meta.entrypoint
+                {
+                    extracted_entrypoint = Some(ep);
+                }
             }
         }
     } else {
@@ -1046,11 +1089,11 @@ pub fn unpack_package_to_dir(
     }
 
     // Determine entrypoint file
-    if let Some(ref ep) = extracted_entrypoint {
-        let p = output_dir.join(ep);
-        if p.is_file() {
-            return Ok(p);
-        }
+    if let Some(ref ep) = extracted_entrypoint
+        && let Some(p) = sanitize_archive_path(output_dir, ep)
+        && p.is_file()
+    {
+        return Ok(p);
     }
 
     // Check common entrypoint file names in output directory

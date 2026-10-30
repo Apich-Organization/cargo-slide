@@ -589,8 +589,8 @@ pub fn render_svg_chart(
         let cat = data.categories.get(cat_idx).cloned().unwrap_or_default();
         let x = pad_left + (i as f64 + 0.5) * cat_step;
         let y = pad_top + plot_h + 18.0;
-        let display_cat = if cat.len() > 10 {
-            format!("{}…", &cat[..8])
+        let display_cat = if cat.chars().count() > 10 {
+            format!("{}…", cat.chars().take(8).collect::<String>())
         } else {
             cat
         };

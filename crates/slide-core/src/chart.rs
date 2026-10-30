@@ -660,7 +660,11 @@ impl ChartData {
         chart_type: ChartType,
         title: Option<String>,
     ) -> Result<Self> {
-        let conn = rusqlite::Connection::open(db_path).map_err(|e| {
+        let conn = rusqlite::Connection::open_with_flags(
+            db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| {
             SlideError::Database(format!(
                 "Failed to open SQLite database {}: {}",
                 db_path.display(),

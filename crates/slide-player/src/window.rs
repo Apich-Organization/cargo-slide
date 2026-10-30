@@ -1398,11 +1398,20 @@ impl SlidePlayer {
             let (current_surface, current_metrics) = match cache.get(&current_idx) {
                 | Some(cached) => (cached.0.clone(), cached.1),
                 | None => {
-                    let slide = self.deck.get_slide(current_idx).unwrap();
-                    let (surf, metrics) = renderer.render_svg(&slide.svg_data, width, height)?;
-                    let surf_arc = Arc::new(surf);
-                    cache.insert(current_idx, (surf_arc.clone(), metrics));
-                    (surf_arc, metrics)
+                    if let Some(slide) = self.deck.get_slide(current_idx) {
+                        let (surf, metrics) =
+                            renderer.render_svg(&slide.svg_data, width, height)?;
+                        let surf_arc = Arc::new(surf);
+                        cache.insert(current_idx, (surf_arc.clone(), metrics));
+                        (surf_arc, metrics)
+                    } else {
+                        let (surf, metrics) = renderer.render_svg(
+                            r##"<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="100%" height="100%" fill="#1e1e2e"/></svg>"##,
+                            width,
+                            height,
+                        )?;
+                        (Arc::new(surf), metrics)
+                    }
                 },
             };
 
@@ -1998,8 +2007,8 @@ impl SlidePlayer {
                                     {
                                         // Internal metadata markers; never invoke OS open
                                     } else if target.starts_with("mailto:")
-                                        || (target.contains("://")
-                                            && !target.starts_with("file://"))
+                                        || target.starts_with("https://")
+                                        || target.starts_with("http://")
                                     {
                                         open_external_target_detached(target);
                                         volume_dragging = false;
@@ -2019,18 +2028,71 @@ impl SlidePlayer {
                                         }
                                     } else {
                                         // Local document or file path relative to presentation
+                                        let is_dangerous_ext = |p: &Path| -> bool {
+                                            if let Some(ext) =
+                                                p.extension().and_then(|s| s.to_str())
+                                            {
+                                                matches!(
+                                                    ext.to_ascii_lowercase().as_str(),
+                                                    "exe"
+                                                        | "bat"
+                                                        | "cmd"
+                                                        | "sh"
+                                                        | "ps1"
+                                                        | "vbs"
+                                                        | "desktop"
+                                                        | "bin"
+                                                        | "com"
+                                                        | "scr"
+                                                        | "pif"
+                                                        | "lnk"
+                                                        | "url"
+                                                        | "hta"
+                                                        | "reg"
+                                                        | "msi"
+                                                        | "msp"
+                                                        | "wsf"
+                                                        | "wsh"
+                                                        | "jse"
+                                                        | "vbe"
+                                                        | "cpl"
+                                                        | "command"
+                                                        | "app"
+                                                )
+                                            } else {
+                                                // Paths without extensions opened directly are blocked as potential executables/scripts
+                                                true
+                                            }
+                                        };
                                         if let Some(resolved_path) = resolve_local_file_path(
                                             target,
                                             self.source_file.as_deref(),
                                         ) {
-                                            open_external_target_detached(
-                                                &resolved_path.to_string_lossy(),
-                                            );
+                                            if !is_dangerous_ext(&resolved_path) {
+                                                open_external_target_detached(
+                                                    &resolved_path.to_string_lossy(),
+                                                );
+                                            } else {
+                                                eprintln!(
+                                                    "[SECURITY] Blocked execution of dangerous file: {}",
+                                                    resolved_path.display()
+                                                );
+                                            }
                                         } else {
                                             let clean =
                                                 target.strip_prefix("file://").unwrap_or(target);
                                             let decoded = url_decode(clean);
-                                            open_external_target_detached(&decoded);
+                                            let target_p = Path::new(&decoded);
+                                            if target_p.is_file()
+                                                && !is_dangerous_ext(target_p)
+                                                && !decoded.contains("://")
+                                            {
+                                                open_external_target_detached(&decoded);
+                                            } else {
+                                                eprintln!(
+                                                    "[SECURITY] Blocked unsafe target: {decoded}"
+                                                );
+                                            }
                                         }
                                         volume_dragging = false;
                                         active_pen_stroke = None;
@@ -3084,16 +3146,25 @@ impl SlidePlayer {
                 if let Some(ref file) = self.source_file {
                     match SlideCompiler::new().and_then(|c| c.compile_file(file)) {
                         | Ok(new_deck) => {
-                            self.deck = new_deck;
-                            total_slides = self.deck.total_slides();
-                            current_idx = current_idx.min(total_slides.saturating_sub(1));
-                            let max_step = get_max_step(&self.deck, current_idx);
-                            current_step = current_step.min(max_step);
-                            if current_step == 0 && max_step > 0 {
-                                current_step = 1;
+                            if new_deck.slides.is_empty() {
+                                println!(
+                                    "[WARN] Hot reload produced 0 slides; retaining previous slide deck."
+                                );
+                            } else {
+                                self.deck = new_deck;
+                                total_slides = self.deck.total_slides();
+                                current_idx = current_idx.min(total_slides.saturating_sub(1));
+                                let max_step = get_max_step(&self.deck, current_idx);
+                                current_step = current_step.min(max_step);
+                                if current_step == 0 && max_step > 0 {
+                                    current_step = 1;
+                                }
+                                cache.clear();
+                                println!(
+                                    "[RELOAD] Slides live-reloaded! ({} slides)",
+                                    total_slides
+                                );
                             }
-                            cache.clear();
-                            println!("[RELOAD] Slides live-reloaded! ({} slides)", total_slides);
                             slide_core::logger::log_event(
                                 "success",
                                 &format!("[OK] Slides live-reloaded! ({} slides)", total_slides),
@@ -3193,16 +3264,23 @@ impl SlidePlayer {
                 let (target_surf, target_metrics) = match cache.get(&new_slide_idx) {
                     | Some(cached) => (cached.0.clone(), cached.1),
                     | None => {
-                        let s = self.deck.get_slide(new_slide_idx).unwrap();
-                        let (sf, met) = renderer.render_svg(&s.svg_data, width, height)?;
-                        let sf_arc = Arc::new(sf);
-                        cache.insert(new_slide_idx, (sf_arc.clone(), met));
-                        (sf_arc, met)
+                        if let Some(s) = self.deck.get_slide(new_slide_idx) {
+                            let (sf, met) = renderer.render_svg(&s.svg_data, width, height)?;
+                            let sf_arc = Arc::new(sf);
+                            cache.insert(new_slide_idx, (sf_arc.clone(), met));
+                            (sf_arc, met)
+                        } else {
+                            continue;
+                        }
                     },
                 };
 
-                let from_slide = self.deck.get_slide(current_idx).unwrap();
-                let to_slide = self.deck.get_slide(new_slide_idx).unwrap();
+                let Some(from_slide) = self.deck.get_slide(current_idx) else {
+                    continue;
+                };
+                let Some(to_slide) = self.deck.get_slide(new_slide_idx) else {
+                    continue;
+                };
                 let new_max_step = get_max_step(&self.deck, new_slide_idx);
                 let next_step = if prev_slide {
                     new_max_step

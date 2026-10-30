@@ -1112,8 +1112,9 @@ pub fn view_font_selector_modal<'a>(
 
     let subtitle_str = if is_inline {
         if let Some(sel) = selected_text.filter(|s| !s.trim().is_empty()) {
-            let preview = if sel.len() > 30 {
-                format!("{}...", &sel[..30])
+            let preview = if sel.chars().count() > 30 {
+                let truncated: String = sel.chars().take(27).collect();
+                format!("{truncated}...")
             } else {
                 sel.to_string()
             };

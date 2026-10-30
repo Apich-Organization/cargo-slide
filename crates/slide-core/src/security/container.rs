@@ -544,6 +544,9 @@ impl EncryptedSlideContainer {
         let signer_key = if let Some(k) = signer_pub_key_override {
             k.clone()
         } else if let Some(ref cert_b64) = self.header.signer_cert {
+            eprintln!(
+                "[SECURITY NOTICE] Verifying container signature using embedded certificate from package header without external root-of-trust pinning."
+            );
             let cert_der = b64.decode(cert_b64).map_err(|e| {
                 SlideError::IntegrityCheckFailed(format!("Invalid cert base64: {e}"))
             })?;
@@ -634,7 +637,11 @@ impl EncryptedSlideContainer {
         let mut uncompressed_tar = Vec::new();
         {
             let mut decompressor = xz2::read::XzDecoder::new(&decrypted_compressed_tar[..]);
-            decompressor
+            let mut limited = std::io::Read::take(
+                &mut decompressor,
+                crate::package::MAX_DECOMPRESSED_FILE_BYTES.saturating_mul(4),
+            );
+            limited
                 .read_to_end(&mut uncompressed_tar)
                 .map_err(|e| SlideError::Crypto(format!("Failed to decompress archive: {e}")))?;
         }
@@ -695,6 +702,7 @@ impl EncryptedSlideContainer {
         };
 
         let mut keystore = super::passphrase::SoftwareKeystore::decrypt(enc_keystore, secret)?;
-        self.decrypt_in_memory(&mut keystore, None)
+        let signer_pub = keystore.signer_public_key();
+        self.decrypt_in_memory(&mut keystore, Some(&signer_pub))
     }
 }

@@ -147,6 +147,11 @@ pub fn derive_key_from_passphrase(
     salt: &[u8; 32],
     iterations: u32,
 ) -> Result<Zeroizing<[u8; 32]>, String> {
+    if !(10_000..=5_000_000).contains(&iterations) {
+        return Err(format!(
+            "Invalid KDF iteration count: {iterations} (must be between 10,000 and 5,000,000)"
+        ));
+    }
     let mut intermediate = [0u8; 64];
     pbkdf2::pbkdf2_hmac::<Sha512>(passphrase.as_bytes(), salt, iterations, &mut intermediate);
 
@@ -165,6 +170,11 @@ pub fn derive_key_from_mnemonic(
     salt: &[u8; 32],
     iterations: u32,
 ) -> Result<Zeroizing<[u8; 32]>, String> {
+    if !(10_000..=5_000_000).contains(&iterations) {
+        return Err(format!(
+            "Invalid KDF iteration count: {iterations} (must be between 10,000 and 5,000,000)"
+        ));
+    }
     let entropy = validate_bip39_mnemonic(mnemonic)?;
     let mut intermediate = [0u8; 64];
     pbkdf2::pbkdf2_hmac::<Sha512>(&entropy, salt, iterations, &mut intermediate);

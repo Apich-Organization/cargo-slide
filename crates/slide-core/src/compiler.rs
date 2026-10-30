@@ -626,7 +626,9 @@ impl SlideCompiler {
                         modified = format!("#import \".slide_macros.typ\": *\n{modified}");
                     }
                     let pid = std::process::id();
-                    let tmp = root_dir.join(format!(".slide_target_tmp_{pid}.typ"));
+                    let unique_id: u64 = rand::random();
+                    let tmp =
+                        root_dir.join(format!(".slide_target_tmp_{pid}_{unique_id:016x}.typ"));
                     if std::fs::write(&tmp, modified).is_ok() {
                         (tmp.clone(), TempFileGuard(Some(tmp)))
                     } else {

@@ -169,7 +169,11 @@ pub fn execute(
             let deck = compiler.compile_file(target_file)?;
             let selected_pages = parse_page_selection(pages, deck.total_slides())?;
             let renderer = SvgRenderer::new();
-            let effective_scale = if scale <= 0.0 { 1.0 } else { scale };
+            let effective_scale = if !scale.is_finite() || scale <= 0.0 {
+                1.0
+            } else {
+                scale.min(10.0)
+            };
             let target_width = (1920.0 * effective_scale).round() as usize;
             let target_height = (1080.0 * effective_scale).round() as usize;
 

@@ -150,11 +150,13 @@ impl MultiWindowApp {
                     let save_task = app.update(Message::SaveDocument);
                     tasks
                         .push(save_task.map(move |m| MultiWindowMessage::WindowMessage(target, m)));
-                }
-                self.windows.remove(&target);
-                tasks.push(iced::window::close(target));
-                if self.windows.is_empty() {
-                    tasks.push(iced::exit());
+                    if !app.doc.is_dirty {
+                        self.windows.remove(&target);
+                        tasks.push(iced::window::close(target));
+                        if self.windows.is_empty() {
+                            tasks.push(iced::exit());
+                        }
+                    }
                 }
                 Task::batch(tasks)
             },

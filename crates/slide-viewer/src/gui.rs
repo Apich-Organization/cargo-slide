@@ -142,6 +142,14 @@ pub struct ViewerLauncherApp {
     pub is_help_modal_open: bool,
 }
 
+fn spawn_and_reap(cmd: &mut std::process::Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 impl ViewerLauncherApp {
     pub fn new(
         default_animation: String,
@@ -195,6 +203,12 @@ impl ViewerLauncherApp {
         match message {
             | Message::SearchChanged(q) => {
                 self.search_query = q;
+                let count = self.filtered_presentations().len();
+                self.selected_index = if count > 0 {
+                    Some(self.selected_index.unwrap_or(0).min(count - 1))
+                } else {
+                    None
+                };
                 Task::none()
             },
             | Message::SelectPresentation(idx) => {
@@ -505,8 +519,8 @@ impl ViewerLauncherApp {
             cmd.arg("--light");
         }
 
-        match cmd.spawn() {
-            | Ok(_) => {
+        match spawn_and_reap(&mut cmd) {
+            | Ok(()) => {
                 let theme_str = if hud_theme.is_light() {
                     "Light"
                 } else {
@@ -540,8 +554,8 @@ impl ViewerLauncherApp {
             cmd.arg("--light");
         }
 
-        match cmd.spawn() {
-            | Ok(_) => {
+        match spawn_and_reap(&mut cmd) {
+            | Ok(()) => {
                 let theme_str = if hud_theme.is_light() {
                     "Light"
                 } else {
@@ -1569,9 +1583,8 @@ pub fn launch_slide_editor(path: &std::path::Path) -> std::io::Result<()> {
     {
         let sibling = parent.join(exe_name);
         if sibling.is_file()
-            && let Ok(child) = std::process::Command::new(&sibling).arg(path).spawn()
+            && spawn_and_reap(std::process::Command::new(&sibling).arg(path)).is_ok()
         {
-            drop(child);
             return Ok(());
         }
     }
@@ -1580,23 +1593,20 @@ pub fn launch_slide_editor(path: &std::path::Path) -> std::io::Result<()> {
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
         let cargo_bin = home.join(format!(".cargo/bin/{exe_name}"));
         if cargo_bin.is_file()
-            && let Ok(child) = std::process::Command::new(&cargo_bin).arg(path).spawn()
+            && spawn_and_reap(std::process::Command::new(&cargo_bin).arg(path)).is_ok()
         {
-            drop(child);
             return Ok(());
         }
         let local_bin = home.join(format!(".local/bin/{exe_name}"));
         if local_bin.is_file()
-            && let Ok(child) = std::process::Command::new(&local_bin).arg(path).spawn()
+            && spawn_and_reap(std::process::Command::new(&local_bin).arg(path)).is_ok()
         {
-            drop(child);
             return Ok(());
         }
     }
 
     // 3. System PATH lookup
-    if let Ok(child) = std::process::Command::new(exe_name).arg(path).spawn() {
-        drop(child);
+    if spawn_and_reap(std::process::Command::new(exe_name).arg(path)).is_ok() {
         return Ok(());
     }
 

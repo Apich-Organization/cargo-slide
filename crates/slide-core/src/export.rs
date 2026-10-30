@@ -55,7 +55,8 @@ pub fn generate_standalone_html(
             slide.page_number,
             i + 1
         );
-        let _ = writeln!(html, "{}", slide.svg_data);
+        let sanitized_svg = crate::svg::sanitize_svg(&slide.svg_data);
+        let _ = writeln!(html, "{sanitized_svg}");
         let _ = writeln!(html, "    </section>");
     }
     let _ = writeln!(html, "  </div>\n</div>");
@@ -98,7 +99,11 @@ pub fn generate_standalone_html(
         .filter(|s| pages.contains(&s.page_number))
         .map(|s| s.notes.clone().unwrap_or_default())
         .collect();
-    let notes_encoded = serde_json::to_string(&notes_json).unwrap_or_else(|_| "[]".to_string());
+    let raw_notes_encoded = serde_json::to_string(&notes_json).unwrap_or_else(|_| "[]".to_string());
+    // Escape '<' and '>' in JSON string literals to prevent premature termination of embedded <script> tags
+    let notes_encoded = raw_notes_encoded
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e");
 
     // Embedded Script
     let _ = writeln!(

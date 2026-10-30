@@ -444,10 +444,10 @@ impl PivCard for PcscPivCard {
                 rsa_oaep_unpad_sha256(deciphered_raw)
             },
             | PivPublicKey::Ecc(_) => {
-                // ECC P-256 on-chip ECDH
-                if ciphertext.len() < 65 {
+                // ECC P-256 on-chip ECDH: ephemeral pubkey (65 bytes) + wrapped AES-256 key (32 bytes)
+                if ciphertext.len() != 97 {
                     return Err(SlideError::Crypto(
-                        "Invalid ECC ciphertext: missing 65-byte ephemeral public key".to_string(),
+                        "Invalid ECC ciphertext: expected 97 bytes (65-byte ephemeral pubkey + 32-byte wrapped key)".to_string(),
                     ));
                 }
                 let (eph_pub, wrapped_key) = ciphertext.split_at(65);

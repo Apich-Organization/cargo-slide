@@ -86,8 +86,9 @@ pub fn view_toolbar<'a>(
 
     let display_title = if is_narrow {
         let max_chars = if is_tiny { 8 } else { 16 };
-        if title.len() > max_chars {
-            format!("{}...", &title[..max_chars.saturating_sub(3)])
+        if title.chars().count() > max_chars {
+            let truncated: String = title.chars().take(max_chars.saturating_sub(3)).collect();
+            format!("{truncated}...")
         } else {
             title.to_string()
         }

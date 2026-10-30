@@ -137,13 +137,16 @@ pub fn prepare_csr_bundle_with_options(
 
                     if let Some(raw_rel) = candidate {
                         let rel_clean = raw_rel.replace('\\', "/");
-                        let src_path = parent.join(&rel_clean);
-                        if src_path.is_file() {
-                            let dst_path = dest_dir.join(&rel_clean);
-                            if let Some(p) = dst_path.parent() {
-                                let _ = create_dir_all(p);
+                        if let Some(dst_path) =
+                            slide_core::package::sanitize_archive_path(dest_dir, &rel_clean)
+                        {
+                            let src_path = parent.join(&rel_clean);
+                            if src_path.is_file() {
+                                if let Some(p) = dst_path.parent() {
+                                    let _ = create_dir_all(p);
+                                }
+                                let _ = std::fs::copy(&src_path, dst_path);
                             }
-                            let _ = std::fs::copy(&src_path, dst_path);
                         }
                     }
                 }
@@ -437,6 +440,8 @@ pub fn execute(
     Ok(())
 }
 
+const MAX_STATIC_FILE_BUFFER: u64 = 500 * 1024 * 1024;
+
 #[allow(clippy::too_many_lines)]
 fn handle_http_request(
     request: tiny_http::Request,
@@ -460,35 +465,41 @@ fn handle_http_request(
         return;
     }
 
+    let Ok(canonical_root) = root_dir.canonicalize() else {
+        let resp =
+            Response::from_string("500 Internal Server Error").with_status_code(StatusCode(500));
+        let _ = request.respond(resp);
+        return;
+    };
     let target_path = root_dir.join(relative_path);
-
-    // Prevent directory traversal
-    if target_path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
+    let Ok(canonical_target) = target_path.canonicalize() else {
+        let resp = Response::from_string("404 Not Found").with_status_code(StatusCode(404));
+        let _ = request.respond(resp);
+        return;
+    };
+    if !canonical_target.starts_with(&canonical_root) {
         let response = Response::from_string("403 Forbidden").with_status_code(StatusCode(403));
         let _ = request.respond(response);
         return;
     }
 
-    if target_path.exists() && target_path.is_file() {
-        let Ok(mut file) = File::open(&target_path) else {
+    if canonical_target.exists() && canonical_target.is_file() {
+        let Ok(mut file) = File::open(&canonical_target) else {
             let resp = Response::from_string("500 Internal Server Error")
                 .with_status_code(StatusCode(500));
             let _ = request.respond(resp);
             return;
         };
 
-        let mut data = Vec::new();
-        if file.read_to_end(&mut data).is_err() {
+        let Ok(metadata) = file.metadata() else {
             let resp = Response::from_string("500 Internal Server Error")
                 .with_status_code(StatusCode(500));
             let _ = request.respond(resp);
             return;
-        }
+        };
+        let file_len = metadata.len();
 
-        let mime = get_mime_type(&target_path);
+        let mime = get_mime_type(&canonical_target);
         let Ok(content_type_header) = Header::from_bytes(&b"Content-Type"[..], mime.as_bytes())
         else {
             let resp = Response::from_string("500 Header Error").with_status_code(StatusCode(500));
@@ -526,39 +537,64 @@ fn handle_http_request(
             .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case("range"))
             .map(|h| h.value.as_str().to_string());
 
-        let total_len = data.len();
-
         if let Some(range_val) = range_opt
             && let Some(spec) = range_val.strip_prefix("bytes=")
         {
             let parts: Vec<&str> = spec.split('-').collect();
             let start = parts
                 .first()
-                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(0);
             let end = parts
                 .get(1)
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or_else(|| total_len.saturating_sub(1))
-                .min(total_len.saturating_sub(1));
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| file_len.saturating_sub(1))
+                .min(file_len.saturating_sub(1));
 
-            if start <= end && start < total_len {
-                let sliced = &data[start..=end];
-                let content_range = format!("bytes {start}-{end}/{total_len}");
-                if let Ok(cr_header) =
-                    Header::from_bytes(&b"Content-Range"[..], content_range.as_bytes())
-                {
-                    let response = Response::from_data(sliced.to_vec())
-                        .with_status_code(StatusCode(206))
-                        .with_header(content_type_header)
-                        .with_header(cors_header)
-                        .with_header(accept_ranges_header)
-                        .with_header(cr_header)
-                        .with_header(cache_header);
-                    let _ = request.respond(response);
-                    return;
+            if start <= end && start < file_len {
+                use std::io::Seek as _;
+                if file.seek(std::io::SeekFrom::Start(start)).is_ok() {
+                    let chunk_len = (end.saturating_sub(start).saturating_add(1))
+                        .min(32 * 1024 * 1024) as usize;
+                    let mut chunk = vec![0u8; chunk_len];
+                    if let Ok(n) = file.read(&mut chunk)
+                        && n > 0
+                    {
+                        chunk.truncate(n);
+                        let actual_end = start.saturating_add(n as u64).saturating_sub(1);
+                        let content_range = format!("bytes {start}-{actual_end}/{file_len}");
+                        if let Ok(cr_header) =
+                            Header::from_bytes(&b"Content-Range"[..], content_range.as_bytes())
+                        {
+                            let response = Response::from_data(chunk)
+                                .with_status_code(StatusCode(206))
+                                .with_header(content_type_header)
+                                .with_header(cors_header)
+                                .with_header(accept_ranges_header)
+                                .with_header(cr_header)
+                                .with_header(cache_header);
+                            let _ = request.respond(response);
+                            return;
+                        }
+                    }
                 }
             }
+        }
+
+        // Bounded read to avoid Out-Of-Memory exhaustion on very large files
+        if file_len > MAX_STATIC_FILE_BUFFER {
+            let resp =
+                Response::from_string("413 Payload Too Large").with_status_code(StatusCode(413));
+            let _ = request.respond(resp);
+            return;
+        }
+
+        let mut data = Vec::with_capacity(file_len as usize);
+        if file.read_to_end(&mut data).is_err() {
+            let resp = Response::from_string("500 Internal Server Error")
+                .with_status_code(StatusCode(500));
+            let _ = request.respond(resp);
+            return;
         }
 
         let response = Response::from_data(data)

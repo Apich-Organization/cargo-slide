@@ -33,7 +33,7 @@ impl SvgRenderer {
         let tree = Tree::from_str(&sanitized_svg, &self.options)
             .map_err(|e| SlideError::SvgParse(format!("usvg error: {}", e)))?;
 
-        let (vb_x, vb_y, vb_w, vb_h) = match slide_core::svg::parse_svg_slide(svg_content) {
+        let (vb_x, vb_y, vb_w, vb_h) = match slide_core::svg::parse_svg_slide(&sanitized_svg) {
             | Ok(info) => {
                 (
                     info.view_box.x,

@@ -44,10 +44,14 @@ impl TransitionManager {
         from: Arc<SlideSurface>,
         to: Arc<SlideSurface>,
     ) {
-        let animation = self
+        let Some(animation) = self
             .registry
             .get(anim_name)
-            .unwrap_or_else(|| self.registry.get("fade").unwrap());
+            .or_else(|| self.registry.get("fade"))
+        else {
+            self.active_transition = None;
+            return;
+        };
 
         let duration = animation.duration();
         if duration.is_zero() {
@@ -69,12 +73,20 @@ impl TransitionManager {
         effect_name: &str,
         rect: Rect,
     ) {
-        let animation = self
+        let Some(animation) = self
             .registry
             .get_component(effect_name)
-            .unwrap_or_else(|| self.registry.get_component("fade-in").unwrap());
+            .or_else(|| self.registry.get_component("fade-in"))
+        else {
+            self.active_component_step = None;
+            return;
+        };
 
         let duration = animation.duration();
+        if duration.is_zero() {
+            self.active_component_step = None;
+            return;
+        }
         self.active_component_step = Some(ActiveComponentStep {
             animation,
             rect,

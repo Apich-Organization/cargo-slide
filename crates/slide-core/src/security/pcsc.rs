@@ -635,7 +635,10 @@ impl PcscCard {
         }
 
         // Handle ISO 7816-4 chaining / GET RESPONSE (0x61 status word)
-        while current_sw1 == 0x61 {
+        let mut chaining_rounds: usize = 0;
+        const MAX_CHAINING_ROUNDS: usize = 256;
+        while current_sw1 == 0x61 && chaining_rounds < MAX_CHAINING_ROUNDS {
+            chaining_rounds = chaining_rounds.saturating_add(1);
             let get_response_apdu = [0x00, 0xC0, 0x00, 0x00, current_sw2];
             recv_len = recv_buf.len() as DWORD;
             let chunk_res = unsafe {

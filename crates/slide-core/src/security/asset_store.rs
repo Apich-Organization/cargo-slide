@@ -229,14 +229,23 @@ impl MemoryAssetStore {
             use std::os::unix::io::AsRawFd as _;
             // memfd_create is supported on Linux kernels >= 3.17
             let name = std::ffi::CString::new("slide_memfd_asset").ok()?;
-            let fd = unsafe { libc::syscall(libc::SYS_memfd_create, name.as_ptr(), 0) };
+            let fd = unsafe {
+                libc::syscall(
+                    libc::SYS_memfd_create,
+                    name.as_ptr(),
+                    libc::MFD_CLOEXEC as libc::c_uint,
+                )
+            };
             if fd >= 0 {
                 use std::os::unix::io::FromRawFd;
                 let mut file =
                     unsafe { std::fs::File::from_raw_fd(fd as std::os::unix::io::RawFd) };
                 if file.write_all(&data).is_ok() {
-                    let path =
-                        std::path::PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+                    let path = std::path::PathBuf::from(format!(
+                        "/proc/{}/fd/{}",
+                        std::process::id(),
+                        file.as_raw_fd()
+                    ));
                     // Intentionally leak or hold fd so external player can read it
                     std::mem::forget(file);
                     return Some(path);
