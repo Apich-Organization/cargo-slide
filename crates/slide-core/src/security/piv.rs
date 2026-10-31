@@ -1113,48 +1113,46 @@ fn try_native_desktop_dialog(
     #[cfg(target_os = "windows")]
     {
         use base64::Engine as _;
-        let safe_title = title.replace('\'', "''");
-        let safe_prompt = prompt.replace('\'', "''");
-        let script = format!(
-            "Add-Type -AssemblyName System.Windows.Forms; \
-             Add-Type -AssemblyName System.Drawing; \
-             $form = New-Object System.Windows.Forms.Form; \
-             $form.Text = '{safe_title}'; \
-             $form.Size = New-Object System.Drawing.Size(440, 190); \
-             $form.StartPosition = 'CenterScreen'; \
-             $form.FormBorderStyle = 'FixedDialog'; \
-             $form.MaximizeBox = $false; \
-             $form.MinimizeBox = $false; \
-             $form.TopMost = $true; \
-             $lbl = New-Object System.Windows.Forms.Label; \
-             $lbl.Location = New-Object System.Drawing.Point(20, 16); \
-             $lbl.Size = New-Object System.Drawing.Size(390, 42); \
-             $lbl.Text = '{safe_prompt}'; \
-             $form.Controls.Add($lbl); \
-             $txt = New-Object System.Windows.Forms.TextBox; \
-             $txt.Location = New-Object System.Drawing.Point(20, 66); \
-             $txt.Size = New-Object System.Drawing.Size(385, 25); \
-             $txt.UseSystemPasswordChar = $true; \
-             $form.Controls.Add($txt); \
-             $btnOk = New-Object System.Windows.Forms.Button; \
-             $btnOk.Location = New-Object System.Drawing.Point(225, 106); \
-             $btnOk.Size = New-Object System.Drawing.Size(85, 28); \
-             $btnOk.Text = 'OK'; \
-             $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK; \
-             $form.AcceptButton = $btnOk; \
-             $form.Controls.Add($btnOk); \
-             $btnCancel = New-Object System.Windows.Forms.Button; \
-             $btnCancel.Location = New-Object System.Drawing.Point(320, 106); \
-             $btnCancel.Size = New-Object System.Drawing.Size(85, 28); \
-             $btnCancel.Text = 'Cancel'; \
-             $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; \
-             $form.CancelButton = $btnCancel; \
-             $form.Controls.Add($btnCancel); \
-             $form.Add_Shown({{ $form.Activate(); $txt.Focus() }}); \
-             if ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ \
-                 [Console]::Out.Write($txt.Text) \
-             }}"
-        );
+        let script = r#"
+            Add-Type -AssemblyName System.Windows.Forms;
+            Add-Type -AssemblyName System.Drawing;
+            $form = New-Object System.Windows.Forms.Form;
+            $form.Text = [Environment]::GetEnvironmentVariable("SLIDE_TITLE");
+            $form.Size = New-Object System.Drawing.Size(440, 190);
+            $form.StartPosition = 'CenterScreen';
+            $form.FormBorderStyle = 'FixedDialog';
+            $form.MaximizeBox = $false;
+            $form.MinimizeBox = $false;
+            $form.TopMost = $true;
+            $lbl = New-Object System.Windows.Forms.Label;
+            $lbl.Location = New-Object System.Drawing.Point(20, 16);
+            $lbl.Size = New-Object System.Drawing.Size(390, 42);
+            $lbl.Text = [Environment]::GetEnvironmentVariable("SLIDE_PROMPT");
+            $form.Controls.Add($lbl);
+            $txt = New-Object System.Windows.Forms.TextBox;
+            $txt.Location = New-Object System.Drawing.Point(20, 66);
+            $txt.Size = New-Object System.Drawing.Size(385, 25);
+            $txt.UseSystemPasswordChar = $true;
+            $form.Controls.Add($txt);
+            $btnOk = New-Object System.Windows.Forms.Button;
+            $btnOk.Location = New-Object System.Drawing.Point(225, 106);
+            $btnOk.Size = New-Object System.Drawing.Size(85, 28);
+            $btnOk.Text = 'OK';
+            $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK;
+            $form.AcceptButton = $btnOk;
+            $form.Controls.Add($btnOk);
+            $btnCancel = New-Object System.Windows.Forms.Button;
+            $btnCancel.Location = New-Object System.Drawing.Point(320, 106);
+            $btnCancel.Size = New-Object System.Drawing.Size(85, 28);
+            $btnCancel.Text = 'Cancel';
+            $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel;
+            $form.CancelButton = $btnCancel;
+            $form.Controls.Add($btnCancel);
+            $form.Add_Shown({ $form.Activate(); $txt.Focus() });
+            if ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                [Console]::Out.Write($txt.Text)
+            }
+        "#;
 
         let utf16_bytes: Vec<u8> = script
             .encode_utf16()
@@ -1163,6 +1161,8 @@ fn try_native_desktop_dialog(
         let encoded_cmd = base64::engine::general_purpose::STANDARD.encode(&utf16_bytes);
 
         if let Ok(mut out) = std::process::Command::new("powershell")
+            .env("SLIDE_TITLE", title)
+            .env("SLIDE_PROMPT", prompt)
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -1191,13 +1191,16 @@ fn try_native_desktop_dialog(
         // Use "text returned of (display dialog ...)" directly via Standard Additions.
         // Do NOT wrap in "tell application System Events" — that triggers macOS TCC
         // Automation permission popup (Mojave+) which users may deny, breaking the dialog.
-        let safe_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
-        let safe_title = title.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!(
-            "text returned of (display dialog \"{safe_prompt}\" default answer \"\" with hidden answer with title \"{safe_title}\")"
-        );
+        let script = r#"
+            set slidePrompt to system attribute "SLIDE_PROMPT"
+            set slideTitle to system attribute "SLIDE_TITLE"
+            text returned of (display dialog slidePrompt default answer "" with hidden answer with title slideTitle)
+        "#;
+
         if let Ok(mut out) = std::process::Command::new("osascript")
-            .args(["-e", &script])
+            .env("SLIDE_PROMPT", prompt)
+            .env("SLIDE_TITLE", title)
+            .args(["-e", script])
             .output()
         {
             if out.status.success() {
