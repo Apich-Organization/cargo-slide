@@ -1795,6 +1795,7 @@ pub fn App() -> impl IntoView {
                                                     <button
                                                         class="overview-search-clear"
                                                         title="Clear search"
+                                                        aria-label="Clear search"
                                                         on:click=move |_| overview_search.set(String::new())
                                                     >"✕"</button>
                                                 }.into_any()
@@ -1806,18 +1807,21 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=if overview_zoom.get() == "sm" { "zoom-btn active" } else { "zoom-btn" }
                                                 aria-pressed=move || overview_zoom.get() == "sm"
+                                                aria-label="Small thumbnails"
                                                 on:click=move |_| overview_zoom.set("sm".to_string())
                                                 title="Small thumbnails (Dense)"
                                             >"S"</button>
                                             <button
                                                 class=if overview_zoom.get() == "md" { "zoom-btn active" } else { "zoom-btn" }
                                                 aria-pressed=move || overview_zoom.get() == "md"
+                                                aria-label="Medium thumbnails"
                                                 on:click=move |_| overview_zoom.set("md".to_string())
                                                 title="Medium thumbnails (Default)"
                                             >"M"</button>
                                             <button
                                                 class=if overview_zoom.get() == "lg" { "zoom-btn active" } else { "zoom-btn" }
                                                 aria-pressed=move || overview_zoom.get() == "lg"
+                                                aria-label="Large thumbnails"
                                                 on:click=move |_| overview_zoom.set("lg".to_string())
                                                 title="Large thumbnails (Expanded)"
                                             >"L"</button>
