@@ -2200,12 +2200,13 @@ fn ChartInspectorModal(
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                    <button class="btn-action" aria-label=move || format!("Cycle number format, currently {}", transformed_data.get().format.display_name()) on:click=on_cycle_format>
+                        <span aria-hidden="true">"🔣 "</span>
+                        {move || transformed_data.get().format.display_name()}
                     </button>
 
                     // Export CSV Button
-                    <button class="btn-action" on:click=on_export_csv>"💾 Export CSV"</button>
+                    <button class="btn-action" aria-label="Export Data as CSV" on:click=on_export_csv>"💾 Export CSV"</button>
                 </div>
 
                 // Series Filter Chips
