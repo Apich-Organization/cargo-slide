@@ -682,9 +682,9 @@ pub fn App() -> impl IntoView {
         }
 
         resume_audio_if_needed();
-        if active_chart_inspector.get().is_some()
-            || active_video_modal.get().is_some()
-            || active_text_modal.get().is_some()
+        if active_chart_inspector.with(|c| c.is_some())
+            || active_video_modal.with(|v| v.is_some())
+            || active_text_modal.with(|t| t.is_some())
         {
             if ev.key() == "Escape" {
                 ev.prevent_default();
@@ -906,8 +906,7 @@ pub fn App() -> impl IntoView {
 
     let current_view_box = Memo::new(move |_| {
         current_slide
-            .get()
-            .map(|s| s.view_box)
+            .with(|s| s.as_ref().map(|s| s.view_box))
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 793.7008, 446.4567))
     });
 
@@ -917,13 +916,13 @@ pub fn App() -> impl IntoView {
     });
 
     let current_svg =
-        Memo::new(move |_| current_slide.get().map(|s| s.svg_data).unwrap_or_default());
+        Memo::new(move |_| current_slide.with(|s| s.as_ref().map(|s| s.svg_data.clone())).unwrap_or_default());
 
     let current_hotspots =
-        Memo::new(move |_| current_slide.get().map(|s| s.hotspots).unwrap_or_default());
+        Memo::new(move |_| current_slide.with(|s| s.as_ref().map(|s| s.hotspots.clone())).unwrap_or_default());
 
     let current_steps =
-        Memo::new(move |_| current_slide.get().map(|s| s.steps).unwrap_or_default());
+        Memo::new(move |_| current_slide.with(|s| s.as_ref().map(|s| s.steps.clone())).unwrap_or_default());
 
     let get_slide_coords = move |ev: &web_sys::MouseEvent| -> Option<(f64, f64)> {
         let doc = web_sys::window()?.document()?;
@@ -1552,7 +1551,7 @@ pub fn App() -> impl IntoView {
                     <div class="hud-counter">
                         {move || {
                             let cur_st = current_step.get();
-                            let max_st = current_slide.get().map(|s| s.max_step()).unwrap_or(0);
+                            let max_st = current_slide.with(|s| s.as_ref().map(|s| s.max_step())).unwrap_or(0);
                             if max_st > 0 {
                                 format!("{} / {} (Step {})", current_index.get() + 1, total_slides.get(), cur_st)
                             } else {
@@ -1907,8 +1906,7 @@ pub fn App() -> impl IntoView {
             // Presenter Speaker Notes Modal
             {move || {
                 if notes_open.get() {
-                    let cur_slide = current_slide.get();
-                    let notes_text = cur_slide.as_ref().and_then(|s| s.notes.clone()).unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string());
+                    let notes_text = current_slide.with(|s| s.as_ref().and_then(|s| s.notes.clone())).unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string());
                     let word_count = notes_text.split_whitespace().count();
                     let est_secs = ((word_count as f64 / 130.0) * 60.0).round() as usize;
 
@@ -2084,7 +2082,7 @@ fn ChartInspectorModal(
                 // Modal Header
                 <div class="modal-header">
                     <div class="inspector-title">
-                        <h2>{move || transformed_data.get().title.unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
+                        <h2>{move || transformed_data.with(|d| d.title.clone()).unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
                         <span class="inspector-badge">"Interactive SQL & Data Engine"</span>
                     </div>
                     <button class="close-btn" aria-label="Close" title="Close data inspector" on:click=move |_| on_close()>"✕"</button>
@@ -2094,33 +2092,33 @@ fn ChartInspectorModal(
                 <div class="kpi-strip">
                     <div class="kpi-card">
                         <span class="kpi-label">"TOTAL SUM"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().total_sum)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.total_sum)))}</span>
                         <span class="kpi-sub">"All visible"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEAN / AVG"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().avg)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.avg)))}</span>
                         <span class="kpi-sub">"Per record"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEDIAN"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().median)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.median)))}</span>
                         <span class="kpi-sub">"Middle 50%"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"STD DEV"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().std_dev)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.std_dev)))}</span>
                         <span class="kpi-sub">"Dispersion"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"PEAK / MAX"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().max_val)}</span>
-                        <span class="kpi-sub">{move || stats.get().max_cat}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.max_val)))}</span>
+                        <span class="kpi-sub">{move || stats.with(|s| s.max_cat.clone())}</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MIN / LOW"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().min_val)}</span>
-                        <span class="kpi-sub">{move || stats.get().min_cat}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.min_val)))}</span>
+                        <span class="kpi-sub">{move || stats.with(|s| s.min_cat.clone())}</span>
                     </div>
                 </div>
 
@@ -2201,7 +2199,7 @@ fn ChartInspectorModal(
 
                     // Format Toggle Button
                     <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                        {move || format!("🔣 {}", transformed_data.with(|d| d.format.display_name()))}
                     </button>
 
                     // Export CSV Button
@@ -2271,7 +2269,7 @@ fn ChartInspectorModal(
                                 }}
                             </div>
                             <div class="row-count-badge">
-                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.get().categories.len())}
+                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.with(|d| d.categories.len()))}
                             </div>
                         </div>
                         <table class="inspector-table">
