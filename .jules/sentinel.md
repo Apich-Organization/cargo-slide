@@ -1,0 +1,4 @@
+## 2024-11-04 - [Command Injection via String Interpolation in OS Scripts]
+**Vulnerability:** OS-specific shell scripts (PowerShell, AppleScript) used string formatting to embed untrusted user input directly into executable script strings (e.g. `format!("Add-Type ... $form.Text = '{safe_title}'; ...")`).
+**Learning:** Even if quotes are escaped or inputs are wrapped, interpolating strings directly into scripts like `osascript` or `powershell` creates command injection risks (CWE-78 / CWE-94), bypassing simple string replacements.
+**Prevention:** Pass untrusted user strings to shell scripts via environment variables (using `Command::new(...).env(...)`) and access them natively in the script (e.g. `[Environment]::GetEnvironmentVariable(...)` or `system attribute`). This strictly separates code and data.
