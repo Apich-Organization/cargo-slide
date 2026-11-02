@@ -1,0 +1,3 @@
+## 2024-05-18 - [Dynamic ARIA labels]
+**Learning:** In Leptos, when setting an `aria-label` based on a closure or signal in an iteration (like loops over UI elements), ensure you use dynamic evaluation, e.g. `aria-label=move || format!(...)`. Reusing identical static strings creates an accessibility regression by masking items for screen readers. In `crates/slide-web/src/lib.rs`, some `aria-label` attributes inside chart toolbar buttons use static text or dynamic generation that can be improved.
+**Action:** Always check the `aria-label` on `.map(...)` closures inside `view!` macros and use reactive formatting. Add `aria-pressed` where appropriate for toggle states.
