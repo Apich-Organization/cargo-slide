@@ -2130,82 +2130,98 @@ fn ChartInspectorModal(
                     <div class="tool-group">
                         <button
                             class=move || if active_type.get() == ChartType::Bar { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Bar Chart"
                             attr:aria-pressed=move || (active_type.get() == ChartType::Bar).to_string()
                             on:click=move |_| active_type.set(ChartType::Bar)
-                        >"📊 Bar"</button>
+                        ><span aria-hidden="true">"📊 "</span>"Bar"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Line { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Line Chart"
                             attr:aria-pressed=move || (active_type.get() == ChartType::Line).to_string()
                             on:click=move |_| active_type.set(ChartType::Line)
-                        >"📈 Line"</button>
+                        ><span aria-hidden="true">"📈 "</span>"Line"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Area { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Area Chart"
                             attr:aria-pressed=move || (active_type.get() == ChartType::Area).to_string()
                             on:click=move |_| active_type.set(ChartType::Area)
-                        >"📉 Area"</button>
+                        ><span aria-hidden="true">"📉 "</span>"Area"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Pie { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Pie Chart"
                             attr:aria-pressed=move || (active_type.get() == ChartType::Pie).to_string()
                             on:click=move |_| active_type.set(ChartType::Pie)
-                        >"🥧 Pie"</button>
+                        ><span aria-hidden="true">"🥧 "</span>"Pie"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Donut { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Donut Chart"
                             attr:aria-pressed=move || (active_type.get() == ChartType::Donut).to_string()
                             on:click=move |_| active_type.set(ChartType::Donut)
-                        >"🍩 Donut"</button>
+                        ><span aria-hidden="true">"🍩 "</span>"Donut"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Scatter { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Scatter Chart"
                             attr:aria-pressed=move || (active_type.get() == ChartType::Scatter).to_string()
                             on:click=move |_| active_type.set(ChartType::Scatter)
-                        >"⁖ Scatter"</button>
+                        ><span aria-hidden="true">"⁖ "</span>"Scatter"</button>
                     </div>
 
                     // Transform Presets
                     <div class="tool-group">
                         <button
                             class=move || if active_transform.get() == TransformPreset::None { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Original Data"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::None).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::None)
                         >"ORIG"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Top5 { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Top 5 Items"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::Top5).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Top5)
                         >"TOP 5"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortDesc { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Sort Descending"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::SortDesc).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::SortDesc)
                         >"SORT ▼"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::SortAsc { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Sort Ascending"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::SortAsc).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::SortAsc)
                         >"SORT ▲"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Cumulative { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Cumulative Sum"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::Cumulative).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Cumulative)
                         >"CUM"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::Percent100 { "btn-chip active" } else { "btn-chip" }
+                            aria-label="Percentage Share"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::Percent100).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::Percent100)
                         >"% SHARE"</button>
                         <button
                             class=move || if active_transform.get() == TransformPreset::MovingAvg3 { "btn-chip active" } else { "btn-chip" }
+                            aria-label="3-Period Moving Average"
                             attr:aria-pressed=move || (active_transform.get() == TransformPreset::MovingAvg3).to_string()
                             on:click=move |_| active_transform.set(TransformPreset::MovingAvg3)
                         >"MA3"</button>
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                    <button class="btn-action" aria-label="Toggle Data Format" on:click=on_cycle_format>
+                        <span aria-hidden="true">"🔣 "</span>
+                        {move || transformed_data.get().format.display_name().to_string()}
                     </button>
 
                     // Export CSV Button
-                    <button class="btn-action" on:click=on_export_csv>"💾 Export CSV"</button>
+                    <button class="btn-action" aria-label="Export Data as CSV" on:click=on_export_csv>
+                        <span aria-hidden="true">"💾 "</span>"Export CSV"
+                    </button>
                 </div>
 
                 // Series Filter Chips
