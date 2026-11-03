@@ -1,0 +1,4 @@
+## 2024-05-24 - Prevent Command Injection in OS-specific Native Scripts
+**Vulnerability:** OS-specific native scripts executed via `Command::new("powershell")` or `Command::new("osascript")` constructed string arguments using `format!` (or string interpolation), which allows for OS command injection if the strings are partially user-controlled.
+**Learning:** In a previous implementation of `try_native_desktop_dialog` in `crates/slide-core/src/security/piv.rs`, user-provided prompts or titles were manually escaped and interpolated into the string script for PowerShell or AppleScript using `format!`.
+**Prevention:** Instead of interpolating user inputs into script strings manually with string interpolation, use `Command::env` to pass untrusted strings as environment variables and access them inside the native scripts via commands like `[Environment]::GetEnvironmentVariable()` in PowerShell and `(system attribute "VAR")` in AppleScript.
