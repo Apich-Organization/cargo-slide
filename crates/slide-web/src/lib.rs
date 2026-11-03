@@ -2200,12 +2200,16 @@ fn ChartInspectorModal(
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                    <button class="btn-action" aria-label=move || format!("Cycle format: currently {}", transformed_data.get().format.display_name()) on:click=on_cycle_format>
+                        <span aria-hidden="true">"🔣 "</span>
+                        {move || transformed_data.get().format.display_name().to_string()}
                     </button>
 
                     // Export CSV Button
-                    <button class="btn-action" on:click=on_export_csv>"💾 Export CSV"</button>
+                    <button class="btn-action" aria-label="Export as CSV" on:click=on_export_csv>
+                        <span aria-hidden="true">"💾 "</span>
+                        "Export CSV"
+                    </button>
                 </div>
 
                 // Series Filter Chips
@@ -2400,16 +2404,22 @@ fn TextPreviewModal(
                         <button
                             class="btn-action"
                             title="Copy file contents to clipboard"
+                            aria-label=move || if copy_feedback.get() { "Copied to clipboard" } else { "Copy file contents" }
                             on:click=on_copy
                         >
-                            {move || if copy_feedback.get() { "✓ Copied!" } else { "📋 Copy" }}
+                            {move || if copy_feedback.get() {
+                                view! { <span aria-hidden="true">"✓ "</span>"Copied!" }.into_any()
+                            } else {
+                                view! { <span aria-hidden="true">"📋 "</span>"Copy" }.into_any()
+                            }}
                         </button>
                         <button
                             class="btn-action"
                             title="Download file"
+                            aria-label="Download file"
                             on:click=on_download
                         >
-                            "💾 Download"
+                            <span aria-hidden="true">"💾 "</span>"Download"
                         </button>
                         <button class="close-btn" aria-label="Close" title="Close text preview" on:click=move |_| on_close()>"✕"</button>
                     </div>
