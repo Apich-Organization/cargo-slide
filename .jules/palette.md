@@ -1,0 +1,3 @@
+## 2024-11-05 - Dynamic ARIA Labels and Hidden Emojis in Leptos
+**Learning:** When building UI elements in Leptos with dynamic state text alongside decorative emojis, using static `aria-label`s overrides the changing text state for screen readers, leading to confusing or incorrect readouts. Additionally, leaving emojis exposed to screen readers clutters the announcement.
+**Action:** Use a dynamic `aria-label` closure (e.g., `aria-label=move || if condition.get() { "State A" } else { "State B" }`) to accurately reflect state changes. Furthermore, always wrap decorative emojis in a `<span aria-hidden="true">` wrapper so screen readers ignore them and read the label instead.

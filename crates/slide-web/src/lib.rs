@@ -1596,22 +1596,22 @@ pub fn App() -> impl IntoView {
                     <button
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
                         title="Mute / Unmute Audio (M)"
-                        aria-label="Toggle Audio Mute"
+                        aria-label=move || if is_muted.get() { "Unmute Audio" } else { "Mute Audio" }
                         aria-pressed=is_muted
                         on:click=move |_| toggle_mute()
-                    >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
+                    ><span aria-hidden="true">{move || if is_muted.get() { "🔇" } else { "🔊" }}</span></button>
                     <div class="hud-divider"/>
                     <button
                         class="hud-btn"
                         title="Toggle Light / Dark HUD Theme (T)"
-                        aria-label="Toggle Light / Dark HUD Theme"
+                        aria-label=move || if is_dark_theme.get() { "Switch to Light Theme" } else { "Switch to Dark Theme" }
                         aria-pressed=is_dark_theme
                         on:click=move |_| {
                             is_dark_theme.update(|v| *v = !*v);
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
-                    >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
+                    ><span aria-hidden="true">{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</span></button>
                     <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=notes_open on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
                     <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=overview_open on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
                     <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
