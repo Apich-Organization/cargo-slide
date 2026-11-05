@@ -1547,8 +1547,8 @@ pub fn App() -> impl IntoView {
             // Bottom Navigation & Presenter Tools Dock
             <div class="hud-container">
                 <div class="hud-card">
-                    <button class="hud-btn" title="First slide (Home)" aria-label="First slide" on:click=move |_| jump_to_slide(0)>"⏮"</button>
-                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" aria-label="Previous slide" on:click=move |_| prev_step_or_slide()>"◀"</button>
+                    <button class="hud-btn" title="First slide (Home)" aria-label="First slide" on:click=move |_| jump_to_slide(0)><span aria-hidden="true">"⏮"</span></button>
+                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" aria-label="Previous slide" on:click=move |_| prev_step_or_slide()><span aria-hidden="true">"◀"</span></button>
                     <div class="hud-counter">
                         {move || {
                             let cur_st = current_step.get();
@@ -1560,8 +1560,8 @@ pub fn App() -> impl IntoView {
                             }
                         }}
                     </div>
-                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" aria-label="Next slide" on:click=move |_| next_step_or_slide()>"▶"</button>
-                    <button class="hud-btn" title="Last slide (End)" aria-label="Last slide" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))>"⏭"</button>
+                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" aria-label="Next slide" on:click=move |_| next_step_or_slide()><span aria-hidden="true">"▶"</span></button>
+                    <button class="hud-btn" title="Last slide (End)" aria-label="Last slide" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))><span aria-hidden="true">"⏭"</span></button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
@@ -1572,7 +1572,7 @@ pub fn App() -> impl IntoView {
                             laser_active.update(|v| *v = !*v);
                             if laser_active.get() { pen_active.set(false); }
                         }
-                    >"🔦"</button>
+                    ><span aria-hidden="true">"🔦"</span></button>
                     <button
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Whiteboard Drawing Pen (P)"
@@ -1582,7 +1582,7 @@ pub fn App() -> impl IntoView {
                             pen_active.update(|v| *v = !*v);
                             if pen_active.get() { laser_active.set(false); }
                         }
-                    >"✏️"</button>
+                    ><span aria-hidden="true">"✏️"</span></button>
                     <button
                         class="hud-btn"
                         title="Clear whiteboard pen annotations (C / X)"
@@ -1591,31 +1591,31 @@ pub fn App() -> impl IntoView {
                             let cur = current_index.get();
                             pen_strokes.update(|m| { m.remove(&cur); });
                         }
-                    >"🧹"</button>
+                    ><span aria-hidden="true">"🧹"</span></button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
                         title="Mute / Unmute Audio (M)"
-                        aria-label="Toggle Audio Mute"
+                        aria-label=move || format!("{} audio", if is_muted.get() { "Unmute" } else { "Mute" })
                         aria-pressed=is_muted
                         on:click=move |_| toggle_mute()
-                    >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
+                    ><span aria-hidden="true">{move || if is_muted.get() { "🔇" } else { "🔊" }}</span></button>
                     <div class="hud-divider"/>
                     <button
                         class="hud-btn"
                         title="Toggle Light / Dark HUD Theme (T)"
-                        aria-label="Toggle Light / Dark HUD Theme"
+                        aria-label=move || format!("Switch to {}", if is_dark_theme.get() { "Light Theme" } else { "Dark Theme" })
                         aria-pressed=is_dark_theme
                         on:click=move |_| {
                             is_dark_theme.update(|v| *v = !*v);
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
-                    >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=notes_open on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=overview_open on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
-                    <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" aria-expanded=help_open on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                    ><span aria-hidden="true">{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</span></button>
+                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=notes_open on:click=move |_| notes_open.update(|v| *v = !*v)><span aria-hidden="true">"📝"</span></button>
+                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=overview_open on:click=move |_| overview_open.update(|v| *v = !*v)><span aria-hidden="true">"▦"</span></button>
+                    <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()><span aria-hidden="true">"⛶"</span></button>
+                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" aria-expanded=help_open on:click=move |_| help_open.update(|v| *v = !*v)><span aria-hidden="true">"?"</span></button>
                 </div>
             </div>
 
@@ -1641,7 +1641,7 @@ pub fn App() -> impl IntoView {
                             <div class="video-modal" id="modal-video-container" on:click=move |ev| ev.stop_propagation()>
                                 <div class="modal-header">
                                     <div class="video-title-box">
-                                        <span class="modal-icon">"🎬"</span>
+                                        <span class="modal-icon" aria-hidden="true">"🎬"</span>
                                         <h2>{caption.unwrap_or_else(|| "Video Player".to_string())}</h2>
                                     </div>
                                     <div class="modal-actions">
@@ -2391,7 +2391,7 @@ fn TextPreviewModal(
                 // Modal Header
                 <div class="modal-header">
                     <div class="text-preview-title">
-                        <span class="file-icon">"📄"</span>
+                        <span class="file-icon" aria-hidden="true">"📄"</span>
                         <h2>{file_path.clone()}</h2>
                         <span class="format-badge">{ext_tag}</span>
                         <span class="file-meta">{format!("{total_lines} lines • {total_bytes} bytes")}</span>
