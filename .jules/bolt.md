@@ -1,0 +1,3 @@
+## 2024-06-25 - Avoid cloning large structures in Leptos Signals
+**Learning:** In Leptos 0.8, `.get()` on a signal clones its inner value. For signals containing large nested data structures (like `Slide`, which has multiple large `String` fields and `Vec`s, or large struct models in a Memo), calling `.get()` inside reactive closures (like `Memo` derivations or UI templates) triggers an expensive deep clone on every re-evaluation or access, degrading performance.
+**Action:** Always use `.with(|d| ...)` to read inner properties of large reactive structures by reference. When wrapping `.with` around `Option`, correctly map via `.with(|opt| opt.as_ref().map(|inner| ...))` to avoid unwrapping/cloning the whole struct implicitly.
