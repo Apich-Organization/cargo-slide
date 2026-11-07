@@ -2200,8 +2200,13 @@ fn ChartInspectorModal(
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                    <button
+                        class="btn-action"
+                        aria-label=move || format!("Toggle number format, currently {}", transformed_data.get().format.display_name())
+                        on:click=on_cycle_format
+                    >
+                        <span aria-hidden="true">"🔣 "</span>
+                        {move || transformed_data.get().format.display_name()}
                     </button>
 
                     // Export CSV Button
@@ -2400,9 +2405,11 @@ fn TextPreviewModal(
                         <button
                             class="btn-action"
                             title="Copy file contents to clipboard"
+                            aria-label=move || if copy_feedback.get() { "Copied to clipboard" } else { "Copy file contents" }
                             on:click=on_copy
                         >
-                            {move || if copy_feedback.get() { "✓ Copied!" } else { "📋 Copy" }}
+                            <span aria-hidden="true">{move || if copy_feedback.get() { "✓ " } else { "📋 " }}</span>
+                            {move || if copy_feedback.get() { "Copied!" } else { "Copy" }}
                         </button>
                         <button
                             class="btn-action"
