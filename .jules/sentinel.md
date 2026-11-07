@@ -1,0 +1,4 @@
+## 2025-02-14 - Fix Command Injection in Shell Dialogs
+**Vulnerability:** Constructing PowerShell and AppleScript dialog commands using string interpolation (`format!`) for unvalidated user inputs, enabling command injection (e.g., escaping via nested quotes or shell operators like `;`).
+**Learning:** Manual string replacement (`replace('\'', "''")` and `replace('"', "\\\"")`) is insufficient for preventing command injection in complex scripting languages like PowerShell and AppleScript, which have multiple ways to evaluate arbitrary commands or strings.
+**Prevention:** Always pass untrusted user input via environment variables (`.env("VAR", value)`) to the subprocess, and access those environment variables natively within the script (e.g., `$env:VAR` in PowerShell or `system attribute` in AppleScript) to strictly enforce the separation of code and data.
