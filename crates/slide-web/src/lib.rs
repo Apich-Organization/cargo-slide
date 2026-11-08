@@ -2200,12 +2200,19 @@ fn ChartInspectorModal(
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                    <button
+                        class="btn-action"
+                        aria-label=move || format!("Format as {}", transformed_data.get().format.display_name())
+                        on:click=on_cycle_format
+                    >
+                        <span aria-hidden="true">"🔣 "</span>
+                        {move || transformed_data.get().format.display_name()}
                     </button>
 
                     // Export CSV Button
-                    <button class="btn-action" on:click=on_export_csv>"💾 Export CSV"</button>
+                    <button class="btn-action" on:click=on_export_csv>
+                        <span aria-hidden="true">"💾 "</span>"Export CSV"
+                    </button>
                 </div>
 
                 // Series Filter Chips
@@ -2400,18 +2407,23 @@ fn TextPreviewModal(
                         <button
                             class="btn-action"
                             title="Copy file contents to clipboard"
+                            aria-label=move || if copy_feedback.get() { "Copied to clipboard".to_string() } else { "Copy file contents".to_string() }
                             on:click=on_copy
                         >
-                            {move || if copy_feedback.get() { "✓ Copied!" } else { "📋 Copy" }}
+                            <span aria-hidden="true">{move || if copy_feedback.get() { "✓ " } else { "📋 " }}</span>
+                            {move || if copy_feedback.get() { "Copied!" } else { "Copy" }}
                         </button>
                         <button
                             class="btn-action"
                             title="Download file"
+                            aria-label="Download file"
                             on:click=on_download
                         >
-                            "💾 Download"
+                            <span aria-hidden="true">"💾 "</span>"Download"
                         </button>
-                        <button class="close-btn" aria-label="Close" title="Close text preview" on:click=move |_| on_close()>"✕"</button>
+                        <button class="close-btn" aria-label="Close text preview" title="Close text preview" on:click=move |_| on_close()>
+                            <span aria-hidden="true">"✕"</span>
+                        </button>
                     </div>
                 </div>
 
