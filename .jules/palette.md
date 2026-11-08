@@ -1,0 +1,3 @@
+## 2025-01-20 - Dynamic ARIA Labels with Emojis
+**Learning:** When using screen readers on components with dynamically changing text and decorative emojis, static `aria-label`s overwrite the read out of the current dynamic state (like "Copy" vs "Copied!"). Adding emoji text inside a button's content can clutter the screen reader's readout.
+**Action:** Use a dynamic `aria-label` attribute (e.g., `aria-label=move || ...`) to ensure state updates are read aloud correctly. Always wrap decorative emojis in a `<span aria-hidden="true">` to hide them from the screen reader while keeping them visually visible.
