@@ -1,0 +1,3 @@
+## 2025-02-28 - ARIA Labels on Toggle Buttons with Emojis
+**Learning:** When improving accessibility for UI toggle buttons containing decorative emojis and dynamic states, using a dynamic `aria-label` while toggling `aria-pressed` is an anti-pattern that causes conflicting screen reader announcements. Furthermore, decorative emoji icons should be wrapped in `<span aria-hidden="true">` to prevent screen readers from redundantly announcing the literal emoji names alongside the `aria-label` attributes.
+**Action:** Use a static `aria-label` (e.g., 'Toggle Laser Pointer') alongside the `aria-pressed` attribute for toggle buttons, and ensure all descriptive/decorative emojis are hidden from screen readers using `aria-hidden="true"`.
