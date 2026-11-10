@@ -1,0 +1,4 @@
+## 2024-05-15 - Command Injection in OS Shell Scripts
+**Vulnerability:** Command Injection vulnerabilities in OS shell scripts (PowerShell on Windows, AppleScript on macOS) executed by Rust via `std::process::Command::new()`. The prompt and title were directly formatted (`format!`) into the script string.
+**Learning:** Using `format!` to embed unvalidated string arguments directly into shell scripts allows malicious inputs to break out of string context and execute arbitrary code. Shell scripts should handle untrusted strings via environment variables instead of direct interpolation.
+**Prevention:** Always pass untrusted strings securely to OS scripts by defining environment variables with `.env("VAR", value)` in the `std::process::Command` builder. Inside the script, retrieve the variable natively (e.g., `$env:VAR` for PowerShell, `system attribute "VAR"` for AppleScript).
