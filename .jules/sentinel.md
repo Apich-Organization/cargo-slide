@@ -1,0 +1,4 @@
+## 2024-05-18 - Fix Command Injection in GUI Prompts via Shell Scripts
+**Vulnerability:** Command Injection via string interpolation in OS-specific shell scripts executed via `std::process::Command::new` (specifically PowerShell on Windows and AppleScript on macOS).
+**Learning:** `format!` interpolating variables directly into string shell scripts that are later sent to shells via `-EncodedCommand` (PowerShell) or `-e` (AppleScript) presents command injection risks, even when basic input sanitization (like `.replace()`) is employed. Attackers can find ways to break out of the quoting.
+**Prevention:** Always pass untrusted input into external shell scripts natively as environment variables using `Command::env()` instead of interpolating them directly via `format!`. For PowerShell, use `[Environment]::GetEnvironmentVariable()`; for AppleScript, use `(system attribute)`.
