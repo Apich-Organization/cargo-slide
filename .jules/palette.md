@@ -1,0 +1,3 @@
+## 2026-10-28 - Added dynamic ARIA labels for accessibility
+**Learning:** Found multiple buttons using identical ARIA labels in `slide-web` (e.g. icon-only buttons for charting presets or formats). This is a common accessibility issue. Identical static ARIA labels on multiple different items or missing ARIA labels on non-text buttons makes navigation difficult for screen readers.
+**Action:** Always verify multiple similar UI elements have dynamically formatted ARIA labels specific to their purpose/state (like chart type or format), not just a generic one, and ensure screen reader accessibility. Added aria-labels to chart switcher and preset buttons in `slide-web`.
