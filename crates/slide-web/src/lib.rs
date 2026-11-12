@@ -1958,13 +1958,13 @@ fn ChartInspectorModal(
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
     let transformed_data = Memo::new(move |_| {
-        let raw = base_data.get();
+        let raw = base_data.with(|d| d.clone());
         let tr = active_transform.get();
         apply_transform(&raw, tr)
     });
 
     let filtered_indices = Memo::new(move |_| {
-        let d = transformed_data.get();
+        let d = transformed_data.with(|d| d.clone());
         let vs = visible_series.get();
         let query = search_query.get();
         let q_trim = query.trim();
@@ -2050,14 +2050,14 @@ fn ChartInspectorModal(
 
 
     let stats = Memo::new(move |_| {
-        let d = transformed_data.get();
+        let d = transformed_data.with(|d| d.clone());
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
         calculate_stats(&d, &vs, &f_indices)
     });
 
     let rendered_chart_svg = Memo::new(move |_| {
-        let d = transformed_data.get();
+        let d = transformed_data.with(|d| d.clone());
         let ct = active_type.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
@@ -2065,7 +2065,7 @@ fn ChartInspectorModal(
     });
 
     let on_export_csv = move |_| {
-        let d = transformed_data.get();
+        let d = transformed_data.with(|d| d.clone());
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
         let csv = export_csv_string(&d, &vs, &f_indices);
@@ -2084,7 +2084,7 @@ fn ChartInspectorModal(
                 // Modal Header
                 <div class="modal-header">
                     <div class="inspector-title">
-                        <h2>{move || transformed_data.get().title.unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
+                        <h2>{move || transformed_data.with(|d| d.title.clone()).unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
                         <span class="inspector-badge">"Interactive SQL & Data Engine"</span>
                     </div>
                     <button class="close-btn" aria-label="Close" title="Close data inspector" on:click=move |_| on_close()>"✕"</button>
@@ -2094,33 +2094,33 @@ fn ChartInspectorModal(
                 <div class="kpi-strip">
                     <div class="kpi-card">
                         <span class="kpi-label">"TOTAL SUM"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().total_sum)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.total_sum)))}</span>
                         <span class="kpi-sub">"All visible"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEAN / AVG"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().avg)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.avg)))}</span>
                         <span class="kpi-sub">"Per record"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEDIAN"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().median)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.median)))}</span>
                         <span class="kpi-sub">"Middle 50%"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"STD DEV"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().std_dev)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.std_dev)))}</span>
                         <span class="kpi-sub">"Dispersion"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"PEAK / MAX"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().max_val)}</span>
-                        <span class="kpi-sub">{move || stats.get().max_cat}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.max_val)))}</span>
+                        <span class="kpi-sub">{move || stats.with(|s| s.max_cat.clone())}</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MIN / LOW"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().min_val)}</span>
-                        <span class="kpi-sub">{move || stats.get().min_cat}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.with(|s| s.min_val)))}</span>
+                        <span class="kpi-sub">{move || stats.with(|s| s.min_cat.clone())}</span>
                     </div>
                 </div>
 
@@ -2201,7 +2201,7 @@ fn ChartInspectorModal(
 
                     // Format Toggle Button
                     <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                        {move || format!("🔣 {}", transformed_data.with(|d| d.format).display_name())}
                     </button>
 
                     // Export CSV Button
@@ -2212,7 +2212,7 @@ fn ChartInspectorModal(
                 <div class="series-strip">
                     <span class="series-label">"Series:"</span>
                     {move || {
-                        let d = base_data.get();
+                        let d = base_data.with(|d| d.clone());
                         let current_vs = visible_series.get();
                         d.series.into_iter().enumerate().map(|(idx, s)| {
                             let name = s.name.clone();
@@ -2271,7 +2271,7 @@ fn ChartInspectorModal(
                                 }}
                             </div>
                             <div class="row-count-badge">
-                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.get().categories.len())}
+                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.with(|d| d.categories.len()))}
                             </div>
                         </div>
                         <table class="inspector-table">
@@ -2286,7 +2286,7 @@ fn ChartInspectorModal(
                                         });
                                     }>"Category ↕"</th>
                                     {move || {
-                                        let d = transformed_data.get();
+                                        let d = transformed_data.with(|d| d.clone());
                                         let vs = visible_series.get();
                                         d.series.into_iter().enumerate().filter(|(_, s)| vs.contains(&s.name)).map(|(idx, s)| {
                                             let col_idx = idx + 1;
@@ -2306,7 +2306,7 @@ fn ChartInspectorModal(
                             </thead>
                             <tbody>
                                 {move || {
-                                    let d = transformed_data.get();
+                                    let d = transformed_data.with(|d| d.clone());
                                     let f_indices = filtered_indices.get();
                                     let vs = visible_series.get();
 
