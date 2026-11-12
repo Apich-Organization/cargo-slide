@@ -917,13 +917,13 @@ pub fn App() -> impl IntoView {
     });
 
     let current_svg =
-        Memo::new(move |_| current_slide.get().map(|s| s.svg_data).unwrap_or_default());
+        Memo::new(move |_| current_slide.with(|s| s.as_ref().map(|s| s.svg_data.clone())).unwrap_or_default());
 
     let current_hotspots =
-        Memo::new(move |_| current_slide.get().map(|s| s.hotspots).unwrap_or_default());
+        Memo::new(move |_| current_slide.with(|s| s.as_ref().map(|s| s.hotspots.clone())).unwrap_or_default());
 
     let current_steps =
-        Memo::new(move |_| current_slide.get().map(|s| s.steps).unwrap_or_default());
+        Memo::new(move |_| current_slide.with(|s| s.as_ref().map(|s| s.steps.clone())).unwrap_or_default());
 
     let get_slide_coords = move |ev: &web_sys::MouseEvent| -> Option<(f64, f64)> {
         let doc = web_sys::window()?.document()?;
@@ -1552,7 +1552,7 @@ pub fn App() -> impl IntoView {
                     <div class="hud-counter">
                         {move || {
                             let cur_st = current_step.get();
-                            let max_st = current_slide.get().map(|s| s.max_step()).unwrap_or(0);
+                            let max_st = current_slide.with(|s| s.as_ref().map(|s| s.max_step())).unwrap_or(0);
                             if max_st > 0 {
                                 format!("{} / {} (Step {})", current_index.get() + 1, total_slides.get(), cur_st)
                             } else {
@@ -1907,8 +1907,8 @@ pub fn App() -> impl IntoView {
             // Presenter Speaker Notes Modal
             {move || {
                 if notes_open.get() {
-                    let cur_slide = current_slide.get();
-                    let notes_text = cur_slide.as_ref().and_then(|s| s.notes.clone()).unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string());
+                    let notes = current_slide.with(|s| s.as_ref().and_then(|s| s.notes.clone()));
+                    let notes_text = notes.unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string());
                     let word_count = notes_text.split_whitespace().count();
                     let est_secs = ((word_count as f64 / 130.0) * 60.0).round() as usize;
 
