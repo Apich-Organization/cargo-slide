@@ -1008,8 +1008,8 @@ impl EditorDocument {
             && self.slide_chunks.len() < d.slides.len()
         {
             let start = self.slide_chunks.len();
-            for idx in start..d.slides.len() {
-                let title = d.slides[idx].extract_title();
+            for slide in d.slides.iter().skip(start) {
+                let title = slide.extract_title();
                 self.slide_chunks.push(format!("= {title}\n\n"));
             }
         }

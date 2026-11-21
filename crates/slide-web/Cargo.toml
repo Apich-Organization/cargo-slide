@@ -6,7 +6,6 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 description = "Leptos CSR Web frontend for cargo-slide presentations"
@@ -59,3 +58,5 @@ pbkdf2 = { workspace = true, features = ["hmac"] }
 zeroize.workspace = true
 base64.workspace = true
 getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[lints]

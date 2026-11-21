@@ -6,7 +6,6 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 description = "Core compiler bridge, SVG parser, and chart data engine for cargo-slide, developed as part of the Apich workspace backend."
@@ -17,7 +16,6 @@ exclude.workspace = true
 [dependencies]
 roxmltree.workspace = true
 svgtypes.workspace = true
-tiny-skia.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -31,7 +29,6 @@ tar.workspace = true
 xz2.workspace = true
 lzma-rs.workspace = true
 slide-theme.workspace = true
-chrono.workspace = true
 aes-gcm.workspace = true
 sha3.workspace = true
 zeroize.workspace = true
@@ -51,3 +48,5 @@ pbkdf2.workspace = true
 
 [features]
 test-mock = []
+
+[lints]

@@ -23,7 +23,6 @@ authors = [
 ]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/Apich-Organization/cargo-slide"
-homepage = "https://github.com/Apich-Organization/cargo-slide"
 documentation = "https://docs.rs/cargo-slide"
 readme = "README.md"
 description = "Code-driven presentation engine combining Typst typesetting with a native Rust viewer, developed as part of the Apich workspace backend."
@@ -48,8 +47,6 @@ exclude = [
 slide-core = { path = "crates/slide-core", version = "0.7.0" }
 slide-player = { path = "crates/slide-player", version = "0.7.0" }
 slide-theme = { path = "crates/slide-theme", version = "0.7.0" }
-slide-viewer = { path = "crates/slide-viewer", version = "0.7.0" }
-slide-editor = { path = "crates/slide-editor", version = "0.7.0" }
 
 resvg = "0.49"
 usvg = "0.49"

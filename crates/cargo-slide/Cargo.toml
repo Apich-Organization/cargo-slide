@@ -6,7 +6,6 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 description.workspace = true
@@ -35,3 +34,5 @@ image.workspace = true
 base64.workspace = true
 rand.workspace = true
 zeroize.workspace = true
+
+[lints]
