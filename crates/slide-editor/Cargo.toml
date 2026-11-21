@@ -6,7 +6,6 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 description = "Typora-style live preview WYSIWYG editor for Typst presentations and documents"
@@ -31,4 +30,6 @@ rfd = "0.17"
 typst-syntax = "0.15"
 regex = "1.13"
 open.workspace = true
+
+[lints]
 

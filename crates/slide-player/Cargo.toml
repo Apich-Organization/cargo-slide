@@ -6,7 +6,6 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 description = "Native 60 FPS presentation viewer, presenter tools, and audio mixer for cargo-slide, developed as part of the Apich workspace backend."
@@ -31,4 +30,6 @@ zeroize.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11-dl = "2.21"
+
+[lints]
 

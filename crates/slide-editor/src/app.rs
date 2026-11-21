@@ -883,8 +883,7 @@ impl SlideEditorApp {
                 }
             } else if self.engine.slides.len() < deck.slides.len() {
                 let start_idx = self.engine.slides.len();
-                for idx in start_idx..deck.slides.len() {
-                    let slide = &deck.slides[idx];
+                for (idx, slide) in deck.slides.iter().enumerate().skip(start_idx) {
                     let title = slide.extract_title();
                     self.engine
                         .slides

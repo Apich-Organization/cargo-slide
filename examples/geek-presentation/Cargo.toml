@@ -9,3 +9,5 @@ license.workspace = true
 slide-core.workspace = true
 slide-player.workspace = true
 serde_json.workspace = true
+
+[lints]

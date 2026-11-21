@@ -6,7 +6,6 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 description = "Universal standalone slide presentation player and viewer with a sleek modern GUI"
@@ -24,7 +23,6 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "x11", "wayland", "image", "svg", "thread-pool", "advanced"] }
-rfd = "0.17"
 tiny-skia.workspace = true
 tiny-skia-path.workspace = true
 open.workspace = true
@@ -33,4 +31,6 @@ walkdir.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[lints]
 
