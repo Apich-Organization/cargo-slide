@@ -906,8 +906,7 @@ pub fn App() -> impl IntoView {
 
     let current_view_box = Memo::new(move |_| {
         current_slide
-            .get()
-            .map(|s| s.view_box)
+            .with(|s| s.as_ref().map(|s| s.view_box))
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 793.7008, 446.4567))
     });
 
@@ -916,14 +915,17 @@ pub fn App() -> impl IntoView {
         format!("{} {} {} {}", vb.x, vb.y, vb.width, vb.height)
     });
 
-    let current_svg =
-        Memo::new(move |_| current_slide.get().map(|s| s.svg_data).unwrap_or_default());
+    let current_svg = Memo::new(move |_| {
+        current_slide.with(|s| s.as_ref().map(|s| s.svg_data.clone()).unwrap_or_default())
+    });
 
-    let current_hotspots =
-        Memo::new(move |_| current_slide.get().map(|s| s.hotspots).unwrap_or_default());
+    let current_hotspots = Memo::new(move |_| {
+        current_slide.with(|s| s.as_ref().map(|s| s.hotspots.clone()).unwrap_or_default())
+    });
 
-    let current_steps =
-        Memo::new(move |_| current_slide.get().map(|s| s.steps).unwrap_or_default());
+    let current_steps = Memo::new(move |_| {
+        current_slide.with(|s| s.as_ref().map(|s| s.steps.clone()).unwrap_or_default())
+    });
 
     let get_slide_coords = move |ev: &web_sys::MouseEvent| -> Option<(f64, f64)> {
         let doc = web_sys::window()?.document()?;
@@ -1069,6 +1071,8 @@ pub fn App() -> impl IntoView {
                                 <div style="display: flex; flex-direction: column; gap: 16px;">
                                     <input
                                         type="password"
+                                        aria-label=if is_mnemonic { "Recovery mnemonic" } else { "Security passphrase" }
+                                        autofocus=true
                                         disabled=move || auth_retries.get() == 0
                                         placeholder=if is_mnemonic { "e.g. word1 word2 word3..." } else { "Enter secret passphrase" }
                                         prop:value=move || auth_input.get()
@@ -1495,6 +1499,7 @@ pub fn App() -> impl IntoView {
                                 <div class="pen-picker-wrap" title="Custom color picker">
                                     <input
                                         type="color"
+                                        aria-label="Custom color picker"
                                         class="pen-color-native"
                                         prop:value=move || pen_custom_color.get()
                                         on:input=move |ev| {
@@ -1547,12 +1552,12 @@ pub fn App() -> impl IntoView {
             // Bottom Navigation & Presenter Tools Dock
             <div class="hud-container">
                 <div class="hud-card">
-                    <button class="hud-btn" title="First slide (Home)" aria-label="First slide" on:click=move |_| jump_to_slide(0)>"⏮"</button>
-                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" aria-label="Previous slide" on:click=move |_| prev_step_or_slide()>"◀"</button>
+                    <button class="hud-btn" title="First slide (Home)" aria-label="First slide" on:click=move |_| jump_to_slide(0)><span aria-hidden="true">"⏮"</span></button>
+                    <button class="hud-btn" title="Previous (Left arrow / Backspace)" aria-label="Previous slide" on:click=move |_| prev_step_or_slide()><span aria-hidden="true">"◀"</span></button>
                     <div class="hud-counter">
                         {move || {
                             let cur_st = current_step.get();
-                            let max_st = current_slide.get().map(|s| s.max_step()).unwrap_or(0);
+                            let max_st = current_slide.with(|s| s.as_ref().map(|s| s.max_step())).unwrap_or(0);
                             if max_st > 0 {
                                 format!("{} / {} (Step {})", current_index.get() + 1, total_slides.get(), cur_st)
                             } else {
@@ -1560,8 +1565,8 @@ pub fn App() -> impl IntoView {
                             }
                         }}
                     </div>
-                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" aria-label="Next slide" on:click=move |_| next_step_or_slide()>"▶"</button>
-                    <button class="hud-btn" title="Last slide (End)" aria-label="Last slide" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))>"⏭"</button>
+                    <button class="hud-btn" title="Next (Right arrow / Space / Enter)" aria-label="Next slide" on:click=move |_| next_step_or_slide()><span aria-hidden="true">"▶"</span></button>
+                    <button class="hud-btn" title="Last slide (End)" aria-label="Last slide" on:click=move |_| jump_to_slide(total_slides.get().saturating_sub(1))><span aria-hidden="true">"⏭"</span></button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if laser_active.get() { "hud-btn active" } else { "hud-btn" }
@@ -1572,7 +1577,7 @@ pub fn App() -> impl IntoView {
                             laser_active.update(|v| *v = !*v);
                             if laser_active.get() { pen_active.set(false); }
                         }
-                    >"🔦"</button>
+                    ><span aria-hidden="true">"🔦"</span></button>
                     <button
                         class=move || if pen_active.get() { "hud-btn active" } else { "hud-btn" }
                         title="Whiteboard Drawing Pen (P)"
@@ -1582,7 +1587,7 @@ pub fn App() -> impl IntoView {
                             pen_active.update(|v| *v = !*v);
                             if pen_active.get() { laser_active.set(false); }
                         }
-                    >"✏️"</button>
+                    ><span aria-hidden="true">"✏️"</span></button>
                     <button
                         class="hud-btn"
                         title="Clear whiteboard pen annotations (C / X)"
@@ -1591,31 +1596,31 @@ pub fn App() -> impl IntoView {
                             let cur = current_index.get();
                             pen_strokes.update(|m| { m.remove(&cur); });
                         }
-                    >"🧹"</button>
+                    ><span aria-hidden="true">"🧹"</span></button>
                     <div class="hud-divider"/>
                     <button
                         class=move || if is_muted.get() { "hud-btn active" } else { "hud-btn" }
-                        title="Mute / Unmute Audio (M)"
-                        aria-label="Toggle Audio Mute"
+                        title=move || if is_muted.get() { "Unmute Audio (M)" } else { "Mute Audio (M)" }
+                        aria-label=move || if is_muted.get() { "Unmute Audio" } else { "Mute Audio" }
                         aria-pressed=is_muted
                         on:click=move |_| toggle_mute()
-                    >{move || if is_muted.get() { "🔇" } else { "🔊" }}</button>
+                    ><span aria-hidden="true">{move || if is_muted.get() { "🔇" } else { "🔊" }}</span></button>
                     <div class="hud-divider"/>
                     <button
                         class="hud-btn"
-                        title="Toggle Light / Dark HUD Theme (T)"
-                        aria-label="Toggle Light / Dark HUD Theme"
+                        title=move || if is_dark_theme.get() { "Switch to Light Theme (T)" } else { "Switch to Dark Theme (T)" }
+                        aria-label=move || if is_dark_theme.get() { "Switch to Light Theme" } else { "Switch to Dark Theme" }
                         aria-pressed=is_dark_theme
                         on:click=move |_| {
                             is_dark_theme.update(|v| *v = !*v);
                             let mode = if is_dark_theme.get() { "Dark HUD" } else { "Light HUD" };
                             trigger_toast(format!("Theme: {}", mode));
                         }
-                    >{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</button>
-                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=notes_open on:click=move |_| notes_open.update(|v| *v = !*v)>"📝"</button>
-                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=overview_open on:click=move |_| overview_open.update(|v| *v = !*v)>"▦"</button>
-                    <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()>"⛶"</button>
-                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" aria-expanded=help_open on:click=move |_| help_open.update(|v| *v = !*v)>"?"</button>
+                    ><span aria-hidden="true">{move || if is_dark_theme.get() { "🌙" } else { "☀️" }}</span></button>
+                    <button class="hud-btn" title="Speaker Notes (N)" aria-label="Toggle Speaker Notes" aria-expanded=notes_open on:click=move |_| notes_open.update(|v| *v = !*v)><span aria-hidden="true">"📝"</span></button>
+                    <button class="hud-btn" title="Slide Overview Grid (O)" aria-label="Toggle Slide Overview Grid" aria-expanded=overview_open on:click=move |_| overview_open.update(|v| *v = !*v)><span aria-hidden="true">"▦"</span></button>
+                    <button class="hud-btn" title="Toggle Fullscreen (F)" aria-label="Toggle Fullscreen" on:click=move |_| toggle_fullscreen()><span aria-hidden="true">"⛶"</span></button>
+                    <button class="hud-btn" title="Help & Shortcuts (?)" aria-label="Toggle Help and Shortcuts" aria-expanded=help_open on:click=move |_| help_open.update(|v| *v = !*v)><span aria-hidden="true">"?"</span></button>
                 </div>
             </div>
 
@@ -1754,6 +1759,7 @@ pub fn App() -> impl IntoView {
                                         <div class="overview-search-box">
                                             <input
                                                 type="text"
+                                                aria-label="Search slides"
                                                 class="overview-search-input"
                                                 placeholder="Search slides (title or #)..."
                                                 prop:value=move || overview_search.get()
@@ -1795,6 +1801,7 @@ pub fn App() -> impl IntoView {
                                                     <button
                                                         class="overview-search-clear"
                                                         title="Clear search"
+                                                        aria-label="Clear search"
                                                         on:click=move |_| overview_search.set(String::new())
                                                     >"✕"</button>
                                                 }.into_any()
@@ -1806,18 +1813,21 @@ pub fn App() -> impl IntoView {
                                             <button
                                                 class=if overview_zoom.get() == "sm" { "zoom-btn active" } else { "zoom-btn" }
                                                 aria-pressed=move || overview_zoom.get() == "sm"
+                                                aria-label="Small thumbnails"
                                                 on:click=move |_| overview_zoom.set("sm".to_string())
                                                 title="Small thumbnails (Dense)"
                                             >"S"</button>
                                             <button
                                                 class=if overview_zoom.get() == "md" { "zoom-btn active" } else { "zoom-btn" }
                                                 aria-pressed=move || overview_zoom.get() == "md"
+                                                aria-label="Medium thumbnails"
                                                 on:click=move |_| overview_zoom.set("md".to_string())
                                                 title="Medium thumbnails (Default)"
                                             >"M"</button>
                                             <button
                                                 class=if overview_zoom.get() == "lg" { "zoom-btn active" } else { "zoom-btn" }
                                                 aria-pressed=move || overview_zoom.get() == "lg"
+                                                aria-label="Large thumbnails"
                                                 on:click=move |_| overview_zoom.set("lg".to_string())
                                                 title="Large thumbnails (Expanded)"
                                             >"L"</button>
@@ -1836,12 +1846,24 @@ pub fn App() -> impl IntoView {
                                         filtered_slides.into_iter().map(|(idx, slide)| {
                                             let is_active = idx == cur_idx;
                                             let slide_title = slide.extract_title();
+                                            let slide_title_clone = slide_title.clone();
                                             view! {
                                                 <div
                                                     class=if is_active { "slide-card active" } else { "slide-card" }
+                                                    role="button"
+                                                    tabindex="0"
+                                                    aria-label=format!("Jump to slide {}: {}", idx + 1, slide_title_clone)
+                                                    attr:aria-current=is_active.to_string()
                                                     on:click=move |_| {
                                                         jump_to_slide(idx);
                                                         overview_open.set(false);
+                                                    }
+                                                    on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                                        if ev.key() == "Enter" || ev.key() == " " {
+                                                            ev.prevent_default();
+                                                            jump_to_slide(idx);
+                                                            overview_open.set(false);
+                                                        }
                                                     }
                                                 >
                                                     <div class="card-thumbnail" inner_html=slide.svg_data/>
@@ -1907,8 +1929,9 @@ pub fn App() -> impl IntoView {
             // Presenter Speaker Notes Modal
             {move || {
                 if notes_open.get() {
-                    let cur_slide = current_slide.get();
-                    let notes_text = cur_slide.as_ref().and_then(|s| s.notes.clone()).unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string());
+                    let notes_text = current_slide.with(|cur_slide| {
+                        cur_slide.as_ref().and_then(|s| s.notes.clone()).unwrap_or_else(|| "No speaker notes defined for this slide.\n(Add notes using // [note]: ... in Typst source)".to_string())
+                    });
                     let word_count = notes_text.split_whitespace().count();
                     let est_secs = ((word_count as f64 / 130.0) * 60.0).round() as usize;
 
@@ -1958,117 +1981,114 @@ fn ChartInspectorModal(
     let sort_col = RwSignal::new(None::<(usize, bool)>); // Column index, asc
 
     let transformed_data = Memo::new(move |_| {
-        let raw = base_data.get();
         let tr = active_transform.get();
-        apply_transform(&raw, tr)
+        base_data.with(|raw| apply_transform(raw, tr))
     });
 
     let filtered_indices = Memo::new(move |_| {
-        let d = transformed_data.get();
         let vs = visible_series.get();
         let query = search_query.get();
         let q_trim = query.trim();
 
-        let mut indices: Vec<usize> = (0..d.categories.len()).collect();
+        transformed_data.with(|d| {
+            let mut indices: Vec<usize> = (0..d.categories.len()).collect();
 
-        if !q_trim.is_empty() {
-            if let Some((op, num_str)) = parse_filter_condition(q_trim) {
-                if let Ok(target_num) = num_str.parse::<f64>() {
+            if !q_trim.is_empty() {
+                if let Some((op, num_str)) = parse_filter_condition(q_trim) {
+                    if let Ok(target_num) = num_str.parse::<f64>() {
+                        indices.retain(|&cat_i| {
+                            d.series.iter().filter(|s| vs.contains(&s.name)).any(|s| {
+                                if let Some(&val) = s.values.get(cat_i) {
+                                    match op {
+                                        | ">" => val > target_num,
+                                        | ">=" => val >= target_num,
+                                        | "<" => val < target_num,
+                                        | "<=" => val <= target_num,
+                                        | "==" | "=" => (val - target_num).abs() < 1e-6,
+                                        | "!=" => (val - target_num).abs() >= 1e-6,
+                                        | _ => true,
+                                    }
+                                } else {
+                                    false
+                                }
+                            })
+                        });
+                    }
+                } else {
+                    let q_lower = q_trim.to_lowercase();
                     indices.retain(|&cat_i| {
+                        if let Some(cat_name) = d.categories.get(cat_i)
+                            && cat_name.to_lowercase().contains(&q_lower)
+                        {
+                            return true;
+                        }
                         d.series.iter().filter(|s| vs.contains(&s.name)).any(|s| {
                             if let Some(&val) = s.values.get(cat_i) {
-                                match op {
-                                    | ">" => val > target_num,
-                                    | ">=" => val >= target_num,
-                                    | "<" => val < target_num,
-                                    | "<=" => val <= target_num,
-                                    | "==" | "=" => (val - target_num).abs() < 1e-6,
-                                    | "!=" => (val - target_num).abs() >= 1e-6,
-                                    | _ => true,
+                                let formatted = d.format_number(val).to_lowercase();
+                                if formatted.contains(&q_lower) || val.to_string().contains(&q_lower) {
+                                    return true;
                                 }
-                            } else {
-                                false
                             }
+                            false
                         })
                     });
                 }
-            } else {
-                let q_lower = q_trim.to_lowercase();
-                indices.retain(|&cat_i| {
-                    if let Some(cat_name) = d.categories.get(cat_i)
-                        && cat_name.to_lowercase().contains(&q_lower)
-                    {
-                        return true;
-                    }
-                    d.series.iter().filter(|s| vs.contains(&s.name)).any(|s| {
-                        if let Some(&val) = s.values.get(cat_i) {
-                            let formatted = d.format_number(val).to_lowercase();
-                            if formatted.contains(&q_lower) || val.to_string().contains(&q_lower) {
-                                return true;
-                            }
-                        }
-                        false
-                    })
+            }
+
+            if let Some((col, asc)) = sort_col.get() {
+                indices.sort_by(|&a, &b| {
+                    let ord = if col == 0 {
+                        let cat_a = d.categories.get(a).map(String::as_str).unwrap_or("");
+                        let cat_b = d.categories.get(b).map(String::as_str).unwrap_or("");
+                        cat_a.cmp(cat_b)
+                    } else {
+                        let s_idx = col.saturating_sub(1);
+                        let val_a = d
+                            .series
+                            .iter()
+                            .filter(|s| vs.contains(&s.name))
+                            .nth(s_idx)
+                            .and_then(|s| s.values.get(a))
+                            .copied()
+                            .unwrap_or(0.0);
+                        let val_b = d
+                            .series
+                            .iter()
+                            .filter(|s| vs.contains(&s.name))
+                            .nth(s_idx)
+                            .and_then(|s| s.values.get(b))
+                            .copied()
+                            .unwrap_or(0.0);
+                        val_a
+                            .partial_cmp(&val_b)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    };
+                    if asc { ord } else { ord.reverse() }
                 });
             }
-        }
 
-        if let Some((col, asc)) = sort_col.get() {
-            indices.sort_by(|&a, &b| {
-                let ord = if col == 0 {
-                    let cat_a = d.categories.get(a).map(String::as_str).unwrap_or("");
-                    let cat_b = d.categories.get(b).map(String::as_str).unwrap_or("");
-                    cat_a.cmp(cat_b)
-                } else {
-                    let s_idx = col.saturating_sub(1);
-                    let val_a = d
-                        .series
-                        .iter()
-                        .filter(|s| vs.contains(&s.name))
-                        .nth(s_idx)
-                        .and_then(|s| s.values.get(a))
-                        .copied()
-                        .unwrap_or(0.0);
-                    let val_b = d
-                        .series
-                        .iter()
-                        .filter(|s| vs.contains(&s.name))
-                        .nth(s_idx)
-                        .and_then(|s| s.values.get(b))
-                        .copied()
-                        .unwrap_or(0.0);
-                    val_a
-                        .partial_cmp(&val_b)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                };
-                if asc { ord } else { ord.reverse() }
-            });
-        }
-
-        indices
+            indices
+        })
     });
 
 
     let stats = Memo::new(move |_| {
-        let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
-        calculate_stats(&d, &vs, &f_indices)
+        transformed_data.with(|d| calculate_stats(d, &vs, &f_indices))
     });
 
     let rendered_chart_svg = Memo::new(move |_| {
-        let d = transformed_data.get();
         let ct = active_type.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
-        render_svg_chart(&d, ct, &vs, &f_indices, 750.0, 370.0)
+        transformed_data.with(|d| render_svg_chart(d, ct, &vs, &f_indices, 750.0, 370.0))
     });
 
     let on_export_csv = move |_| {
-        let d = transformed_data.get();
         let vs = visible_series.get();
         let f_indices = filtered_indices.get();
-        let csv = export_csv_string(&d, &vs, &f_indices);
+        let csv = transformed_data.with(|d| export_csv_string(d, &vs, &f_indices));
         trigger_file_download("chart_data.csv", &csv, "text/csv");
     };
 
@@ -2084,7 +2104,7 @@ fn ChartInspectorModal(
                 // Modal Header
                 <div class="modal-header">
                     <div class="inspector-title">
-                        <h2>{move || transformed_data.get().title.unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
+                        <h2>{move || transformed_data.with(|d| d.title.clone()).unwrap_or_else(|| "HUD Data Inspector".to_string())}</h2>
                         <span class="inspector-badge">"Interactive SQL & Data Engine"</span>
                     </div>
                     <button class="close-btn" aria-label="Close" title="Close data inspector" on:click=move |_| on_close()>"✕"</button>
@@ -2094,32 +2114,32 @@ fn ChartInspectorModal(
                 <div class="kpi-strip">
                     <div class="kpi-card">
                         <span class="kpi-label">"TOTAL SUM"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().total_sum)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().total_sum))}</span>
                         <span class="kpi-sub">"All visible"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEAN / AVG"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().avg)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().avg))}</span>
                         <span class="kpi-sub">"Per record"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MEDIAN"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().median)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().median))}</span>
                         <span class="kpi-sub">"Middle 50%"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"STD DEV"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().std_dev)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().std_dev))}</span>
                         <span class="kpi-sub">"Dispersion"</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"PEAK / MAX"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().max_val)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().max_val))}</span>
                         <span class="kpi-sub">{move || stats.get().max_cat}</span>
                     </div>
                     <div class="kpi-card">
                         <span class="kpi-label">"MIN / LOW"</span>
-                        <span class="kpi-value">{move || transformed_data.get().format_number(stats.get().min_val)}</span>
+                        <span class="kpi-value">{move || transformed_data.with(|d| d.format_number(stats.get().min_val))}</span>
                         <span class="kpi-sub">{move || stats.get().min_cat}</span>
                     </div>
                 </div>
@@ -2131,33 +2151,39 @@ fn ChartInspectorModal(
                         <button
                             class=move || if active_type.get() == ChartType::Bar { "btn-chip active" } else { "btn-chip" }
                             attr:aria-pressed=move || (active_type.get() == ChartType::Bar).to_string()
+                            aria-label="Bar Chart"
                             on:click=move |_| active_type.set(ChartType::Bar)
-                        >"📊 Bar"</button>
+                        ><span aria-hidden="true">"📊 "</span>"Bar"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Line { "btn-chip active" } else { "btn-chip" }
                             attr:aria-pressed=move || (active_type.get() == ChartType::Line).to_string()
+                            aria-label="Line Chart"
                             on:click=move |_| active_type.set(ChartType::Line)
-                        >"📈 Line"</button>
+                        ><span aria-hidden="true">"📈 "</span>"Line"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Area { "btn-chip active" } else { "btn-chip" }
                             attr:aria-pressed=move || (active_type.get() == ChartType::Area).to_string()
+                            aria-label="Area Chart"
                             on:click=move |_| active_type.set(ChartType::Area)
-                        >"📉 Area"</button>
+                        ><span aria-hidden="true">"📉 "</span>"Area"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Pie { "btn-chip active" } else { "btn-chip" }
                             attr:aria-pressed=move || (active_type.get() == ChartType::Pie).to_string()
+                            aria-label="Pie Chart"
                             on:click=move |_| active_type.set(ChartType::Pie)
-                        >"🥧 Pie"</button>
+                        ><span aria-hidden="true">"🥧 "</span>"Pie"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Donut { "btn-chip active" } else { "btn-chip" }
                             attr:aria-pressed=move || (active_type.get() == ChartType::Donut).to_string()
+                            aria-label="Donut Chart"
                             on:click=move |_| active_type.set(ChartType::Donut)
-                        >"🍩 Donut"</button>
+                        ><span aria-hidden="true">"🍩 "</span>"Donut"</button>
                         <button
                             class=move || if active_type.get() == ChartType::Scatter { "btn-chip active" } else { "btn-chip" }
                             attr:aria-pressed=move || (active_type.get() == ChartType::Scatter).to_string()
+                            aria-label="Scatter Plot"
                             on:click=move |_| active_type.set(ChartType::Scatter)
-                        >"⁖ Scatter"</button>
+                        ><span aria-hidden="true">"⁖ "</span>"Scatter"</button>
                     </div>
 
                     // Transform Presets
@@ -2200,47 +2226,56 @@ fn ChartInspectorModal(
                     </div>
 
                     // Format Toggle Button
-                    <button class="btn-action" on:click=on_cycle_format>
-                        {move || format!("🔣 {}", transformed_data.get().format.display_name())}
+                    <button
+                        class="btn-action"
+                        aria-label=move || format!("Cycle format, currently {}", transformed_data.with(|d| d.format.display_name()))
+                        on:click=on_cycle_format
+                    >
+                        <span aria-hidden="true">"🔣 "</span>
+                        {move || transformed_data.with(|d| d.format.display_name())}
                     </button>
 
                     // Export CSV Button
-                    <button class="btn-action" on:click=on_export_csv>"💾 Export CSV"</button>
+                    <button class="btn-action" aria-label="Export Data as CSV" on:click=on_export_csv>
+                        <span aria-hidden="true">"💾 "</span>"Export CSV"
+                    </button>
                 </div>
 
                 // Series Filter Chips
                 <div class="series-strip">
                     <span class="series-label">"Series:"</span>
                     {move || {
-                        let d = base_data.get();
                         let current_vs = visible_series.get();
-                        d.series.into_iter().enumerate().map(|(idx, s)| {
-                            let name = s.name.clone();
-                            let is_visible = current_vs.contains(&name);
-                            let color = s.color.unwrap_or_else(|| chart::PALETTE[idx % chart::PALETTE.len()].to_string());
-                            view! {
-                                <button
-                                    class=if is_visible { "series-chip active" } else { "series-chip" }
-                                    attr:aria-pressed=is_visible.to_string()
-                                    aria-label=format!("Toggle series {}", name)
-                                    on:click=move |_| {
-                                        let n = name.clone();
-                                        visible_series.update(|list| {
-                                            if list.contains(&n) {
-                                                if list.len() > 1 {
-                                                    list.retain(|x| x != &n);
+                        base_data.with(|d| {
+                            d.series.iter().enumerate().map(|(idx, s)| {
+                                let name = s.name.clone();
+                                let is_visible = current_vs.contains(&name);
+                                let color = s.color.clone().unwrap_or_else(|| chart::PALETTE[idx % chart::PALETTE.len()].to_string());
+                                let display_name = s.name.clone();
+                                view! {
+                                    <button
+                                        class=if is_visible { "series-chip active" } else { "series-chip" }
+                                        attr:aria-pressed=is_visible.to_string()
+                                        aria-label=format!("Toggle series {}", name)
+                                        on:click=move |_| {
+                                            let n = name.clone();
+                                            visible_series.update(|list| {
+                                                if list.contains(&n) {
+                                                    if list.len() > 1 {
+                                                        list.retain(|x| x != &n);
+                                                    }
+                                                } else {
+                                                    list.push(n);
                                                 }
-                                            } else {
-                                                list.push(n);
-                                            }
-                                        });
-                                    }
-                                >
-                                    <span class="series-dot" style=format!("background: {color};") />
-                                    {s.name}
-                                </button>
-                            }
-                        }).collect::<Vec<_>>()
+                                            });
+                                        }
+                                    >
+                                        <span class="series-dot" style=format!("background: {color};") />
+                                        {display_name}
+                                    </button>
+                                }
+                            }).collect::<Vec<_>>()
+                        })
                     }}
                 </div>
 
@@ -2254,6 +2289,7 @@ fn ChartInspectorModal(
                             <div class="table-search">
                                 <input
                                     type="text"
+                                    aria-label="Filter rows or condition"
                                     placeholder="Filter rows or condition (e.g. >50 or Q3)..."
                                     prop:value=move || search_query.get()
                                     on:input=move |ev| search_query.set(event_target_value(&ev))
@@ -2271,7 +2307,7 @@ fn ChartInspectorModal(
                                 }}
                             </div>
                             <div class="row-count-badge">
-                                {move || format!("Showing {} of {} rows", filtered_indices.get().len(), transformed_data.get().categories.len())}
+                                {move || transformed_data.with(|d| format!("Showing {} of {} rows", filtered_indices.get().len(), d.categories.len()))}
                             </div>
                         </div>
                         <table class="inspector-table">
@@ -2286,47 +2322,49 @@ fn ChartInspectorModal(
                                         });
                                     }>"Category ↕"</th>
                                     {move || {
-                                        let d = transformed_data.get();
                                         let vs = visible_series.get();
-                                        d.series.into_iter().enumerate().filter(|(_, s)| vs.contains(&s.name)).map(|(idx, s)| {
-                                            let col_idx = idx + 1;
-                                            view! {
-                                                <th on:click=move |_| {
-                                                    sort_col.update(|sc| {
-                                                        *sc = match sc {
-                                                            Some((c, true)) if *c == col_idx => Some((col_idx, false)),
-                                                            _ => Some((col_idx, true)),
-                                                        };
-                                                    });
-                                                }>{format!("{} ↕", s.name)}</th>
-                                            }
-                                        }).collect::<Vec<_>>()
+                                        transformed_data.with(|d| {
+                                            d.series.iter().enumerate().filter(|(_, s)| vs.contains(&s.name)).map(|(idx, s)| {
+                                                let col_idx = idx + 1;
+                                                view! {
+                                                    <th on:click=move |_| {
+                                                        sort_col.update(|sc| {
+                                                            *sc = match sc {
+                                                                Some((c, true)) if *c == col_idx => Some((col_idx, false)),
+                                                                _ => Some((col_idx, true)),
+                                                            };
+                                                        });
+                                                    }>{format!("{} ↕", s.name)}</th>
+                                                }
+                                            }).collect::<Vec<_>>()
+                                        })
                                     }}
                                 </tr>
                             </thead>
                             <tbody>
                                 {move || {
-                                    let d = transformed_data.get();
                                     let f_indices = filtered_indices.get();
                                     let vs = visible_series.get();
 
-                                    f_indices.into_iter().map(|cat_i| {
-                                        let cat = d.categories.get(cat_i).cloned().unwrap_or_default();
-                                        let vals: Vec<f64> = d.series.iter().filter(|s| vs.contains(&s.name)).map(|s| {
-                                            s.values.get(cat_i).copied().unwrap_or(0.0)
-                                        }).collect();
+                                    transformed_data.with(|d| {
+                                        f_indices.iter().map(|&cat_i| {
+                                            let cat = d.categories.get(cat_i).cloned().unwrap_or_default();
+                                            let vals: Vec<f64> = d.series.iter().filter(|s| vs.contains(&s.name)).map(|s| {
+                                                s.values.get(cat_i).copied().unwrap_or(0.0)
+                                            }).collect();
 
-                                        view! {
-                                            <tr>
-                                                <td class="cat-cell">{cat}</td>
-                                                {vals.into_iter().map(|v| {
-                                                    view! {
-                                                        <td class="num-cell">{d.format_number(v)}</td>
-                                                    }
-                                                }).collect::<Vec<_>>()}
-                                            </tr>
-                                        }
-                                    }).collect::<Vec<_>>()
+                                            view! {
+                                                <tr>
+                                                    <td class="cat-cell">{cat}</td>
+                                                    {vals.into_iter().map(|v| {
+                                                        view! {
+                                                            <td class="num-cell">{d.format_number(v)}</td>
+                                                        }
+                                                    }).collect::<Vec<_>>()}
+                                                </tr>
+                                            }
+                                        }).collect::<Vec<_>>()
+                                    })
                                 }}
                             </tbody>
                         </table>
@@ -2400,18 +2438,23 @@ fn TextPreviewModal(
                         <button
                             class="btn-action"
                             title="Copy file contents to clipboard"
+                            aria-label=move || if copy_feedback.get() { "Copied to clipboard" } else { "Copy file contents" }
                             on:click=on_copy
                         >
-                            {move || if copy_feedback.get() { "✓ Copied!" } else { "📋 Copy" }}
+                            <span aria-hidden="true">{move || if copy_feedback.get() { "✓ " } else { "📋 " }}</span>
+                            {move || if copy_feedback.get() { "Copied!" } else { "Copy" }}
                         </button>
                         <button
                             class="btn-action"
                             title="Download file"
+                            aria-label="Download file"
                             on:click=on_download
                         >
-                            "💾 Download"
+                            <span aria-hidden="true">"💾 "</span>"Download"
                         </button>
-                        <button class="close-btn" aria-label="Close" title="Close text preview" on:click=move |_| on_close()>"✕"</button>
+                        <button class="close-btn" aria-label="Close text preview" title="Close text preview" on:click=move |_| on_close()>
+                            <span aria-hidden="true">"✕"</span>
+                        </button>
                     </div>
                 </div>
 
